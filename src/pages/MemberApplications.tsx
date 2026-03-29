@@ -152,6 +152,7 @@ export function MemberApplicationsPage() {
             reason: ""
         }
     });
+    const requestMoreInfoReason = requestMoreInfoForm.watch("reason") || "";
 
     const resetCreateForm = () => {
         createForm.reset({
@@ -474,9 +475,18 @@ export function MemberApplicationsPage() {
 
     const requestMoreInfo = requestMoreInfoForm.handleSubmit(async (values) => {
         if (!selected) return;
+        const trimmedReason = values.reason.trim();
+        if (trimmedReason.length < 5) {
+            requestMoreInfoForm.setError("reason", {
+                type: "manual",
+                message: "Enter at least 5 characters explaining what information is needed."
+            });
+            return;
+        }
+
         setSubmitting(true);
         try {
-            await api.post(endpoints.memberApplications.requestMoreInfo(selected.id), values);
+            await api.post(endpoints.memberApplications.requestMoreInfo(selected.id), { reason: trimmedReason });
             pushToast({
                 type: "success",
                 title: "More information requested",
@@ -1066,6 +1076,11 @@ export function MemberApplicationsPage() {
                                                     label="Clarification request"
                                                     placeholder="Example: Please confirm your NIDA number and provide a clearer passport photo."
                                                     {...requestMoreInfoForm.register("reason")}
+                                                    error={Boolean(requestMoreInfoForm.formState.errors.reason)}
+                                                    helperText={
+                                                        requestMoreInfoForm.formState.errors.reason?.message
+                                                        || "Tell the applicant exactly what document, correction, or clarification is required."
+                                                    }
                                                 />
                                             </>
                                         ) : null}
@@ -1082,7 +1097,7 @@ export function MemberApplicationsPage() {
                             variant="outlined"
                             color="warning"
                             onClick={() => void requestMoreInfo()}
-                            disabled={submitting}
+                            disabled={submitting || requestMoreInfoReason.trim().length < 5}
                         >
                             Request more info
                         </Button>
