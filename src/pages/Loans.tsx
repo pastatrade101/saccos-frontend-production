@@ -142,6 +142,8 @@ type PendingDisbursementNotice = {
     description?: string | null;
     disbursement_channel: "cash" | "mobile_money";
     recipient_msisdn?: string | null;
+    status: "pending" | "approved";
+    maker_user_id?: string | null;
 };
 
 type LoanWorkspaceTab = "applications" | "portfolio" | "collections" | "activity";
@@ -201,6 +203,31 @@ function getLoanDisbursementMessage(order: LoanDisbursementOrder | null) {
     default:
         return "The payout request has been sent to the member phone. This screen updates automatically when the provider confirms the result.";
     }
+}
+
+function buildPendingDisbursementNoticeFromApplication(row: LoanApplication): PendingDisbursementNotice | null {
+    const request = row.latest_disbursement_approval_request;
+    const status = request?.status === "approved"
+        ? "approved"
+        : request?.status === "pending"
+            ? "pending"
+            : null;
+
+    if (!request || !status) {
+        return null;
+    }
+
+    return {
+        requestId: request.id,
+        applicationId: row.id,
+        applicationName: row.members?.full_name || null,
+        reference: request.reference || row.external_reference || null,
+        description: request.description || row.purpose || null,
+        disbursement_channel: request.disbursement_channel === "mobile_money" ? "mobile_money" : "cash",
+        recipient_msisdn: request.recipient_msisdn || row.members?.phone || null,
+        status,
+        maker_user_id: request.maker_user_id || null
+    };
 }
 
 type CreditRiskDefaultCase = {
@@ -522,7 +549,7 @@ export function LoansPage() {
     const theme = useTheme();
     const navigate = useNavigate();
     const { pushToast } = useToast();
-    const { profile, selectedTenantId, selectedBranchId } = useAuth();
+    const { profile, selectedTenantId, selectedBranchId, user } = useAuth();
     const [members, setMembers] = useState<Member[]>([]);
     const [loanProducts, setLoanProducts] = useState<LoanProduct[]>([]);
     const [applications, setApplications] = useState<LoanApplication[]>([]);
@@ -1995,7 +2022,9 @@ export function LoansPage() {
                 reference: values.reference || null,
                 description: values.description || null,
                 disbursement_channel: values.disbursement_channel,
-                recipient_msisdn: values.recipient_msisdn || null
+                recipient_msisdn: values.recipient_msisdn || null,
+                status: "pending",
+                maker_user_id: user?.id || null
             });
             return;
         }
@@ -2135,8 +2164,14 @@ export function LoansPage() {
         }
     };
 
-    const executeApprovedDisbursement = async () => {
-        if (!pendingApprovalNotice) {
+    const executeApprovedDisbursement = async (noticeOverride?: PendingDisbursementNotice | null) => {
+        const notice = noticeOverride || pendingApprovalNotice;
+        if (!notice) {
+            return;
+        }
+
+        if (notice.status !== "approved") {
+            navigate("/approvals");
             return;
         }
 
@@ -2144,30 +2179,30 @@ export function LoansPage() {
         try {
             const runApprovedDisbursement = async (stepUpPayload?: TwoFactorStepUpPayload) => {
                 const payload: DisburseApprovedLoanRequest = {
-                    reference: pendingApprovalNotice.reference || null,
-                    description: pendingApprovalNotice.description || null,
-                    disbursement_channel: pendingApprovalNotice.disbursement_channel,
-                    recipient_msisdn: pendingApprovalNotice.recipient_msisdn || null,
-                    approval_request_id: pendingApprovalNotice.requestId,
+                    reference: notice.reference || null,
+                    description: notice.description || null,
+                    disbursement_channel: notice.disbursement_channel,
+                    recipient_msisdn: notice.recipient_msisdn || null,
+                    approval_request_id: notice.requestId,
                     two_factor_code: stepUpPayload?.two_factor_code || null,
                     recovery_code: stepUpPayload?.recovery_code || null
                 };
 
                 return api.post<LoanDisbursementActionResponse>(
-                    endpoints.loanApplications.disburse(pendingApprovalNotice.applicationId),
+                    endpoints.loanApplications.disburse(notice.applicationId),
                     payload
                 );
             };
 
             const response = await runApprovedDisbursement();
             await handleLoanDisbursementResponse(response.data.data, {
-                applicationId: pendingApprovalNotice.applicationId,
-                borrowerName: pendingApprovalNotice.applicationName || null
+                applicationId: notice.applicationId,
+                borrowerName: notice.applicationName || null
             }, {
-                reference: pendingApprovalNotice.reference || "",
-                description: pendingApprovalNotice.description || "",
-                disbursement_channel: pendingApprovalNotice.disbursement_channel,
-                recipient_msisdn: pendingApprovalNotice.recipient_msisdn || ""
+                reference: notice.reference || "",
+                description: notice.description || "",
+                disbursement_channel: notice.disbursement_channel,
+                recipient_msisdn: notice.recipient_msisdn || ""
             });
             if (!response.data.data.approval_required) {
                 setPendingApprovalNotice(null);
@@ -2181,7 +2216,6 @@ export function LoansPage() {
             }
         } catch (error) {
             if (getApiErrorCode(error) === "TWO_FACTOR_STEP_UP_REQUIRED") {
-                const notice = pendingApprovalNotice;
                 openStepUpDialog(
                     "Verify approved disbursement",
                     "Executing an approved disbursement requires a fresh authenticator check.",
@@ -2313,6 +2347,10 @@ export function LoansPage() {
                 const canRunApproval = (["submitted", "appraised"].includes(row.status) || (row.status === "approved" && row.approval_count < row.required_approval_count)) && canApprove;
                 const canRunRejection = row.status === "submitted" && canReject;
                 const canRunDisbursement = row.status === "approved" && !row.loan_id && canDisburse;
+                const latestDisbursementApproval = row.latest_disbursement_approval_request;
+                const hasDisbursementApprovalState = Boolean(latestDisbursementApproval && ["pending", "approved"].includes(latestDisbursementApproval.status));
+                const isOwnApprovedDisbursementRequest = latestDisbursementApproval?.status === "approved"
+                    && latestDisbursementApproval.maker_user_id === user?.id;
 
                 const openApproval = () => {
                     const unresolvedGuarantors = getUnresolvedGuarantorConsents(row);
@@ -2351,6 +2389,22 @@ export function LoansPage() {
                     });
                 };
 
+                const openPendingDisbursementApproval = () => {
+                    const notice = buildPendingDisbursementNoticeFromApplication(row);
+                    if (!notice) {
+                        return;
+                    }
+
+                    setPendingApprovalNotice(notice);
+
+                    if (notice.status === "approved" && notice.maker_user_id === user?.id) {
+                        void executeApprovedDisbursement(notice);
+                        return;
+                    }
+
+                    navigate("/approvals");
+                };
+
                 let primaryAction = (
                     <Button
                         size="small"
@@ -2365,7 +2419,7 @@ export function LoansPage() {
                     </Button>
                 );
 
-                if (canRunDisbursement) {
+                if (canRunDisbursement && row.latest_mobile_disbursement && isActiveLoanDisbursementStatus(row.latest_mobile_disbursement.status)) {
                     primaryAction = (
                         <Button
                             size="small"
@@ -2374,9 +2428,36 @@ export function LoansPage() {
                             onClick={openDisbursement}
                             fullWidth
                         >
-                            {row.latest_mobile_disbursement && isActiveLoanDisbursementStatus(row.latest_mobile_disbursement.status)
-                                ? "Track Disbursement"
-                                : "Disburse Loan"}
+                            Track Disbursement
+                        </Button>
+                    );
+                } else if (canRunDisbursement && hasDisbursementApprovalState) {
+                    primaryAction = (
+                        <Button
+                            size="small"
+                            variant="contained"
+                            color={latestDisbursementApproval?.status === "approved" && isOwnApprovedDisbursementRequest ? "success" : "inherit"}
+                            onClick={openPendingDisbursementApproval}
+                            fullWidth
+                            sx={latestDisbursementApproval?.status === "approved" && isOwnApprovedDisbursementRequest ? undefined : darkAccentContainedSx}
+                        >
+                            {latestDisbursementApproval?.status === "approved"
+                                ? isOwnApprovedDisbursementRequest
+                                    ? (latestDisbursementApproval?.disbursement_channel === "mobile_money" ? "Execute Payout" : "Execute Approved")
+                                    : "Approved Request"
+                                : "Approval Pending"}
+                        </Button>
+                    );
+                } else if (canRunDisbursement) {
+                    primaryAction = (
+                        <Button
+                            size="small"
+                            variant="contained"
+                            color="success"
+                            onClick={openDisbursement}
+                            fullWidth
+                        >
+                            Disburse Loan
                         </Button>
                     );
                 } else if (canRunApproval) {
@@ -2443,6 +2524,17 @@ export function LoansPage() {
                             >
                                 Review
                             </Button>
+                            {canRunDisbursement && hasDisbursementApprovalState ? (
+                                <Button
+                                    size="small"
+                                    variant="text"
+                                    color="inherit"
+                                    onClick={openPendingDisbursementApproval}
+                                    sx={{ minWidth: 0, px: 0.5 }}
+                                >
+                                    {latestDisbursementApproval?.status === "approved" && isOwnApprovedDisbursementRequest ? "Execute" : "Open Queue"}
+                                </Button>
+                            ) : null}
                             {canRunRejection ? (
                                 <Button
                                     size="small"
@@ -2772,9 +2864,11 @@ export function LoansPage() {
                     variant="outlined"
                     action={
                         <Stack direction="row" spacing={1}>
-                            <Button size="small" onClick={() => void executeApprovedDisbursement()} disabled={processing}>
-                                {pendingApprovalNotice.disbursement_channel === "mobile_money" ? "Execute Payout" : "Execute Approved"}
-                            </Button>
+                            {pendingApprovalNotice.status === "approved" && pendingApprovalNotice.maker_user_id === user?.id ? (
+                                <Button size="small" onClick={() => void executeApprovedDisbursement()} disabled={processing}>
+                                    {pendingApprovalNotice.disbursement_channel === "mobile_money" ? "Execute Payout" : "Execute Approved"}
+                                </Button>
+                            ) : null}
                             <Button size="small" onClick={() => navigate("/approvals")}>
                                 Open Queue
                             </Button>
@@ -2784,9 +2878,17 @@ export function LoansPage() {
                         </Stack>
                     }
                 >
-                    {pendingApprovalNotice.disbursement_channel === "mobile_money"
-                        ? `Mobile loan payout for ${pendingApprovalNotice.applicationName || "the borrower"} is waiting for checker approval. Request ID: ${pendingApprovalNotice.requestId}`
-                        : `Disbursement was sent for maker-checker approval. Request ID: ${pendingApprovalNotice.requestId}`}
+                    {pendingApprovalNotice.status === "approved"
+                        ? pendingApprovalNotice.disbursement_channel === "mobile_money"
+                            ? pendingApprovalNotice.maker_user_id === user?.id
+                                ? `Mobile loan payout for ${pendingApprovalNotice.applicationName || "the borrower"} is approved and ready to execute. Request ID: ${pendingApprovalNotice.requestId}`
+                                : `Mobile loan payout for ${pendingApprovalNotice.applicationName || "the borrower"} has been approved and is waiting for the original maker to execute it. Request ID: ${pendingApprovalNotice.requestId}`
+                            : pendingApprovalNotice.maker_user_id === user?.id
+                                ? `Disbursement approval is complete and ready for execution. Request ID: ${pendingApprovalNotice.requestId}`
+                                : `Disbursement approval is complete and waiting for the original maker to execute it. Request ID: ${pendingApprovalNotice.requestId}`
+                        : pendingApprovalNotice.disbursement_channel === "mobile_money"
+                            ? `Mobile loan payout for ${pendingApprovalNotice.applicationName || "the borrower"} is waiting for checker approval. Request ID: ${pendingApprovalNotice.requestId}`
+                            : `Disbursement was sent for maker-checker approval. Request ID: ${pendingApprovalNotice.requestId}`}
                 </Alert>
             ) : null}
 

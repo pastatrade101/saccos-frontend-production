@@ -727,6 +727,33 @@ export interface ApprovalRequest {
     decisions?: ApprovalDecision[];
 }
 
+export interface LoanDisbursementApprovalRequest {
+    id: string;
+    tenant_id: string;
+    branch_id?: string | null;
+    operation_key: ApprovalOperationKey;
+    entity_type?: string | null;
+    entity_id?: string | null;
+    status: ApprovalRequestStatus;
+    maker_user_id: string;
+    requested_amount: number;
+    currency: string;
+    threshold_amount: number;
+    required_checker_count: number;
+    approved_count: number;
+    rejection_reason?: string | null;
+    requested_at: string;
+    expires_at?: string | null;
+    last_decision_at?: string | null;
+    executed_at?: string | null;
+    created_at: string;
+    updated_at: string;
+    disbursement_channel?: "cash" | "mobile_money" | null;
+    recipient_msisdn?: string | null;
+    reference?: string | null;
+    description?: string | null;
+}
+
 export interface LoanApplication {
     id: string;
     tenant_id: string;
@@ -780,6 +807,7 @@ export interface LoanApplication {
     loan_guarantors?: LoanGuarantor[];
     collateral_items?: CollateralItem[];
     latest_mobile_disbursement?: LoanDisbursementOrder | null;
+    latest_disbursement_approval_request?: LoanDisbursementApprovalRequest | null;
 }
 
 export type LoanDisbursementOrderStatus = "created" | "pending" | "completed" | "failed" | "expired" | "posted";

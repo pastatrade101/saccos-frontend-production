@@ -70,7 +70,7 @@ import {
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useMemo, useState, type ChangeEvent, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type MouseEvent } from "react";
 import { useForm } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
 import { z } from "zod";
@@ -931,6 +931,7 @@ export function MemberPortalPage() {
     const [paymentOrders, setPaymentOrders] = useState<PaymentOrder[]>([]);
     const [lastPaymentToastStatus, setLastPaymentToastStatus] = useState<PaymentOrder["status"] | null>(null);
     const [activeContributionOrderId, setActiveContributionOrderId] = useState<string | null>(null);
+    const autoBackgroundedPaymentOrderIdRef = useRef<string | null>(null);
     const [selectedPaymentReceipt, setSelectedPaymentReceipt] = useState<PaymentOrder | null>(null);
     const [activeSection, setActiveSection] = useState<PortalSectionId>(portalSections[0].id);
     const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -3171,6 +3172,47 @@ export function MemberPortalPage() {
             setPhoneCancellationRequested(false);
         }
     }, [trackedContributionOrder?.id, trackedContributionOrder?.status]);
+
+    useEffect(() => {
+        if (!showContributionDialog || !trackedContributionOrder || !["failed", "expired"].includes(trackedContributionOrder.status)) {
+            return undefined;
+        }
+
+        const timeoutId = window.setTimeout(() => {
+            setShowContributionDialog(false);
+            setActiveContributionOrderId(null);
+        }, phoneCancellationRequested ? 250 : 1200);
+
+        return () => {
+            window.clearTimeout(timeoutId);
+        };
+    }, [showContributionDialog, trackedContributionOrder?.id, trackedContributionOrder?.status, phoneCancellationRequested]);
+
+    useEffect(() => {
+        if (
+            !showContributionDialog
+            || !trackedContributionOrder
+            || trackedContributionOrder.status !== "pending"
+            || !paymentApprovalTakingLongerThanExpected
+            || autoBackgroundedPaymentOrderIdRef.current === trackedContributionOrder.id
+        ) {
+            return;
+        }
+
+        autoBackgroundedPaymentOrderIdRef.current = trackedContributionOrder.id;
+        setShowContributionDialog(false);
+        pushToast({
+            title: "Payment still pending",
+            message: "The provider is still holding this request open, so tracking has moved to the background. Reopen it from Payments if you need to watch it live.",
+            type: "info"
+        });
+    }, [
+        showContributionDialog,
+        trackedContributionOrder?.id,
+        trackedContributionOrder?.status,
+        paymentApprovalTakingLongerThanExpected,
+        pushToast
+    ]);
 
     useEffect(() => {
         setTransactionsPage(0);

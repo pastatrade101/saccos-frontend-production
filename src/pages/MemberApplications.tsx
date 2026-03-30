@@ -1,9 +1,19 @@
 import { MotionCard, MotionModal } from "../ui/motion";
 import ApprovalRoundedIcon from "@mui/icons-material/ApprovalRounded";
+import AssignmentTurnedInRoundedIcon from "@mui/icons-material/AssignmentTurnedInRounded";
+import BadgeRoundedIcon from "@mui/icons-material/BadgeRounded";
 import ChecklistRoundedIcon from "@mui/icons-material/ChecklistRounded";
+import DescriptionRoundedIcon from "@mui/icons-material/DescriptionRounded";
 import DoDisturbRoundedIcon from "@mui/icons-material/DoDisturbRounded";
 import FactCheckRoundedIcon from "@mui/icons-material/FactCheckRounded";
+import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
+import HelpOutlineRoundedIcon from "@mui/icons-material/HelpOutlineRounded";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import PersonAddAlt1RoundedIcon from "@mui/icons-material/PersonAddAlt1Rounded";
+import PersonRoundedIcon from "@mui/icons-material/PersonRounded";
+import StickyNote2RoundedIcon from "@mui/icons-material/StickyNote2Rounded";
+import TipsAndUpdatesRoundedIcon from "@mui/icons-material/TipsAndUpdatesRounded";
+import VerifiedUserRoundedIcon from "@mui/icons-material/VerifiedUserRounded";
 import {
     Alert,
     Box,
@@ -20,6 +30,8 @@ import {
     MenuItem,
     Paper,
     Stack,
+    Tab,
+    Tabs,
     TextField,
     Typography
 } from "@mui/material";
@@ -50,6 +62,8 @@ import { formatCurrency, formatDate } from "../utils/format";
 import { formatNextOfKinRelationship } from "../utils/nextOfKin";
 
 type DialogMode = "create" | "review" | "reject" | null;
+type ReviewWorkspaceTab = "overview" | "identity" | "documents" | "decision";
+const REVIEW_TEXT_LIMIT = 200;
 
 function statusColor(status: MemberApplication["status"]) {
     if (status === "approved") return "success";
@@ -92,6 +106,55 @@ function ApplicationDetailItem({ label, value }: { label: string; value: ReactNo
     );
 }
 
+function ReviewSectionCard({
+    title,
+    description,
+    icon,
+    children
+}: {
+    title: string;
+    description?: string;
+    icon?: ReactNode;
+    children: ReactNode;
+}) {
+    return (
+        <Paper variant="outlined" sx={{ p: 2.25, borderRadius: 2.5 }}>
+            <Stack spacing={1.5}>
+                <Stack direction="row" spacing={1.25} alignItems="flex-start">
+                    {icon ? (
+                        <Box
+                            sx={{
+                                width: 34,
+                                height: 34,
+                                borderRadius: 1.75,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                bgcolor: "action.hover",
+                                color: "primary.main",
+                                flexShrink: 0
+                            }}
+                        >
+                            {icon}
+                        </Box>
+                    ) : null}
+                    <Box sx={{ minWidth: 0 }}>
+                        <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+                            {title}
+                        </Typography>
+                        {description ? (
+                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.35 }}>
+                                {description}
+                            </Typography>
+                        ) : null}
+                    </Box>
+                </Stack>
+                {children}
+            </Stack>
+        </Paper>
+    );
+}
+
 export function MemberApplicationsPage() {
     const theme = useTheme();
     const isDarkMode = theme.palette.mode === "dark";
@@ -107,6 +170,7 @@ export function MemberApplicationsPage() {
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [detailLoading, setDetailLoading] = useState(false);
+    const [activeReviewTab, setActiveReviewTab] = useState<ReviewWorkspaceTab>("overview");
 
     const createForm = useForm<CreateMemberApplicationRequest>({
         defaultValues: {
@@ -153,6 +217,7 @@ export function MemberApplicationsPage() {
         }
     });
     const requestMoreInfoReason = requestMoreInfoForm.watch("reason") || "";
+    const reviewNotes = reviewForm.watch("notes") || "";
 
     const resetCreateForm = () => {
         createForm.reset({
@@ -277,6 +342,8 @@ export function MemberApplicationsPage() {
         : 0;
     const selectedAttachments = selected?.attachments || [];
     const selectedDocumentTypes = new Set(selectedAttachments.map((attachment) => attachment.document_type).filter(Boolean));
+    const selectedReceivedIdentityDocuments = [selectedDocumentTypes.has("national_id"), selectedDocumentTypes.has("passport_photo")].filter(Boolean).length;
+    const selectedComplianceChecksConfirmed = [selected?.terms_accepted, selected?.data_processing_consent].filter(Boolean).length;
     const selectedMissingReviewItems = selected ? [
         !selected.phone ? "phone number" : null,
         !selected.nida_no && !selected.national_id ? "identity number" : null,
@@ -346,6 +413,7 @@ export function MemberApplicationsPage() {
             requestMoreInfoForm.reset({
                 reason: detailed.request_more_info_reason || ""
             });
+            setActiveReviewTab("overview");
             setDialogMode("review");
         } catch (error) {
             pushToast({
@@ -780,7 +848,15 @@ export function MemberApplicationsPage() {
                 </DialogActions>
             </MotionModal>
 
-            <MotionModal open={dialogMode === "review"} onClose={() => setDialogMode(null)} maxWidth="lg" fullWidth>
+            <MotionModal
+                open={dialogMode === "review"}
+                onClose={() => {
+                    setDialogMode(null);
+                    setActiveReviewTab("overview");
+                }}
+                maxWidth="xl"
+                fullWidth
+            >
                 <DialogTitle>
                     {selected ? `Review ${selected.application_no}` : "Review application"}
                 </DialogTitle>
@@ -804,42 +880,124 @@ export function MemberApplicationsPage() {
                             </Alert>
                         )}
 
-                        <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-                            <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={2}>
-                                <Stack spacing={0.5}>
-                                    <Typography variant="overline" color="text.secondary">
-                                        Applicant
-                                    </Typography>
-                                    <Typography variant="h6" sx={{ fontWeight: 800 }}>
-                                        {selected?.full_name || "Applicant"}
-                                    </Typography>
-                                    <Typography variant="body2" color="text.secondary">
-                                        {selectedBranchName} · Created {selected?.created_at ? formatDate(selected.created_at) : "N/A"}
-                                    </Typography>
+                        <Paper
+                            variant="outlined"
+                            sx={{
+                                p: 2.5,
+                                borderRadius: 3,
+                                background: `linear-gradient(135deg, ${alpha(memberAccentStrong, 0.1)} 0%, ${alpha(memberAccent, 0.05)} 100%)`
+                            }}
+                        >
+                            <Stack spacing={2}>
+                                <Stack direction={{ xs: "column", lg: "row" }} justifyContent="space-between" spacing={2}>
+                                    <Stack spacing={0.75}>
+                                        <Typography variant="overline" color="text.secondary">
+                                            Applicant review workspace
+                                        </Typography>
+                                        <Typography variant="h5" sx={{ fontWeight: 800 }}>
+                                            {selected?.full_name || "Applicant"}
+                                        </Typography>
+                                        <Typography variant="body1" color="text.secondary">
+                                            {displayApplicationValue(selected?.application_no)} · {selectedBranchName}
+                                        </Typography>
+                                        <Typography variant="body2" color="text.secondary">
+                                            Submitted contact: {displayApplicationValue(selected?.phone)}{selected?.email ? ` · ${selected.email}` : ""}
+                                        </Typography>
+                                    </Stack>
+                                    <Stack spacing={1} alignItems={{ xs: "flex-start", lg: "flex-end" }}>
+                                        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                                            <Chip
+                                                size="small"
+                                                color={statusColor(selected?.status || "draft")}
+                                                label={memberApplicationStatusLabels[selected?.status || "draft"] || String(selected?.status || "draft").replace(/_/g, " ")}
+                                            />
+                                            <Chip
+                                                size="small"
+                                                variant="outlined"
+                                                label={`KYC ${String(selected?.kyc_status || "pending").replace(/_/g, " ")}`}
+                                            />
+                                        </Stack>
+                                        <Typography variant="caption" color="text.secondary">
+                                            Created {selected?.created_at ? formatDate(selected.created_at) : "N/A"} · Updated {selected?.updated_at ? formatDate(selected.updated_at) : "N/A"}
+                                        </Typography>
+                                    </Stack>
                                 </Stack>
-                                <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-                                    <Chip
-                                        size="small"
-                                        color={statusColor(selected?.status || "draft")}
-                                        label={memberApplicationStatusLabels[selected?.status || "draft"] || String(selected?.status || "draft").replace(/_/g, " ")}
-                                    />
-                                    <Chip
-                                        size="small"
-                                        variant="outlined"
-                                        label={`KYC ${String(selected?.kyc_status || "pending").replace(/_/g, " ")}`}
-                                    />
-                                </Stack>
+                                <Grid container spacing={1.5}>
+                                    <Grid size={{ xs: 12, sm: 4 }}>
+                                        <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2, bgcolor: alpha("#fff", isDarkMode ? 0.02 : 0.78) }}>
+                                            <Typography variant="caption" color="text.secondary">Missing review items</Typography>
+                                            <Typography variant="h6" sx={{ fontWeight: 800 }}>
+                                                {selectedMissingReviewItems.length}
+                                            </Typography>
+                                            <Typography variant="body2" color="text.secondary">
+                                                Items still needing confirmation
+                                            </Typography>
+                                        </Paper>
+                                    </Grid>
+                                    <Grid size={{ xs: 12, sm: 4 }}>
+                                        <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2, bgcolor: alpha("#fff", isDarkMode ? 0.02 : 0.78) }}>
+                                            <Typography variant="caption" color="text.secondary">Identity pack</Typography>
+                                            <Typography variant="h6" sx={{ fontWeight: 800 }}>
+                                                {selectedReceivedIdentityDocuments} / 2
+                                            </Typography>
+                                            <Typography variant="body2" color="text.secondary">
+                                                National ID and passport photo
+                                            </Typography>
+                                        </Paper>
+                                    </Grid>
+                                    <Grid size={{ xs: 12, sm: 4 }}>
+                                        <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2, bgcolor: alpha("#fff", isDarkMode ? 0.02 : 0.78) }}>
+                                            <Typography variant="caption" color="text.secondary">Activation readiness</Typography>
+                                            <Typography variant="h6" sx={{ fontWeight: 800 }}>
+                                                {selectedComplianceChecksConfirmed} / 2
+                                            </Typography>
+                                            <Typography variant="body2" color="text.secondary">
+                                                Required legal consents confirmed
+                                            </Typography>
+                                        </Paper>
+                                    </Grid>
+                                </Grid>
                             </Stack>
                         </Paper>
 
-                        <Grid container spacing={2}>
-                            <Grid size={{ xs: 12, md: 7 }}>
-                                <Stack spacing={2}>
-                                    <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-                                        <Stack spacing={1.2}>
-                                            <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
-                                                Applicant profile
-                                            </Typography>
+                        <Paper variant="outlined" sx={{ borderRadius: 2.5, overflow: "hidden" }}>
+                            <Tabs
+                                value={activeReviewTab}
+                                onChange={(_, value: ReviewWorkspaceTab) => setActiveReviewTab(value)}
+                                variant="scrollable"
+                                scrollButtons="auto"
+                                sx={{
+                                    px: 1,
+                                    bgcolor: alpha(memberAccentStrong, isDarkMode ? 0.1 : 0.03),
+                                    "& .MuiTab-root": {
+                                        minHeight: 72,
+                                        alignItems: "flex-start",
+                                        textTransform: "none",
+                                        py: 1.5
+                                    }
+                                }}
+                            >
+                                <Tab value="overview" icon={<PersonRoundedIcon fontSize="small" />} iconPosition="start" label="1. Applicant overview" />
+                                <Tab value="identity" icon={<BadgeRoundedIcon fontSize="small" />} iconPosition="start" label="2. Identity and address" />
+                                <Tab value="documents" icon={<DescriptionRoundedIcon fontSize="small" />} iconPosition="start" label="3. Documents and notes" />
+                                <Tab
+                                    value="decision"
+                                    icon={<FactCheckRoundedIcon fontSize="small" />}
+                                    iconPosition="start"
+                                    label={isBranchManager ? "4. Record branch decision" : "4. Branch review summary"}
+                                />
+                            </Tabs>
+                        </Paper>
+
+                        {activeReviewTab === "overview" ? (
+                            <Grid container spacing={2}>
+                                <Grid size={{ xs: 12, md: 8 }}>
+                                    <Stack spacing={2}>
+                                        <ReviewSectionCard
+                                            title="Applicant profile"
+                                            description="Core applicant identity, contact details, and background used for initial branch review."
+                                            icon={<PersonRoundedIcon fontSize="small" />}
+                                        >
                                             <ApplicationDetailItem label="Application no" value={displayApplicationValue(selected?.application_no)} />
                                             <ApplicationDetailItem label="Phone number" value={displayApplicationValue(selected?.phone)} />
                                             <ApplicationDetailItem label="Email" value={displayApplicationValue(selected?.email)} />
@@ -847,37 +1005,15 @@ export function MemberApplicationsPage() {
                                             <ApplicationDetailItem label="Gender" value={displayApplicationValue(selected?.gender)} />
                                             <ApplicationDetailItem label="Marital status" value={displayApplicationValue(selected?.marital_status)} />
                                             <ApplicationDetailItem label="Occupation" value={displayApplicationValue(selected?.occupation)} />
-                                            <ApplicationDetailItem label="Member number" value={displayApplicationValue(selected?.member_no)} />
                                             <ApplicationDetailItem label="Employer" value={displayApplicationValue(selected?.employer)} />
-                                            <ApplicationDetailItem label="Created" value={selected?.created_at ? formatDate(selected.created_at) : "Not provided"} />
-                                            <ApplicationDetailItem label="Last updated" value={selected?.updated_at ? formatDate(selected.updated_at) : "Not provided"} />
-                                        </Stack>
-                                    </Paper>
+                                            <ApplicationDetailItem label="Member number" value={displayApplicationValue(selected?.member_no)} />
+                                        </ReviewSectionCard>
 
-                                    <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-                                        <Stack spacing={1.2}>
-                                            <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
-                                                Identity and address
-                                            </Typography>
-                                            <ApplicationDetailItem label="National ID" value={displayApplicationValue(selected?.national_id)} />
-                                            <ApplicationDetailItem label="NIDA number" value={displayApplicationValue(selected?.nida_no)} />
-                                            <ApplicationDetailItem label="TIN number" value={displayApplicationValue(selected?.tin_no)} />
-                                            <ApplicationDetailItem label="Region" value={displayApplicationValue(selected?.region)} />
-                                            <ApplicationDetailItem label="District" value={displayApplicationValue(selected?.district)} />
-                                            <ApplicationDetailItem label="Ward" value={displayApplicationValue(selected?.ward)} />
-                                            <ApplicationDetailItem label="Street / village" value={displayApplicationValue(selected?.street_or_village)} />
-                                            <ApplicationDetailItem label="Residential address" value={displayApplicationValue(selected?.residential_address)} />
-                                            <ApplicationDetailItem label="Legacy address" value={displayApplicationValue(selectedAddress)} />
-                                            <ApplicationDetailItem label="Country" value={displayApplicationValue(selected?.country)} />
-                                            <ApplicationDetailItem label="Postal code" value={displayApplicationValue(selected?.postal_code)} />
-                                        </Stack>
-                                    </Paper>
-
-                                    <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-                                        <Stack spacing={1.2}>
-                                            <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
-                                                Next of kin and fee snapshot
-                                            </Typography>
+                                        <ReviewSectionCard
+                                            title="Next of kin and membership setup"
+                                            description="Governance contacts and financial commitments that should be confirmed before approval handoff."
+                                            icon={<GroupsRoundedIcon fontSize="small" />}
+                                        >
                                             <ApplicationDetailItem label="Next of kin" value={displayApplicationValue(selected?.next_of_kin_name)} />
                                             <ApplicationDetailItem label="Kin phone" value={displayApplicationValue(selected?.next_of_kin_phone)} />
                                             <ApplicationDetailItem
@@ -892,14 +1028,78 @@ export function MemberApplicationsPage() {
                                             <ApplicationDetailItem label="Membership fee" value={formatCurrency(selected?.membership_fee_amount || 0)} />
                                             <ApplicationDetailItem label="Fee paid" value={formatCurrency(selected?.membership_fee_paid || 0)} />
                                             <ApplicationDetailItem label="Balance outstanding" value={formatCurrency(selectedMembershipBalance)} />
-                                        </Stack>
-                                    </Paper>
+                                        </ReviewSectionCard>
+                                    </Stack>
+                                </Grid>
 
-                                    <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-                                        <Stack spacing={1.2}>
-                                            <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
-                                                Compliance and activation readiness
-                                            </Typography>
+                                <Grid size={{ xs: 12, md: 4 }}>
+                                    <Stack spacing={2}>
+                                        <ReviewSectionCard
+                                            title="Review guidance"
+                                            description="Work through identity, address, and documents before recording the branch decision."
+                                            icon={<TipsAndUpdatesRoundedIcon fontSize="small" />}
+                                        >
+                                            <Stack spacing={1}>
+                                                <Typography variant="body2" color="text.secondary">
+                                                    1. Confirm the applicant identity matches the submitted phone, DOB, and ID numbers.
+                                                </Typography>
+                                                <Typography variant="body2" color="text.secondary">
+                                                    2. Check governance information such as next of kin and consents.
+                                                </Typography>
+                                                <Typography variant="body2" color="text.secondary">
+                                                    3. Review documents and only then move to the decision step.
+                                                </Typography>
+                                            </Stack>
+                                            {isBranchManager ? (
+                                                <Button variant="contained" onClick={() => setActiveReviewTab("identity")}>
+                                                    Continue review
+                                                </Button>
+                                            ) : null}
+                                        </ReviewSectionCard>
+
+                                        <ReviewSectionCard
+                                            title="Current branch status"
+                                            description="Operational snapshot for the reviewer before moving deeper into the file."
+                                            icon={<AssignmentTurnedInRoundedIcon fontSize="small" />}
+                                        >
+                                            <ApplicationDetailItem label="Application status" value={memberApplicationStatusLabels[selected?.status || "draft"] || String(selected?.status || "draft").replace(/_/g, " ")} />
+                                            <ApplicationDetailItem label="KYC status" value={displayApplicationValue(selected?.kyc_status)} />
+                                            <ApplicationDetailItem label="Current KYC reason" value={displayApplicationValue(selected?.kyc_reason)} />
+                                            <ApplicationDetailItem label="Last review" value={selected?.reviewed_at ? formatDate(selected.reviewed_at) : "Not recorded"} />
+                                        </ReviewSectionCard>
+                                    </Stack>
+                                </Grid>
+                            </Grid>
+                        ) : null}
+
+                        {activeReviewTab === "identity" ? (
+                            <Grid container spacing={2}>
+                                <Grid size={{ xs: 12, md: 8 }}>
+                                    <Stack spacing={2}>
+                                        <ReviewSectionCard
+                                            title="Identity and address"
+                                            description="Formal identity numbers and residential location captured during onboarding."
+                                            icon={<BadgeRoundedIcon fontSize="small" />}
+                                        >
+                                            <ApplicationDetailItem label="National ID" value={displayApplicationValue(selected?.national_id)} />
+                                            <ApplicationDetailItem label="NIDA number" value={displayApplicationValue(selected?.nida_no)} />
+                                            <ApplicationDetailItem label="TIN number" value={displayApplicationValue(selected?.tin_no)} />
+                                            <Divider flexItem sx={{ my: 0.5 }} />
+                                            <ApplicationDetailItem label="Region" value={displayApplicationValue(selected?.region)} />
+                                            <ApplicationDetailItem label="District" value={displayApplicationValue(selected?.district)} />
+                                            <ApplicationDetailItem label="Ward" value={displayApplicationValue(selected?.ward)} />
+                                            <ApplicationDetailItem label="Street / village" value={displayApplicationValue(selected?.street_or_village)} />
+                                            <ApplicationDetailItem label="Residential address" value={displayApplicationValue(selected?.residential_address)} />
+                                            <ApplicationDetailItem label="Legacy address" value={displayApplicationValue(selectedAddress)} />
+                                            <ApplicationDetailItem label="Country" value={displayApplicationValue(selected?.country)} />
+                                            <ApplicationDetailItem label="Postal code" value={displayApplicationValue(selected?.postal_code)} />
+                                        </ReviewSectionCard>
+
+                                        <ReviewSectionCard
+                                            title="Compliance and activation readiness"
+                                            description="Required declarations and uploads that support KYC completion and activation handoff."
+                                            icon={<VerifiedUserRoundedIcon fontSize="small" />}
+                                        >
                                             <ApplicationDetailItem
                                                 label="Terms accepted"
                                                 value={
@@ -944,16 +1144,50 @@ export function MemberApplicationsPage() {
                                                     />
                                                 }
                                             />
-                                            <ApplicationDetailItem label="Current KYC reason" value={displayApplicationValue(selected?.kyc_reason)} />
-                                            <ApplicationDetailItem label="Requested more info" value={displayApplicationValue(selected?.request_more_info_reason)} />
-                                        </Stack>
-                                    </Paper>
+                                        </ReviewSectionCard>
+                                    </Stack>
+                                </Grid>
 
-                                    <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-                                        <Stack spacing={1.2}>
-                                            <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
-                                                Identity documents
-                                            </Typography>
+                                <Grid size={{ xs: 12, md: 4 }}>
+                                    <Stack spacing={2}>
+                                        <ReviewSectionCard
+                                            title="Identity follow-up"
+                                            description="Anything left missing here should usually trigger clarification before approval handoff."
+                                            icon={<ChecklistRoundedIcon fontSize="small" />}
+                                        >
+                                            {selectedMissingReviewItems.length ? (
+                                                <Stack spacing={1}>
+                                                    {selectedMissingReviewItems.map((item) => (
+                                                        <Typography key={item} variant="body2" color="text.secondary">
+                                                            • {item}
+                                                        </Typography>
+                                                    ))}
+                                                </Stack>
+                                            ) : (
+                                                <Typography variant="body2" color="text.secondary">
+                                                    No missing items are currently flagged for the branch reviewer.
+                                                </Typography>
+                                            )}
+                                            {isBranchManager ? (
+                                                <Button variant="contained" onClick={() => setActiveReviewTab("documents")}>
+                                                    Review documents
+                                                </Button>
+                                            ) : null}
+                                        </ReviewSectionCard>
+                                    </Stack>
+                                </Grid>
+                            </Grid>
+                        ) : null}
+
+                        {activeReviewTab === "documents" ? (
+                            <Grid container spacing={2}>
+                                <Grid size={{ xs: 12, md: 8 }}>
+                                    <Stack spacing={2}>
+                                        <ReviewSectionCard
+                                            title="Identity documents"
+                                            description="Open each submitted document and confirm it supports the applicant details captured in the form."
+                                            icon={<DescriptionRoundedIcon fontSize="small" />}
+                                        >
                                             {selectedAttachments.length ? selectedAttachments.map((attachment) => (
                                                 <Stack
                                                     key={attachment.id}
@@ -987,14 +1221,13 @@ export function MemberApplicationsPage() {
                                                     No identity documents have been uploaded yet.
                                                 </Typography>
                                             )}
-                                        </Stack>
-                                    </Paper>
+                                        </ReviewSectionCard>
 
-                                    <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-                                        <Stack spacing={1}>
-                                            <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
-                                                Applicant notes
-                                            </Typography>
+                                        <ReviewSectionCard
+                                            title="Applicant notes"
+                                            description="Original submission notes and the latest branch review timestamp for operational context."
+                                            icon={<StickyNote2RoundedIcon fontSize="small" />}
+                                        >
                                             <Typography variant="body2" color="text.secondary">
                                                 {displayApplicationValue(selected?.notes)}
                                             </Typography>
@@ -1003,25 +1236,107 @@ export function MemberApplicationsPage() {
                                                     Last review recorded on {formatDate(selected.reviewed_at)}
                                                 </Typography>
                                             ) : null}
-                                        </Stack>
-                                    </Paper>
-                                </Stack>
-                            </Grid>
+                                        </ReviewSectionCard>
+                                    </Stack>
+                                </Grid>
 
-                            <Grid size={{ xs: 12, md: 5 }}>
-                                <Paper
-                                    variant="outlined"
-                                    sx={{
-                                        p: 2,
-                                        borderRadius: 2,
-                                        position: { md: "sticky" },
-                                        top: { md: 8 }
-                                    }}
-                                >
+                                <Grid size={{ xs: 12, md: 4 }}>
                                     <Stack spacing={2}>
-                                        <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
-                                            {isBranchManager ? "Review decision" : "Review summary"}
-                                        </Typography>
+                                        <ReviewSectionCard
+                                            title="Decision readiness"
+                                            description="Once documents are checked, move to the final branch decision panel."
+                                            icon={<ChecklistRoundedIcon fontSize="small" />}
+                                        >
+                                            <ApplicationDetailItem label="Documents received" value={`${selectedReceivedIdentityDocuments} / 2`} />
+                                            <ApplicationDetailItem label="Outstanding items" value={selectedMissingReviewItems.length} />
+                                            <ApplicationDetailItem label="Clarification request" value={displayApplicationValue(selected?.request_more_info_reason)} />
+                                            <Button variant="contained" onClick={() => setActiveReviewTab("decision")}>
+                                                Open decision panel
+                                            </Button>
+                                        </ReviewSectionCard>
+                                    </Stack>
+                                </Grid>
+                            </Grid>
+                        ) : null}
+
+                        {activeReviewTab === "decision" ? (
+                            <Grid container spacing={2}>
+                                <Grid size={{ xs: 12, md: 7 }}>
+                                    <Stack spacing={2}>
+                                        <ReviewSectionCard
+                                            title={isBranchManager ? "Record branch decision" : "Branch review summary"}
+                                            description={isBranchManager
+                                                ? "This step records the branch KYC assessment and any follow-up notes before the super admin takes the final approve or reject action."
+                                                : "Read-only summary of the branch review captured before final tenant approval."}
+                                            icon={<FactCheckRoundedIcon fontSize="small" />}
+                                        >
+                                            <TextField
+                                                select
+                                                fullWidth
+                                                disabled={!isBranchManager}
+                                                label="KYC status"
+                                                defaultValue={reviewForm.getValues("kyc_status") || "verified"}
+                                                {...reviewForm.register("kyc_status")}
+                                            >
+                                                <MenuItem value="pending">Pending</MenuItem>
+                                                <MenuItem value="verified">Verified</MenuItem>
+                                                <MenuItem value="rejected">Rejected</MenuItem>
+                                                <MenuItem value="waived">Waived</MenuItem>
+                                            </TextField>
+                                            <TextField fullWidth disabled={!isBranchManager} label="KYC reason" {...reviewForm.register("kyc_reason")} />
+                                            <TextField
+                                                fullWidth
+                                                multiline
+                                                rows={3}
+                                                disabled={!isBranchManager}
+                                                label="Review notes"
+                                                placeholder="Capture branch review observations, document checks, and any follow-up required before approval."
+                                                {...reviewForm.register("notes")}
+                                                inputProps={{ maxLength: REVIEW_TEXT_LIMIT }}
+                                                helperText={`${reviewNotes.length}/${REVIEW_TEXT_LIMIT} characters`}
+                                            />
+                                        </ReviewSectionCard>
+
+                                        {isBranchManager ? (
+                                            <ReviewSectionCard
+                                                title="Request more information"
+                                                description="Use this when the application should stay open, but the applicant must correct or add information before the branch can recommend it forward."
+                                                icon={<HelpOutlineRoundedIcon fontSize="small" />}
+                                            >
+                                                <TextField
+                                                    fullWidth
+                                                    multiline
+                                                    rows={3}
+                                                    label="Clarification request"
+                                                    placeholder="Example: Please confirm your NIDA number and provide a clearer passport photo."
+                                                    {...requestMoreInfoForm.register("reason")}
+                                                    error={Boolean(requestMoreInfoForm.formState.errors.reason)}
+                                                    inputProps={{ maxLength: REVIEW_TEXT_LIMIT }}
+                                                    helperText={
+                                                        requestMoreInfoForm.formState.errors.reason?.message
+                                                        || `Tell the applicant exactly what document, correction, or clarification is required. ${requestMoreInfoReason.length}/${REVIEW_TEXT_LIMIT} characters`
+                                                    }
+                                                />
+                                            </ReviewSectionCard>
+                                        ) : null}
+                                    </Stack>
+                                </Grid>
+
+                                <Grid size={{ xs: 12, md: 5 }}>
+                                    <Stack spacing={2}>
+                                        <ReviewSectionCard
+                                            title="Application summary"
+                                            description="Compact context while recording the branch decision."
+                                            icon={<InfoOutlinedIcon fontSize="small" />}
+                                        >
+                                            <ApplicationDetailItem label="Applicant" value={displayApplicationValue(selected?.full_name)} />
+                                            <ApplicationDetailItem label="Application no" value={displayApplicationValue(selected?.application_no)} />
+                                            <ApplicationDetailItem label="Branch" value={selectedBranchName} />
+                                            <ApplicationDetailItem label="Phone number" value={displayApplicationValue(selected?.phone)} />
+                                            <ApplicationDetailItem label="Current status" value={memberApplicationStatusLabels[selected?.status || "draft"] || String(selected?.status || "draft").replace(/_/g, " ")} />
+                                            <ApplicationDetailItem label="Current KYC" value={displayApplicationValue(selected?.kyc_status)} />
+                                        </ReviewSectionCard>
+
                                         {selected?.request_more_info_reason ? (
                                             <Alert severity="warning" variant="outlined">
                                                 <Typography variant="body2" sx={{ fontWeight: 700, mb: 0.5 }}>
@@ -1037,75 +1352,63 @@ export function MemberApplicationsPage() {
                                                 ) : null}
                                             </Alert>
                                         ) : null}
-                                        <TextField
-                                            select
-                                            fullWidth
-                                            disabled={!isBranchManager}
-                                            label="KYC status"
-                                            defaultValue={reviewForm.getValues("kyc_status") || "verified"}
-                                            {...reviewForm.register("kyc_status")}
+
+                                        <ReviewSectionCard
+                                            title="Readiness checklist"
+                                            description="Final reminder before saving the branch review."
+                                            icon={<ChecklistRoundedIcon fontSize="small" />}
                                         >
-                                            <MenuItem value="pending">Pending</MenuItem>
-                                            <MenuItem value="verified">Verified</MenuItem>
-                                            <MenuItem value="rejected">Rejected</MenuItem>
-                                            <MenuItem value="waived">Waived</MenuItem>
-                                        </TextField>
-                                        <TextField fullWidth disabled={!isBranchManager} label="KYC reason" {...reviewForm.register("kyc_reason")} />
-                                        <TextField
-                                            fullWidth
-                                            multiline
-                                            minRows={8}
-                                            disabled={!isBranchManager}
-                                            label="Review notes"
-                                            placeholder="Capture branch review observations, document checks, and any follow-up required before approval."
-                                            {...reviewForm.register("notes")}
-                                        />
-                                        {isBranchManager ? (
-                                            <>
-                                                <Divider flexItem />
-                                                <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                                                    Request more information
-                                                </Typography>
-                                                <Typography variant="body2" color="text.secondary">
-                                                    Use this when the application is missing clarification or documents, but should remain open for follow-up.
-                                                </Typography>
-                                                <TextField
-                                                    fullWidth
-                                                    multiline
-                                                    minRows={4}
-                                                    label="Clarification request"
-                                                    placeholder="Example: Please confirm your NIDA number and provide a clearer passport photo."
-                                                    {...requestMoreInfoForm.register("reason")}
-                                                    error={Boolean(requestMoreInfoForm.formState.errors.reason)}
-                                                    helperText={
-                                                        requestMoreInfoForm.formState.errors.reason?.message
-                                                        || "Tell the applicant exactly what document, correction, or clarification is required."
-                                                    }
-                                                />
-                                            </>
-                                        ) : null}
+                                            <ApplicationDetailItem label="Missing items" value={selectedMissingReviewItems.length} />
+                                            <ApplicationDetailItem label="Documents received" value={`${selectedReceivedIdentityDocuments} / 2`} />
+                                            <ApplicationDetailItem label="Consents confirmed" value={`${selectedComplianceChecksConfirmed} / 2`} />
+                                            <ApplicationDetailItem label="Outstanding balance" value={formatCurrency(selectedMembershipBalance)} />
+                                        </ReviewSectionCard>
                                     </Stack>
-                                </Paper>
+                                </Grid>
                             </Grid>
-                        </Grid>
+                        ) : null}
                     </Stack>
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setDialogMode(null)}>{isBranchManager ? "Cancel" : "Close"}</Button>
-                    {isBranchManager ? (
+                    <Button
+                        onClick={() => {
+                            setDialogMode(null);
+                            setActiveReviewTab("overview");
+                        }}
+                    >
+                        {isBranchManager ? "Close review" : "Close"}
+                    </Button>
+                    {activeReviewTab !== "decision" ? (
                         <Button
-                            variant="outlined"
-                            color="warning"
-                            onClick={() => void requestMoreInfo()}
-                            disabled={submitting || requestMoreInfoReason.trim().length < 5}
+                            variant="contained"
+                            onClick={() => setActiveReviewTab(
+                                activeReviewTab === "overview"
+                                    ? "identity"
+                                    : activeReviewTab === "identity"
+                                        ? "documents"
+                                        : "decision"
+                            )}
                         >
-                            Request more info
+                            {activeReviewTab === "documents" ? "Continue to decision" : "Continue"}
                         </Button>
                     ) : null}
-                    {isBranchManager ? (
-                        <Button variant="contained" onClick={() => void reviewApplication()} disabled={submitting}>
-                            Save review
-                        </Button>
+                    {activeReviewTab === "decision" && isBranchManager ? (
+                        <>
+                            <Button variant="outlined" onClick={() => setActiveReviewTab("documents")}>
+                                Back to documents
+                            </Button>
+                            <Button
+                                variant="outlined"
+                                color="warning"
+                                onClick={() => void requestMoreInfo()}
+                                disabled={submitting || requestMoreInfoReason.trim().length < 5}
+                            >
+                                Request more info
+                            </Button>
+                            <Button variant="contained" onClick={() => void reviewApplication()} disabled={submitting}>
+                                Save review
+                            </Button>
+                        </>
                     ) : null}
                 </DialogActions>
             </MotionModal>

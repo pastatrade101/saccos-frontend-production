@@ -1,13 +1,17 @@
 import { MotionCard, MotionModal } from "../ui/motion";
 import AccountBalanceWalletRoundedIcon from "@mui/icons-material/AccountBalanceWalletRounded";
+import AssignmentIndRoundedIcon from "@mui/icons-material/AssignmentIndRounded";
 import BadgeRoundedIcon from "@mui/icons-material/BadgeRounded";
 import CreditScoreRoundedIcon from "@mui/icons-material/CreditScoreRounded";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
+import InsightsRoundedIcon from "@mui/icons-material/InsightsRounded";
 import LockPersonRoundedIcon from "@mui/icons-material/LockPersonRounded";
 import OpenInNewRoundedIcon from "@mui/icons-material/OpenInNewRounded";
 import PaidRoundedIcon from "@mui/icons-material/PaidRounded";
 import PersonAddAlt1RoundedIcon from "@mui/icons-material/PersonAddAlt1Rounded";
+import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
+import RuleRoundedIcon from "@mui/icons-material/RuleRounded";
 import UploadFileRoundedIcon from "@mui/icons-material/UploadFileRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import {
@@ -37,7 +41,7 @@ import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext";
 import { AppLoader } from "../components/AppLoader";
@@ -64,7 +68,6 @@ import {
     type UpdateMemberRequest,
     type UpdateMemberResponse
 } from "../lib/endpoints";
-import { supabase } from "../lib/supabase";
 import type { Branch, Member, MemberAccount, ProductBootstrapPayload } from "../types/api";
 import { formatCurrency, formatDate, formatRole } from "../utils/format";
 
@@ -205,59 +208,85 @@ function getMemberAccountProductLabel(
     return "Fixed deposit";
 }
 
-function isMissingDeletedAtColumnError(error: unknown) {
-    const code = typeof error === "object" && error && "code" in error
-        ? String((error as { code?: string }).code || "")
-        : "";
-    const message = typeof error === "object" && error && "message" in error
-        ? String((error as { message?: string }).message || "").toLowerCase()
-        : "";
-
-    return code === "42703" || message.includes("deleted_at");
-}
-
 function MetricCard({
     title,
     value,
     helper,
-    icon
+    icon,
+    tone = "primary"
 }: {
     title: string;
     value: string;
     helper: string;
     icon: React.ReactNode;
+    tone?: "primary" | "success" | "warning" | "neutral";
 }) {
+    const theme = useTheme();
+    const toneColor =
+        tone === "success"
+            ? theme.palette.success.main
+            : tone === "warning"
+                ? theme.palette.warning.main
+                : tone === "neutral"
+                    ? theme.palette.text.primary
+                    : theme.palette.primary.main;
+
     return (
         <MotionCard
             variant="outlined"
             sx={{
                 height: "100%",
-                borderRadius: 2,
-                borderColor: alpha("#0f172a", 0.08),
-                boxShadow: "0 1px 2px rgba(15, 23, 42, 0.04)"
+                minHeight: 206,
+                display: "flex",
+                position: "relative",
+                overflow: "hidden",
+                borderRadius: 1.75,
+                borderColor: alpha(toneColor, 0.16),
+                background: `linear-gradient(180deg, ${alpha(toneColor, 0.1)}, ${alpha(theme.palette.background.paper, 0.98)} 56%)`,
+                boxShadow: "0 14px 28px rgba(15, 23, 42, 0.06)",
+                "&::before": {
+                    content: '""',
+                    position: "absolute",
+                    inset: 0,
+                    background: `radial-gradient(circle at top right, ${alpha(toneColor, 0.18)}, transparent 48%)`,
+                    pointerEvents: "none"
+                }
             }}
         >
-            <CardContent>
+            <CardContent
+                sx={{
+                    p: 2.25,
+                    display: "flex",
+                    flex: 1
+                }}
+            >
                 <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
                     <Box>
-                        <Typography variant="overline" color="text.secondary">
+                        <Typography
+                            variant="overline"
+                            sx={{
+                                color: alpha(theme.palette.text.primary, 0.7),
+                                letterSpacing: "0.12em"
+                            }}
+                        >
                             {title}
                         </Typography>
-                        <Typography variant="h5" sx={{ mt: 0.5 }}>
+                        <Typography variant="h4" sx={{ mt: 1, fontWeight: 800, lineHeight: 1.05 }}>
                             {value}
                         </Typography>
-                        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+                        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
                             {helper}
                         </Typography>
                     </Box>
                     <Avatar
                         variant="rounded"
                         sx={{
-                            width: 42,
-                            height: 42,
-                            borderRadius: 2,
-                            bgcolor: "action.hover",
-                            color: "text.primary"
+                            width: 48,
+                            height: 48,
+                            borderRadius: 1.5,
+                            bgcolor: alpha(toneColor, 0.14),
+                            color: toneColor,
+                            boxShadow: `inset 0 0 0 1px ${alpha(toneColor, 0.12)}`
                         }}
                     >
                         {icon}
@@ -268,12 +297,94 @@ function MetricCard({
     );
 }
 
+function WorkflowStepCard({
+    step,
+    title,
+    description,
+    icon,
+    action,
+    tone = "primary"
+}: {
+    step: number;
+    title: string;
+    description: string;
+    icon: React.ReactNode;
+    action: React.ReactNode;
+    tone?: "primary" | "success" | "warning";
+}) {
+    const theme = useTheme();
+    const toneColor =
+        tone === "success"
+            ? theme.palette.success.main
+            : tone === "warning"
+                ? theme.palette.warning.main
+                : theme.palette.primary.main;
+
+    return (
+        <Box
+            sx={{
+                p: 2,
+                borderRadius: 1.75,
+                border: `1px solid ${alpha(toneColor, 0.18)}`,
+                background: `linear-gradient(180deg, ${alpha(toneColor, 0.1)}, ${alpha(theme.palette.background.paper, 0.98)} 62%)`,
+                boxShadow: "0 14px 24px rgba(15, 23, 42, 0.05)",
+                height: "100%"
+            }}
+        >
+            <Stack spacing={2} sx={{ height: "100%" }}>
+                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1.5}>
+                    <Stack direction="row" spacing={1.25} alignItems="center">
+                        <Avatar
+                            variant="rounded"
+                            sx={{
+                                width: 44,
+                                height: 44,
+                                borderRadius: 1.5,
+                                bgcolor: alpha(toneColor, 0.14),
+                                color: toneColor
+                            }}
+                        >
+                            {icon}
+                        </Avatar>
+                        <Box>
+                            <Typography variant="caption" color="text.secondary">
+                                Step {step}
+                            </Typography>
+                            <Typography variant="subtitle1" fontWeight={800}>
+                                {title}
+                            </Typography>
+                        </Box>
+                    </Stack>
+                    <Chip
+                        size="small"
+                        label={`0${step}`}
+                        sx={{
+                            bgcolor: alpha(toneColor, 0.1),
+                            color: toneColor,
+                            fontWeight: 700
+                        }}
+                    />
+                </Stack>
+
+                <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.65 }}>
+                    {description}
+                </Typography>
+
+                <Box sx={{ mt: "auto" }}>
+                    {action}
+                </Box>
+            </Stack>
+        </Box>
+    );
+}
+
 export function MembersPage() {
     const theme = useTheme();
     const isDarkMode = theme.palette.mode === "dark";
     const memberAccent = isDarkMode ? "#D9B273" : theme.palette.primary.main;
     const memberAccentStrong = isDarkMode ? "#C89B52" : theme.palette.primary.main;
     const navigate = useNavigate();
+    const { memberId: routeMemberId } = useParams<{ memberId?: string }>();
     const { pushToast } = useToast();
     const { profile, selectedTenantId, selectedTenantName, selectedBranchId } = useAuth();
     const [members, setMembers] = useState<MemberWithAccount[]>([]);
@@ -330,7 +441,8 @@ export function MembersPage() {
     const isTeller = profile?.role === "teller";
     const canOpenCashDesk = profile?.role === "teller";
     const canOpenLoans = profile?.role === "loan_officer";
-    const useModalMemberWorkspace = profile?.role === "branch_manager";
+    const memberWorkspaceRoute = Boolean(profile?.role === "branch_manager" && routeMemberId);
+    const useModalMemberWorkspace = Boolean(profile?.role === "branch_manager" && !memberWorkspaceRoute);
 
     const form = useForm<MemberFormValues>({
         resolver: zodResolver(schema),
@@ -436,34 +548,19 @@ export function MembersPage() {
         setAccountsLoading(true);
 
         try {
-            const fetchAccounts = async (includeSoftDeleteFilter: boolean) => {
-                let query = supabase
-                    .from("member_accounts")
-                    .select("*")
-                    .eq("tenant_id", selectedTenantId)
-                    .in("member_id", scopedMemberIds);
-
-                if (includeSoftDeleteFilter) {
-                    query = query.is("deleted_at", null);
+            const { data } = await api.get<MemberAccountsResponse>(endpoints.members.accounts(), {
+                params: {
+                    tenant_id: selectedTenantId,
+                    member_ids: scopedMemberIds.join(","),
+                    page: 1,
+                    limit: Math.min(Math.max(scopedMemberIds.length * 6, 50), 100)
                 }
+            });
 
-                const { data, error } = await query;
-
-                if (error && includeSoftDeleteFilter && isMissingDeletedAtColumnError(error)) {
-                    return fetchAccounts(false);
-                }
-
-                if (error) {
-                    throw error;
-                }
-
-                return data || [];
-            };
-
-            const data = await fetchAccounts(true);
+            const nextBatchAccounts = data.data || [];
 
             const accountsByMember = new Map<string, MemberAccount[]>();
-            (data || []).forEach((account) => {
+            nextBatchAccounts.forEach((account) => {
                 const typedAccount = account as MemberAccount;
                 const existing = accountsByMember.get(typedAccount.member_id) || [];
                 existing.push(typedAccount);
@@ -579,6 +676,36 @@ export function MembersPage() {
         } finally {
             setSelectedMemberAccountsLoading(false);
         }
+    };
+
+    const loadMemberDetail = async (memberId: string) => {
+        try {
+            const { data } = await api.get<UpdateMemberResponse>(endpoints.members.detail(memberId));
+            const member = data.data;
+            setSelectedMember({
+                ...member,
+                account: pickPrimaryMemberAccount(memberAccountsByMember[member.id] || [])
+            });
+        } catch (error) {
+            pushToast({
+                type: "error",
+                title: "Unable to open member workspace",
+                message: getApiErrorMessage(error)
+            });
+            navigate("/members");
+        }
+    };
+
+    const closeMemberWorkspace = () => {
+        setShowUpdateMemberForm(false);
+        setSelectedMember(null);
+
+        if (memberWorkspaceRoute) {
+            navigate("/members");
+            return;
+        }
+
+        setShowMemberWorkspaceModal(false);
     };
 
     const loadMembers = async () => {
@@ -715,6 +842,20 @@ export function MembersPage() {
             setBranchFilter(selectedBranchId);
         }
     }, [branchFilter, selectedBranchId]);
+
+    useEffect(() => {
+        if (!routeMemberId || profile?.role !== "branch_manager") {
+            return;
+        }
+
+        const existingMember = members.find((member) => member.id === routeMemberId);
+        if (existingMember) {
+            setSelectedMember(existingMember);
+            return;
+        }
+
+        void loadMemberDetail(routeMemberId);
+    }, [members, profile?.role, routeMemberId]);
 
     useEffect(() => {
         if (!selectedMember?.id) {
@@ -1206,6 +1347,10 @@ export function MembersPage() {
     const handleSelectMember = (member: MemberWithAccount) => {
         setSelectedMember(member);
         setShowUpdateMemberForm(false);
+        if (profile?.role === "branch_manager") {
+            navigate(`/members/${member.id}`);
+            return;
+        }
         if (useModalMemberWorkspace) {
             setShowMemberWorkspaceModal(true);
         }
@@ -1278,7 +1423,7 @@ export function MembersPage() {
                     return row.account.account_number;
                 }
 
-                return accountsLoading ? "Syncing..." : "Provisioning...";
+                return accountsLoading ? "Syncing..." : "Not provisioned";
             }
         },
         {
@@ -1307,7 +1452,7 @@ export function MembersPage() {
                     size="small"
                     onClick={() => handleSelectMember(row)}
                 >
-                    {selectedMember?.id === row.id ? "Opened" : "Open"}
+                    {selectedMember?.id === row.id ? "Opened" : profile?.role === "branch_manager" ? "Manage" : "Open"}
                 </Button>
             )
         }
@@ -1340,98 +1485,266 @@ export function MembersPage() {
                 sx={{
                     borderRadius: 2,
                     overflow: "hidden",
+                    borderColor: alpha(memberAccentStrong, isTeller ? 0.16 : 0.12),
                     background: isTeller
                         ? `linear-gradient(135deg, ${alpha(memberAccent, isDarkMode ? 0.16 : 0.12)}, ${alpha(theme.palette.success.main, 0.06)} 58%, ${alpha(theme.palette.background.paper, 0.96)})`
-                        : `linear-gradient(135deg, ${alpha(memberAccent, isDarkMode ? 0.12 : 0.08)}, ${alpha(theme.palette.background.paper, 0.92)})`
+                        : `linear-gradient(135deg, ${alpha(memberAccentStrong, isDarkMode ? 0.2 : 0.1)}, ${alpha("#0f172a", isDarkMode ? 0.18 : 0.02)} 42%, ${alpha(theme.palette.background.paper, 0.98)} 78%)`,
+                    boxShadow: isTeller ? undefined : "0 18px 36px rgba(15, 23, 42, 0.07)"
                 }}
             >
-                <CardContent>
-                    <Stack spacing={2.25}>
-                        <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={2}>
-                            <Box>
-                                <Typography variant="h5">{isTeller ? "Member Service Desk" : "Member Registry"}</Typography>
-                                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75, maxWidth: 760 }}>
-                                    {isTeller
-                                        ? "Search members quickly, confirm savings-account readiness, and move straight into teller operations with the correct account context."
-                                        : "Onboard members, monitor savings readiness, and manage member access without leaving the tenant workspace."}
-                                </Typography>
-                            </Box>
-                            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
-                                {profile?.role === "branch_manager" ? (
-                                    <Button
-                                        variant={showOnboardForm ? "outlined" : "contained"}
-                                        startIcon={<PersonAddAlt1RoundedIcon />}
-                                        onClick={() => setShowOnboardForm((current) => !current)}
+                <CardContent sx={{ p: { xs: 2.25, md: 3 } }}>
+                    {profile?.role === "branch_manager" ? (
+                        <Stack spacing={2.5}>
+                            <Grid container spacing={2.5} alignItems="stretch">
+                                <Grid size={{ xs: 12, lg: 7.5 }}>
+                                    <Stack spacing={2.25}>
+                                        <Stack direction="row" spacing={1.5} alignItems="center">
+                                            <Avatar
+                                                variant="rounded"
+                                                sx={{
+                                                    width: 54,
+                                                    height: 54,
+                                                    borderRadius: 2,
+                                                    bgcolor: alpha(memberAccentStrong, 0.12),
+                                                    color: memberAccentStrong
+                                                }}
+                                            >
+                                                <AssignmentIndRoundedIcon />
+                                            </Avatar>
+                                            <Box>
+                                                <Typography
+                                                    variant="overline"
+                                                    sx={{
+                                                        color: memberAccentStrong,
+                                                        letterSpacing: "0.18em",
+                                                        fontWeight: 800
+                                                    }}
+                                                >
+                                                    Branch manager workspace
+                                                </Typography>
+                                                <Typography variant="body2" color="text.secondary">
+                                                    Member onboarding, access control, and readiness checks from one branch surface.
+                                                </Typography>
+                                            </Box>
+                                        </Stack>
+
+                                        <Box>
+                                            <Typography variant="h4" sx={{ fontWeight: 900, letterSpacing: "-0.04em" }}>
+                                                Member Registry
+                                            </Typography>
+                                            <Typography variant="body1" color="text.secondary" sx={{ mt: 1, maxWidth: 760, lineHeight: 1.75 }}>
+                                                Run onboarding, clear setup gaps, and keep every member operationally ready without bouncing across separate admin screens.
+                                            </Typography>
+                                        </Box>
+
+                                        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
+                                            <Chip
+                                                label={selectedTenantName || "Tenant workspace"}
+                                                variant="outlined"
+                                                sx={{ bgcolor: alpha(theme.palette.background.paper, 0.58), backdropFilter: "blur(10px)" }}
+                                            />
+                                            <Chip
+                                                label={`Role: ${profile ? formatRole(profile.role) : "Setup"}`}
+                                                variant="outlined"
+                                                sx={{ bgcolor: alpha(theme.palette.background.paper, 0.58), backdropFilter: "blur(10px)" }}
+                                            />
+                                            {accountsLoading ? (
+                                                <Chip
+                                                    label="Syncing account readiness..."
+                                                    size="small"
+                                                    variant="outlined"
+                                                    sx={{ bgcolor: alpha(theme.palette.background.paper, 0.58), backdropFilter: "blur(10px)" }}
+                                                />
+                                            ) : null}
+                                        </Stack>
+                                    </Stack>
+                                </Grid>
+
+                                <Grid size={{ xs: 12, lg: 4.5 }}>
+                                    <Box
+                                        sx={{
+                                            height: "100%",
+                                            p: 2.25,
+                                            borderRadius: 2,
+                                            border: `1px solid ${alpha(memberAccentStrong, 0.16)}`,
+                                            background: alpha(theme.palette.background.paper, 0.74),
+                                            backdropFilter: "blur(12px)",
+                                            boxShadow: "0 16px 28px rgba(15, 23, 42, 0.08)"
+                                        }}
                                     >
-                                        {showOnboardForm ? "Close Onboarding" : "Onboard Member"}
-                                    </Button>
-                                ) : null}
-                                {profile?.role === "branch_manager" ? (
-                                    <Button
-                                        variant="outlined"
-                                        startIcon={<UploadFileRoundedIcon />}
-                                        onClick={() => navigate("/members/import")}
-                                    >
-                                        Import CSV
-                                    </Button>
-                                ) : null}
-                                {profile?.role === "branch_manager" ? (
-                                    <Button
-                                        variant="outlined"
-                                        startIcon={<UploadFileRoundedIcon />}
-                                        onClick={() => navigate("/members/import?mode=update-existing")}
-                                    >
-                                        Update Existing
-                                    </Button>
-                                ) : null}
-                                {profile?.role === "branch_manager" ? (
-                                    <Button
-                                        variant="outlined"
-                                        startIcon={<BadgeRoundedIcon />}
-                                        onClick={() => navigate("/staff-users")}
-                                    >
-                                        Team Access
-                                    </Button>
-                                ) : null}
+                                        <Stack spacing={1.5}>
+                                            <Box>
+                                                <Typography variant="overline" sx={{ color: memberAccentStrong, letterSpacing: "0.14em", fontWeight: 800 }}>
+                                                    Quick actions
+                                                </Typography>
+                                                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                                                    Launch the next operational move directly from the registry.
+                                                </Typography>
+                                            </Box>
+
+                                            <Grid container spacing={1}>
+                                                <Grid size={{ xs: 12, sm: 6 }}>
+                                                    <Button
+                                                        fullWidth
+                                                        variant={showOnboardForm ? "outlined" : "contained"}
+                                                        startIcon={<PersonAddAlt1RoundedIcon />}
+                                                        onClick={() => setShowOnboardForm((current) => !current)}
+                                                        sx={{ justifyContent: "flex-start", py: 1.15, borderRadius: 1.5 }}
+                                                    >
+                                                        {showOnboardForm ? "Close Onboarding" : "Onboard Member"}
+                                                    </Button>
+                                                </Grid>
+                                                <Grid size={{ xs: 12, sm: 6 }}>
+                                                    <Button
+                                                        fullWidth
+                                                        variant="outlined"
+                                                        startIcon={<BadgeRoundedIcon />}
+                                                        onClick={() => navigate("/staff-users")}
+                                                        sx={{ justifyContent: "flex-start", py: 1.15, borderRadius: 1.5 }}
+                                                    >
+                                                        Team Access
+                                                    </Button>
+                                                </Grid>
+                                                <Grid size={{ xs: 12, sm: 6 }}>
+                                                    <Button
+                                                        fullWidth
+                                                        variant="outlined"
+                                                        startIcon={<UploadFileRoundedIcon />}
+                                                        onClick={() => navigate("/members/import")}
+                                                        sx={{ justifyContent: "flex-start", py: 1.15, borderRadius: 1.5 }}
+                                                    >
+                                                        Import CSV
+                                                    </Button>
+                                                </Grid>
+                                                <Grid size={{ xs: 12, sm: 6 }}>
+                                                    <Button
+                                                        fullWidth
+                                                        variant="outlined"
+                                                        startIcon={<UploadFileRoundedIcon />}
+                                                        onClick={() => navigate("/members/import?mode=update-existing")}
+                                                        sx={{ justifyContent: "flex-start", py: 1.15, borderRadius: 1.5 }}
+                                                    >
+                                                        Update Existing
+                                                    </Button>
+                                                </Grid>
+                                            </Grid>
+                                        </Stack>
+                                    </Box>
+                                </Grid>
+                            </Grid>
+
+                            <Grid container spacing={1.25}>
+                                {[
+                                    {
+                                        key: "needs_review",
+                                        label: "Needs review",
+                                        value: branchManagerActionCounts.needsReview,
+                                        icon: <SearchRoundedIcon fontSize="small" />,
+                                        active: operationalFilter === "needs_review",
+                                        tone: theme.palette.warning.main,
+                                        enabled: true
+                                    },
+                                    {
+                                        key: "needs_login",
+                                        label: "Missing login",
+                                        value: branchManagerActionCounts.needsLogin,
+                                        icon: <LockPersonRoundedIcon fontSize="small" />,
+                                        active: operationalFilter === "needs_login",
+                                        tone: theme.palette.info.main,
+                                        enabled: true
+                                    },
+                                    {
+                                        key: "needs_account",
+                                        label: "Missing account",
+                                        value: accountsLoaded ? branchManagerActionCounts.needsAccount : null,
+                                        icon: <AccountBalanceWalletRoundedIcon fontSize="small" />,
+                                        active: operationalFilter === "needs_account",
+                                        tone: theme.palette.warning.dark,
+                                        enabled: accountsLoaded
+                                    },
+                                    {
+                                        key: "ready",
+                                        label: "Ready",
+                                        value: accountsLoaded ? branchManagerActionCounts.ready : null,
+                                        icon: <PaidRoundedIcon fontSize="small" />,
+                                        active: operationalFilter === "ready",
+                                        tone: theme.palette.success.main,
+                                        enabled: accountsLoaded
+                                    }
+                                ].map((item) => (
+                                    <Grid key={item.key} size={{ xs: 12, sm: 6, lg: 3 }}>
+                                        <Box
+                                            role={item.enabled ? "button" : undefined}
+                                            tabIndex={item.enabled ? 0 : -1}
+                                            onClick={item.enabled ? () => setOperationalFilter((current) => current === item.key ? "all" : item.key as MemberOperationalFilter) : undefined}
+                                            sx={{
+                                                p: 1.6,
+                                                borderRadius: 1.75,
+                                                border: `1px solid ${alpha(item.tone, item.active ? 0.32 : 0.12)}`,
+                                                bgcolor: item.active ? alpha(item.tone, 0.14) : alpha(theme.palette.background.paper, 0.62),
+                                                boxShadow: item.active ? `0 12px 24px ${alpha(item.tone, 0.12)}` : "none",
+                                                transition: "all 0.2s ease",
+                                                cursor: item.enabled ? "pointer" : "default",
+                                                "&:hover": item.enabled
+                                                    ? {
+                                                        borderColor: alpha(item.tone, 0.26),
+                                                        transform: "translateY(-1px)"
+                                                    }
+                                                    : undefined
+                                            }}
+                                        >
+                                            <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1.5}>
+                                                <Stack direction="row" spacing={1.25} alignItems="center">
+                                                    <Avatar
+                                                        variant="rounded"
+                                                        sx={{
+                                                            width: 38,
+                                                            height: 38,
+                                                            borderRadius: 1.5,
+                                                            bgcolor: alpha(item.tone, 0.14),
+                                                            color: item.tone
+                                                        }}
+                                                    >
+                                                        {item.icon}
+                                                    </Avatar>
+                                                    <Box>
+                                                        <Typography variant="caption" color="text.secondary">
+                                                            Operational queue
+                                                        </Typography>
+                                                        <Typography variant="subtitle2" fontWeight={800}>
+                                                            {item.label}
+                                                        </Typography>
+                                                    </Box>
+                                                </Stack>
+                                                <Typography variant="h5" sx={{ fontWeight: 900, color: item.tone }}>
+                                                    {item.value ?? "…"}
+                                                </Typography>
+                                            </Stack>
+                                        </Box>
+                                    </Grid>
+                                ))}
+                            </Grid>
+                        </Stack>
+                    ) : (
+                        <Stack spacing={2.25}>
+                            <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={2}>
+                                <Box>
+                                    <Typography variant="h5">{isTeller ? "Member Service Desk" : "Member Registry"}</Typography>
+                                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75, maxWidth: 760 }}>
+                                        {isTeller
+                                            ? "Search members quickly, confirm savings-account readiness, and move straight into teller operations with the correct account context."
+                                            : "Onboard members, monitor savings readiness, and manage member access without leaving the tenant workspace."}
+                                    </Typography>
+                                </Box>
+                                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
+                                    <Chip label={selectedTenantName || "Tenant workspace"} variant="outlined" />
+                                    <Chip label={`Role: ${profile ? formatRole(profile.role) : "Setup"}`} variant="outlined" />
+                                    {accountsLoading ? <Chip label="Syncing account readiness..." size="small" variant="outlined" /> : null}
+                                    {isTeller ? <Chip label="Cash Service Mode" color="success" /> : null}
+                                </Stack>
                             </Stack>
                         </Stack>
-
-                        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
-                            <Chip label={selectedTenantName || "Tenant workspace"} variant="outlined" />
-                            <Chip label={`Role: ${profile ? formatRole(profile.role) : "Setup"}`} variant="outlined" />
-                            {accountsLoading ? <Chip label="Syncing account readiness..." size="small" variant="outlined" /> : null}
-                            {isTeller ? <Chip label="Cash Service Mode" color="success" /> : null}
-                        </Stack>
-
-                        {profile?.role === "branch_manager" ? (
-                            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                                <Chip
-                                    label={`Needs review: ${branchManagerActionCounts.needsReview}`}
-                                    color={operationalFilter === "needs_review" ? "warning" : "default"}
-                                    variant={operationalFilter === "needs_review" ? "filled" : "outlined"}
-                                    onClick={() => setOperationalFilter((current) => current === "needs_review" ? "all" : "needs_review")}
-                                />
-                                <Chip
-                                    label={`Missing login: ${branchManagerActionCounts.needsLogin}`}
-                                    color={operationalFilter === "needs_login" ? "warning" : "default"}
-                                    variant={operationalFilter === "needs_login" ? "filled" : "outlined"}
-                                    onClick={() => setOperationalFilter((current) => current === "needs_login" ? "all" : "needs_login")}
-                                />
-                                <Chip
-                                    label={accountsLoaded ? `Missing account: ${branchManagerActionCounts.needsAccount}` : "Missing account: syncing..."}
-                                    color={accountsLoaded && operationalFilter === "needs_account" ? "warning" : "default"}
-                                    variant={accountsLoaded && operationalFilter === "needs_account" ? "filled" : "outlined"}
-                                    onClick={accountsLoaded ? () => setOperationalFilter((current) => current === "needs_account" ? "all" : "needs_account") : undefined}
-                                />
-                                <Chip
-                                    label={accountsLoaded ? `Ready: ${branchManagerActionCounts.ready}` : "Ready: syncing..."}
-                                    color={accountsLoaded && operationalFilter === "ready" ? "success" : "default"}
-                                    variant={accountsLoaded && operationalFilter === "ready" ? "filled" : "outlined"}
-                                    onClick={accountsLoaded ? () => setOperationalFilter((current) => current === "ready" ? "all" : "ready") : undefined}
-                                />
-                            </Stack>
-                        ) : null}
-                    </Stack>
+                    )}
                 </CardContent>
             </MotionCard>
 
@@ -1442,6 +1755,7 @@ export function MembersPage() {
                         value={String(memberCounts.total)}
                         helper={isTeller ? "Members available for teller lookup." : "Profiles provisioned in this tenant."}
                         icon={<BadgeRoundedIcon fontSize="small" />}
+                        tone="primary"
                     />
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
@@ -1450,6 +1764,7 @@ export function MembersPage() {
                         value={String(isTeller ? tellerReadyCount : memberCounts.active)}
                         helper={isTeller ? "Active members with a provisioned savings account." : "Members currently eligible for service."}
                         icon={isTeller ? <PaidRoundedIcon fontSize="small" /> : <PersonAddAlt1RoundedIcon fontSize="small" />}
+                        tone="success"
                     />
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
@@ -1458,6 +1773,7 @@ export function MembersPage() {
                         value={String(isTeller ? tellerNeedsFollowUpCount : memberCounts.linkedLogins)}
                         helper={isTeller ? "Members needing escalation before cash service." : "Members with self-service access."}
                         icon={isTeller ? <SearchRoundedIcon fontSize="small" /> : <LockPersonRoundedIcon fontSize="small" />}
+                        tone={isTeller ? "warning" : "neutral"}
                     />
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
@@ -1468,6 +1784,7 @@ export function MembersPage() {
                             ? (isTeller ? "Current visible balances across teller-served accounts." : "Visible savings across primary accounts.")
                             : "Account balances are loading in the background."}
                         icon={<AccountBalanceWalletRoundedIcon fontSize="small" />}
+                        tone="warning"
                     />
                 </Grid>
             </Grid>
@@ -1542,7 +1859,7 @@ export function MembersPage() {
             ) : null}
 
             <Grid container spacing={2}>
-                <Grid size={{ xs: 12, xl: useModalMemberWorkspace ? 12 : 7 }}>
+                <Grid size={{ xs: 12, xl: memberWorkspaceRoute ? 12 : useModalMemberWorkspace ? 12 : 7 }}>
                     {isTeller ? (
                         <MotionCard
                             variant="outlined"
@@ -1594,96 +1911,102 @@ export function MembersPage() {
                     ) : canCreateMembers ? (
                         (
                             <MotionCard variant="outlined">
-                                <CardContent>
+                                <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
                                     <Stack spacing={2.25}>
-                                        <Box>
-                                            <Typography variant="h6">Branch Manager Workflow</Typography>
-                                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+                                        <Stack direction="row" spacing={1.5} alignItems="center">
+                                            <Avatar
+                                                variant="rounded"
+                                                sx={{
+                                                    width: 50,
+                                                    height: 50,
+                                                    borderRadius: 2,
+                                                    bgcolor: alpha(memberAccentStrong, 0.12),
+                                                    color: memberAccentStrong
+                                                }}
+                                            >
+                                                <RuleRoundedIcon />
+                                            </Avatar>
+                                            <Box>
+                                                <Typography variant="h6">Branch Manager Workflow</Typography>
+                                                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                                                    Sequence the branch work cleanly: onboard, remove readiness blockers, then move into staff and bulk operations.
+                                                </Typography>
+                                            </Box>
+                                        </Stack>
+
+                                        <Box
+                                            sx={{
+                                                p: 2,
+                                                borderRadius: 2,
+                                                border: `1px solid ${alpha(memberAccentStrong, 0.12)}`,
+                                                background: `linear-gradient(180deg, ${alpha(memberAccentStrong, 0.08)}, ${alpha(theme.palette.background.paper, 0.98)} 68%)`
+                                            }}
+                                        >
+                                            <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.7 }}>
                                                 Use this sequence to keep member operations predictable: onboard profile, resolve setup gaps, then open member workspace for profile and access actions.
                                             </Typography>
                                         </Box>
 
                                         <Grid container spacing={1.5}>
                                             <Grid size={{ xs: 12, md: 4 }}>
-                                                <Box
-                                                    sx={{
-                                                        p: 1.5,
-                                                        border: `1px solid ${theme.palette.divider}`,
-                                                        borderRadius: 2,
-                                                        bgcolor: alpha(theme.palette.background.default, 0.5),
-                                                        height: "100%"
-                                                    }}
-                                                >
-                                                    <Typography variant="caption" color="text.secondary">
-                                                        1. Onboard
-                                                    </Typography>
-                                                    <Typography variant="body2" sx={{ mt: 0.5, fontWeight: 600 }}>
-                                                        Create a new member profile with savings and share accounts.
-                                                    </Typography>
-                                                    <Button
-                                                        size="small"
-                                                        variant="contained"
-                                                        sx={{ mt: 1.5 }}
-                                                        onClick={() => setShowOnboardForm(true)}
-                                                    >
-                                                        Open Onboarding
-                                                    </Button>
-                                                </Box>
+                                                <WorkflowStepCard
+                                                    step={1}
+                                                    title="Onboard member"
+                                                    description="Create a branch-ready profile and start the savings/share setup from the same workspace."
+                                                    icon={<PersonAddAlt1RoundedIcon fontSize="small" />}
+                                                    tone="primary"
+                                                    action={(
+                                                        <Button
+                                                            size="small"
+                                                            variant="contained"
+                                                            sx={{ borderRadius: 2 }}
+                                                            onClick={() => setShowOnboardForm(true)}
+                                                        >
+                                                            Open Onboarding
+                                                        </Button>
+                                                    )}
+                                                />
                                             </Grid>
                                             <Grid size={{ xs: 12, md: 4 }}>
-                                                <Box
-                                                    sx={{
-                                                        p: 1.5,
-                                                        border: `1px solid ${theme.palette.divider}`,
-                                                        borderRadius: 2,
-                                                        bgcolor: alpha(theme.palette.background.default, 0.5),
-                                                        height: "100%"
-                                                    }}
-                                                >
-                                                    <Typography variant="caption" color="text.secondary">
-                                                        2. Resolve Issues
-                                                    </Typography>
-                                                    <Typography variant="body2" sx={{ mt: 0.5, fontWeight: 600 }}>
-                                                        Focus on members missing login or account setup.
-                                                    </Typography>
-                                                    <Button
-                                                        size="small"
-                                                        variant="outlined"
-                                                        sx={{ mt: 1.5 }}
-                                                        onClick={() => setOperationalFilter("needs_review")}
-                                                    >
-                                                        Show Pending Queue
-                                                    </Button>
-                                                </Box>
+                                                <WorkflowStepCard
+                                                    step={2}
+                                                    title="Resolve blockers"
+                                                    description="Focus the queue on members missing logins, accounts, or active readiness before handing them forward."
+                                                    icon={<InsightsRoundedIcon fontSize="small" />}
+                                                    tone="warning"
+                                                    action={(
+                                                        <Button
+                                                            size="small"
+                                                            variant="outlined"
+                                                            sx={{ borderRadius: 2 }}
+                                                            onClick={() => setOperationalFilter("needs_review")}
+                                                        >
+                                                            Show Pending Queue
+                                                        </Button>
+                                                    )}
+                                                />
                                             </Grid>
                                             <Grid size={{ xs: 12, md: 4 }}>
-                                                <Box
-                                                    sx={{
-                                                        p: 1.5,
-                                                        border: `1px solid ${theme.palette.divider}`,
-                                                        borderRadius: 2,
-                                                        bgcolor: alpha(theme.palette.background.default, 0.5),
-                                                        height: "100%"
-                                                    }}
-                                                >
-                                                    <Typography variant="caption" color="text.secondary">
-                                                        3. Team Operations
-                                                    </Typography>
-                                                    <Typography variant="body2" sx={{ mt: 0.5, fontWeight: 600 }}>
-                                                        Manage staff access and bulk imports without leaving this module.
-                                                    </Typography>
-                                                    <Stack direction="row" spacing={1} sx={{ mt: 1.5 }}>
-                                                        <Button size="small" variant="outlined" onClick={() => navigate("/staff-users")}>
-                                                            Staff Access
-                                                        </Button>
-                                                        <Button size="small" variant="outlined" onClick={() => navigate("/members/import")}>
-                                                            Import
-                                                        </Button>
-                                                        <Button size="small" variant="outlined" onClick={() => navigate("/members/import?mode=update-existing")}>
-                                                            Update Existing
-                                                        </Button>
-                                                    </Stack>
-                                                </Box>
+                                                <WorkflowStepCard
+                                                    step={3}
+                                                    title="Run team ops"
+                                                    description="Move into staff access, imports, and update cycles without leaving the branch member module."
+                                                    icon={<BadgeRoundedIcon fontSize="small" />}
+                                                    tone="success"
+                                                    action={(
+                                                        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                                                            <Button size="small" variant="outlined" sx={{ borderRadius: 2 }} onClick={() => navigate("/staff-users")}>
+                                                                Staff Access
+                                                            </Button>
+                                                            <Button size="small" variant="outlined" sx={{ borderRadius: 2 }} onClick={() => navigate("/members/import")}>
+                                                                Import
+                                                            </Button>
+                                                            <Button size="small" variant="outlined" sx={{ borderRadius: 2 }} onClick={() => navigate("/members/import?mode=update-existing")}>
+                                                                Update Existing
+                                                            </Button>
+                                                        </Stack>
+                                                    )}
+                                                />
                                             </Grid>
                                         </Grid>
                                     </Stack>
@@ -1703,7 +2026,7 @@ export function MembersPage() {
                 </Grid>
 
                 <Grid
-                    size={{ xs: 12, xl: 5 }}
+                    size={{ xs: 12, xl: memberWorkspaceRoute ? 12 : 5 }}
                     sx={
                         useModalMemberWorkspace
                             ? {
@@ -1718,7 +2041,7 @@ export function MembersPage() {
                             }
                             : undefined
                     }
-                    onClick={useModalMemberWorkspace ? () => setShowMemberWorkspaceModal(false) : undefined}
+                    onClick={useModalMemberWorkspace ? closeMemberWorkspace : undefined}
                 >
                     <Box
                         sx={useModalMemberWorkspace ? { width: "min(860px, calc(100vw - 24px))" } : undefined}
@@ -1730,32 +2053,42 @@ export function MembersPage() {
                             height: useModalMemberWorkspace ? "auto" : "100%",
                             maxHeight: useModalMemberWorkspace ? "86vh" : undefined,
                             overflowY: useModalMemberWorkspace ? "auto" : undefined,
-                            borderRadius: useModalMemberWorkspace ? 3 : 2,
+                            borderRadius: useModalMemberWorkspace ? 2.5 : 2,
                             boxShadow: useModalMemberWorkspace ? theme.shadows[24] : undefined,
                             background: isTeller
                                 ? `linear-gradient(180deg, ${alpha(theme.palette.background.paper, 0.98)}, ${alpha(memberAccent, 0.06)})`
-                                : undefined
+                                : memberWorkspaceRoute
+                                    ? `linear-gradient(180deg, ${alpha(memberAccentStrong, 0.06)}, ${alpha(theme.palette.background.paper, 0.99)} 62%)`
+                                    : undefined
                         }}
                     >
                         <CardContent>
                             <Stack spacing={2}>
                                 <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
                                     <Box>
-                                        <Typography variant="h6">{isTeller ? "Member Service Snapshot" : "Member Detail Workspace"}</Typography>
+                                        <Typography variant="h6">{isTeller ? "Member Service Snapshot" : memberWorkspaceRoute ? "Member Management Workspace" : "Member Detail Workspace"}</Typography>
                                         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                                             {isTeller
                                                 ? "Select a member to confirm service readiness, inspect the primary savings account, and launch directly into the cash desk."
-                                                : "Select a member from the registry to review profile data, route to cash or loans, and manage login access."}
+                                                : memberWorkspaceRoute
+                                                    ? "Manage the selected member in a dedicated workspace for profile, accounts, and access operations."
+                                                    : "Select a member from the registry to review profile data, route to cash or loans, and manage login access."}
                                         </Typography>
                                     </Box>
-                                    {useModalMemberWorkspace ? (
+                                    {memberWorkspaceRoute ? (
                                         <Button
                                             size="small"
                                             color="inherit"
-                                            onClick={() => {
-                                                setShowUpdateMemberForm(false);
-                                                setShowMemberWorkspaceModal(false);
-                                            }}
+                                            startIcon={<ArrowBackRoundedIcon />}
+                                            onClick={closeMemberWorkspace}
+                                        >
+                                            Back to registry
+                                        </Button>
+                                    ) : useModalMemberWorkspace ? (
+                                        <Button
+                                            size="small"
+                                            color="inherit"
+                                            onClick={closeMemberWorkspace}
                                         >
                                             Close
                                         </Button>
@@ -2262,16 +2595,30 @@ export function MembersPage() {
                         justifyContent="space-between"
                         alignItems={{ xs: "flex-start", md: "center" }}
                         spacing={1.5}
-                        sx={{ mb: 1.5 }}
+                        sx={{ mb: 1.75 }}
                     >
-                        <Box>
-                            <Typography variant="h6">{isTeller ? "Service Queue" : "Member Directory"}</Typography>
-                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                                {isTeller
-                                    ? "Search by name, phone, or national ID, then open the service snapshot for cash handling."
-                                    : "Search and filter by setup readiness, then open the member workspace for profile and access actions."}
-                            </Typography>
-                        </Box>
+                        <Stack direction="row" spacing={1.5} alignItems="center">
+                            <Avatar
+                                variant="rounded"
+                                sx={{
+                                    width: 46,
+                                    height: 46,
+                                    borderRadius: 1.5,
+                                    bgcolor: alpha(memberAccentStrong, 0.12),
+                                    color: memberAccentStrong
+                                }}
+                            >
+                                <BadgeRoundedIcon />
+                            </Avatar>
+                            <Box>
+                                <Typography variant="h6">{isTeller ? "Service Queue" : "Member Directory"}</Typography>
+                                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                                    {isTeller
+                                        ? "Search by name, phone, or national ID, then open the service snapshot for cash handling."
+                                        : "Search and filter by setup readiness, then open the member workspace for profile and access actions."}
+                                </Typography>
+                            </Box>
+                        </Stack>
                         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                             <Chip label={`${visibleResultCount} result${visibleResultCount === 1 ? "" : "s"}`} />
                             {canDeleteMembers ? (
@@ -2319,76 +2666,85 @@ export function MembersPage() {
                         </Stack>
                     </Stack>
 
-                    <Stack
-                        direction={{ xs: "column", md: "row" }}
-                        spacing={1.25}
-                        alignItems={{ xs: "stretch", md: "center" }}
-                        sx={{ mb: 2 }}
+                    <Box
+                        sx={{
+                            mb: 2,
+                            p: 1.5,
+                            borderRadius: 1.75,
+                            border: `1px solid ${alpha(memberAccentStrong, 0.12)}`,
+                            background: alpha(memberAccentStrong, 0.04)
+                        }}
                     >
-                        <TextField
-                            value={search}
-                            onChange={(event) => setSearch(event.target.value)}
-                            placeholder="Search members..."
-                            size="small"
-                            sx={{
-                                width: { xs: "100%", md: 300 },
-                                "& .MuiOutlinedInput-root": {
-                                    bgcolor: alpha(theme.palette.background.default, 0.55),
-                                    borderRadius: 2
-                                }
-                            }}
-                            InputProps={{
-                                startAdornment: (
-                                    <InputAdornment position="start">
-                                        <SearchRoundedIcon fontSize="small" />
-                                    </InputAdornment>
-                                )
-                            }}
-                        />
-                        <TextField
-                            select
-                            label="Status"
-                            size="small"
-                            value={statusFilter}
-                            onChange={(event) => setStatusFilter(event.target.value as MemberStatusFilter)}
-                            sx={{ minWidth: { xs: "100%", md: 170 } }}
+                        <Stack
+                            direction={{ xs: "column", md: "row" }}
+                            spacing={1.25}
+                            alignItems={{ xs: "stretch", md: "center" }}
                         >
-                            <MenuItem value="all">All status</MenuItem>
-                            <MenuItem value="active">Active</MenuItem>
-                            <MenuItem value="suspended">Suspended</MenuItem>
-                            <MenuItem value="exited">Exited</MenuItem>
-                            <MenuItem value="approved_pending_payment">Awaiting fee</MenuItem>
-                        </TextField>
-                        <TextField
-                            select
-                            label={isTeller ? "Service View" : "Operational View"}
-                            size="small"
-                            value={operationalFilter}
-                            onChange={(event) => setOperationalFilter(event.target.value as MemberOperationalFilter)}
-                            sx={{ minWidth: { xs: "100%", md: 220 } }}
-                        >
-                            <MenuItem value="all">All members</MenuItem>
-                            <MenuItem value="ready">Ready for service</MenuItem>
-                            <MenuItem value="needs_review">Needs review</MenuItem>
-                            <MenuItem value="needs_login">Missing login</MenuItem>
-                            <MenuItem value="needs_account">Missing account</MenuItem>
-                        </TextField>
-                        <TextField
-                            select
-                            label="Branch"
-                            size="small"
-                            value={branchFilter}
-                            onChange={(event) => setBranchFilter(event.target.value)}
-                            sx={{ minWidth: { xs: "100%", md: 220 } }}
-                        >
-                            <MenuItem value="all">All branches</MenuItem>
-                            {branches.map((branch) => (
-                                <MenuItem key={branch.id} value={branch.id}>
-                                    {branch.name}
-                                </MenuItem>
-                            ))}
-                        </TextField>
-                    </Stack>
+                            <TextField
+                                value={search}
+                                onChange={(event) => setSearch(event.target.value)}
+                                placeholder="Search members..."
+                                size="small"
+                                sx={{
+                                    width: { xs: "100%", md: 300 },
+                                    "& .MuiOutlinedInput-root": {
+                                        bgcolor: alpha(theme.palette.background.paper, 0.84),
+                                        borderRadius: 1.5
+                                    }
+                                }}
+                                InputProps={{
+                                    startAdornment: (
+                                        <InputAdornment position="start">
+                                            <SearchRoundedIcon fontSize="small" />
+                                        </InputAdornment>
+                                    )
+                                }}
+                            />
+                            <TextField
+                                select
+                                label="Status"
+                                size="small"
+                                value={statusFilter}
+                                onChange={(event) => setStatusFilter(event.target.value as MemberStatusFilter)}
+                                sx={{ minWidth: { xs: "100%", md: 170 } }}
+                            >
+                                <MenuItem value="all">All status</MenuItem>
+                                <MenuItem value="active">Active</MenuItem>
+                                <MenuItem value="suspended">Suspended</MenuItem>
+                                <MenuItem value="exited">Exited</MenuItem>
+                                <MenuItem value="approved_pending_payment">Awaiting fee</MenuItem>
+                            </TextField>
+                            <TextField
+                                select
+                                label={isTeller ? "Service View" : "Operational View"}
+                                size="small"
+                                value={operationalFilter}
+                                onChange={(event) => setOperationalFilter(event.target.value as MemberOperationalFilter)}
+                                sx={{ minWidth: { xs: "100%", md: 220 } }}
+                            >
+                                <MenuItem value="all">All members</MenuItem>
+                                <MenuItem value="ready">Ready for service</MenuItem>
+                                <MenuItem value="needs_review">Needs review</MenuItem>
+                                <MenuItem value="needs_login">Missing login</MenuItem>
+                                <MenuItem value="needs_account">Missing account</MenuItem>
+                            </TextField>
+                            <TextField
+                                select
+                                label="Branch"
+                                size="small"
+                                value={branchFilter}
+                                onChange={(event) => setBranchFilter(event.target.value)}
+                                sx={{ minWidth: { xs: "100%", md: 220 } }}
+                            >
+                                <MenuItem value="all">All branches</MenuItem>
+                                {branches.map((branch) => (
+                                    <MenuItem key={branch.id} value={branch.id}>
+                                        {branch.name}
+                                    </MenuItem>
+                                ))}
+                            </TextField>
+                        </Stack>
+                    </Box>
 
                     {loading ? (
                         <AppLoader fullscreen={false} minHeight={280} message="Loading members..." />

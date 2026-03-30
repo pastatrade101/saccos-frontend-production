@@ -258,12 +258,6 @@ const schema = z.object({
 
 type SignupValues = z.infer<typeof schema>;
 
-const featurePoints = [
-    "Capture compliance-required identity, address, and next-of-kin information before branch review.",
-    "Upload the national ID and passport photo as part of the same onboarding flow.",
-    "Move directly into branch review, approval, and membership-fee activation without duplicate data entry."
-] as const;
-
 function StepShell({
     title,
     description,
@@ -1154,36 +1148,33 @@ export function SignupPage() {
             >
                 <Box
                     sx={{
-                        px: { xs: 2.25, md: 3.5 },
-                        py: { xs: 2.25, md: 2.2 },
+                        px: { xs: 2, md: 3, lg: 3.5 },
+                        py: { xs: 1.75, md: 1.8, lg: 2.1 },
                         flexShrink: 0,
                         borderBottom: `1px solid ${alpha(surfaceBorder, 0.9)}`,
                         background: headerBackground
                     }}
                 >
-                    <Stack spacing={2.35}>
+                    <Stack spacing={{ xs: 1.5, md: 1.7 }}>
                         <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
-                            <Stack spacing={1.2} sx={{ minWidth: 0 }}>
-                                <Stack direction="row" spacing={1.15} alignItems="center">
-                                    <Box component="img" src="/SACCOSS-LOGO.png" alt="SMART SACCOS logo" sx={{ width: { xs: 40, md: 44 }, height: { xs: 40, md: 44 }, objectFit: "contain" }} />
+                            <Stack spacing={{ xs: 0.9, md: 1 }} sx={{ minWidth: 0 }}>
+                                <Stack direction="row" spacing={1} alignItems="center">
+                                    <Box component="img" src="/SACCOSS-LOGO.png" alt="SMART SACCOS logo" sx={{ width: { xs: 38, md: 42 }, height: { xs: 38, md: 42 }, objectFit: "contain" }} />
                                     <Box>
-                                        <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: "-0.02em", fontSize: { xs: "1.18rem", md: "1.3rem" } }}>
+                                        <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: "-0.02em", fontSize: { xs: "1.12rem", md: "1.2rem" } }}>
                                             SMART SACCOS
                                         </Typography>
-                                        <Typography variant="body2" sx={{ color: mutedText, fontSize: "0.84rem" }}>
-                                            Membership onboarding
+                                        <Typography variant="body2" sx={{ color: mutedText, fontSize: "0.8rem" }}>
+                                            Onboarding
                                         </Typography>
                                     </Box>
                                 </Stack>
                                 <Box>
-                                    <Typography variant="overline" sx={{ color: muiTheme.palette.mode === "dark" ? alpha("#FFFFFF", 0.72) : "#1A0FA3", letterSpacing: "0.18em", fontWeight: 700 }}>
-                                        Production-ready digital onboarding
+                                    <Typography variant="h2" sx={{ mt: 0.2, fontSize: { xs: "1.55rem", md: "1.9rem", lg: "2.1rem" }, lineHeight: 0.98, letterSpacing: "-0.045em", fontWeight: 800 }}>
+                                        Apply for membership
                                     </Typography>
-                                    <Typography variant="h2" sx={{ mt: 0.45, fontSize: { xs: "1.7rem", md: "2.2rem" }, lineHeight: 0.96, letterSpacing: "-0.05em", fontWeight: 800 }}>
-                                        Apply for SACCO membership
-                                    </Typography>
-                                    <Typography variant="body1" sx={{ mt: 0.65, maxWidth: 760, color: mutedText, fontSize: { xs: "0.92rem", md: "0.96rem" }, lineHeight: 1.42 }}>
-                                        Complete the full onboarding file once, attach the required identity documents, and move straight into branch review, approval, and membership-fee activation.
+                                    <Typography variant="body1" sx={{ mt: 0.45, maxWidth: 720, color: mutedText, fontSize: { xs: "0.88rem", md: "0.92rem" }, lineHeight: 1.36 }}>
+                                        Complete your details once, upload the required documents, and submit for branch review.
                                     </Typography>
                                 </Box>
                             </Stack>
@@ -1193,8 +1184,8 @@ export function SignupPage() {
                                 type="button"
                                 onClick={toggleTheme}
                                 sx={{
-                                    width: 42,
-                                    height: 42,
+                                    width: 38,
+                                    height: 38,
                                     border: `1px solid ${surfaceBorder}`,
                                     bgcolor: muiTheme.palette.mode === "dark" ? alpha("#FFFFFF", 0.03) : alpha("#FFFFFF", 0.94)
                                 }}
@@ -1203,43 +1194,6 @@ export function SignupPage() {
                             </IconButton>
                         </Stack>
 
-                        <Grid container spacing={1.15}>
-                            {featurePoints.map((point) => (
-                                <Grid key={point} size={{ xs: 12, md: 4 }}>
-                                    <Paper
-                                        variant="outlined"
-                                        sx={{
-                                            p: 1.15,
-                                            height: "100%",
-                                            borderRadius: 2.25,
-                                            borderColor: surfaceBorder,
-                                            bgcolor: sectionBackground,
-                                            backdropFilter: "blur(6px)"
-                                        }}
-                                    >
-                                        <Stack direction="row" spacing={1.2} alignItems="flex-start">
-                                            <Box
-                                                sx={{
-                                                    width: 24,
-                                                    height: 24,
-                                                    borderRadius: 1.2,
-                                                    display: "grid",
-                                                    placeItems: "center",
-                                                    bgcolor: alpha("#16A34A", 0.12),
-                                                    color: "#16A34A",
-                                                    flexShrink: 0
-                                                }}
-                                            >
-                                                <CheckCircleRoundedIcon sx={{ fontSize: 16 }} />
-                                            </Box>
-                                            <Typography variant="body2" sx={{ color: mutedText, lineHeight: 1.35, fontSize: "0.81rem" }}>
-                                                {point}
-                                            </Typography>
-                                        </Stack>
-                                    </Paper>
-                                </Grid>
-                            ))}
-                        </Grid>
                     </Stack>
                 </Box>
 

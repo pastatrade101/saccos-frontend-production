@@ -261,6 +261,7 @@ export default function App() {
                         }
                     >
                         <Route path="/members" element={<MembersPage />} />
+                        <Route path="/members/:memberId" element={<MembersPage />} />
                     </Route>
                     <Route
                         element={
