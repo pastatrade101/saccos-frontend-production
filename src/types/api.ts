@@ -692,6 +692,14 @@ export interface SmsTriggerSetting {
     enabled: boolean;
 }
 
+export interface MemberPortalPaymentControls {
+    tenant_id: string | null;
+    share_contribution_enabled: boolean;
+    savings_deposit_enabled: boolean;
+    loan_repayment_enabled: boolean;
+    updated_at?: string | null;
+}
+
 export interface ApprovalDecision {
     id: string;
     decision: "approved" | "rejected";

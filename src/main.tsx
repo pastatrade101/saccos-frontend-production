@@ -5,6 +5,7 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { AuthProvider } from "./auth/AuthProvider";
 import { ToastProvider } from "./components/Toast";
+import { registerServiceWorker } from "./pwa/registerServiceWorker";
 import { AppThemeProvider } from "./ui/AppThemeProvider";
 import { UIProvider } from "./ui/UIProvider";
 import "./styles.css";
@@ -24,3 +25,5 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         </BrowserRouter>
     </React.StrictMode>
 );
+
+registerServiceWorker();

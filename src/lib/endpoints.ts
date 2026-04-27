@@ -60,6 +60,7 @@ import type {
     ApprovalRequestStatus,
     SmsTriggerEventType,
     SmsTriggerSetting,
+    MemberPortalPaymentControls,
     PaymentOrder,
     MobileMoneyProvider,
     NotificationItem,
@@ -271,6 +272,9 @@ const routeMap = {
     notificationSettings: {
         smsTriggers: "/notification-settings/sms-triggers",
         smsTrigger: (eventType: SmsTriggerEventType) => `/notification-settings/sms-triggers/${eventType}`
+    },
+    memberPortalSettings: {
+        paymentControls: "/member-portal-settings/payment-controls"
     },
     notifications: {
         list: "/notifications",
@@ -498,6 +502,9 @@ export const endpoints = {
     notificationSettings: {
         smsTriggers: () => routeMap.notificationSettings.smsTriggers,
         smsTrigger: (eventType: SmsTriggerEventType) => routeMap.notificationSettings.smsTrigger(eventType)
+    },
+    memberPortalSettings: {
+        paymentControls: () => routeMap.memberPortalSettings.paymentControls
     },
     notifications: {
         list: () => routeMap.notifications.list,
@@ -1480,6 +1487,7 @@ export interface ApprovalRequestsResponse {
 export interface ApprovalRequestResponse extends ApiEnvelope<ApprovalRequest> {}
 export interface SmsTriggerSettingsResponse extends ApiEnvelope<SmsTriggerSetting[]> {}
 export interface SmsTriggerSettingResponse extends ApiEnvelope<SmsTriggerSetting> {}
+export interface MemberPortalPaymentControlsResponse extends ApiEnvelope<MemberPortalPaymentControls> {}
 
 export interface UpdateApprovalPolicyRequest {
     tenant_id?: string;
@@ -1509,6 +1517,13 @@ export interface RejectApprovalRequestBody {
 export interface UpdateSmsTriggerRequest {
     tenant_id?: string;
     enabled: boolean;
+}
+
+export interface UpdateMemberPortalPaymentControlsRequest {
+    tenant_id?: string;
+    share_contribution_enabled?: boolean;
+    savings_deposit_enabled?: boolean;
+    loan_repayment_enabled?: boolean;
 }
 
 export interface PendingApprovalPayload {

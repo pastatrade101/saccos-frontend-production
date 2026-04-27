@@ -110,6 +110,7 @@ export function FinancialSummary({
     return (
         <MotionCard
             variant="outlined"
+            data-tour="member-portal-overview-actions"
             sx={{
                 width: { xs: "calc(100vw - 20px)", sm: "100%" },
                 maxWidth: { xs: "calc(100vw - 20px)", sm: "100%" },

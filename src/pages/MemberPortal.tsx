@@ -20,6 +20,7 @@ import PrintRoundedIcon from "@mui/icons-material/PrintRounded";
 import ShieldRoundedIcon from "@mui/icons-material/ShieldRounded";
 import StarRoundedIcon from "@mui/icons-material/StarRounded";
 import TaskAltRoundedIcon from "@mui/icons-material/TaskAltRounded";
+import TipsAndUpdatesRoundedIcon from "@mui/icons-material/TipsAndUpdatesRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import SavingsRoundedIcon from "@mui/icons-material/SavingsRounded";
 import TimelineRoundedIcon from "@mui/icons-material/TimelineRounded";
@@ -81,6 +82,8 @@ import { ChartPanel } from "../components/ChartPanel";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { DataTable, type Column } from "../components/DataTable";
 import { MemberOverview, type MemberAlertItem } from "../components/member-overview";
+import { MemberPortalFeatureTour } from "../components/member-portal/MemberPortalFeatureTour";
+import { MemberLoanWorkspaceCard } from "../components/member-portal/MemberLoanWorkspaceCard";
 import { PaymentReceiptDialog } from "../components/member-portal/PaymentReceiptDialog";
 import { LoanEligibilitySummary } from "../components/loan-capacity/LoanEligibilitySummary";
 import { NotificationBell } from "../components/notifications/NotificationBell";
@@ -102,6 +105,7 @@ import {
     type LoanTransactionsResponse,
     type MemberAccountsResponse,
     type MembersResponse,
+    type MemberPortalPaymentControlsResponse,
     type UpdateOwnMemberProfileCompletionRequest,
     type UpdateOwnMemberProfileCompletionResponse,
     type MemberApplicationResponse,
@@ -117,7 +121,7 @@ import {
 } from "../lib/endpoints";
 import { brandColors, darkThemeColors } from "../theme/colors";
 import { useUI } from "../ui/UIProvider";
-import type { Loan, LoanApplication, LoanCapacitySummary, LoanProduct, LoanSchedule, LoanTransaction, Member, MemberAccount, MemberApplication, MemberApplicationStatus, PaymentOrder, StatementRow } from "../types/api";
+import type { Loan, LoanApplication, LoanCapacitySummary, LoanProduct, LoanSchedule, LoanTransaction, Member, MemberAccount, MemberApplication, MemberApplicationStatus, MemberPortalPaymentControls, PaymentOrder, StatementRow } from "../types/api";
 import { downloadLoanStatementPdf, downloadMemberStatementPdf } from "../utils/memberStatementPdf";
 import { memberApplicationStatusLabels } from "../utils/member-application-status";
 import {
@@ -555,6 +559,12 @@ function getLoanScheduleOutstanding(schedule: LoanSchedule) {
     };
 }
 
+const MIN_MEANINGFUL_LOAN_OUTSTANDING = 1;
+
+function hasMeaningfulLoanScheduleOutstanding(schedule: LoanSchedule) {
+    return getLoanScheduleOutstanding(schedule).totalOutstanding >= MIN_MEANINGFUL_LOAN_OUTSTANDING;
+}
+
 function buildRepaymentInsights(loan: Loan | null, schedules: LoanSchedule[], amount: number) {
     const normalizedAmount = Math.max(Number(amount || 0), 0);
     const orderedSchedules = [...schedules].sort(
@@ -562,13 +572,14 @@ function buildRepaymentInsights(loan: Loan | null, schedules: LoanSchedule[], am
             new Date(left.due_date).getTime() - new Date(right.due_date).getTime()
             || left.installment_number - right.installment_number
     );
+    const actionableSchedules = orderedSchedules.filter(hasMeaningfulLoanScheduleOutstanding);
     const today = new Date().toISOString().slice(0, 10);
-    const overdueSchedules = orderedSchedules.filter((schedule) => schedule.due_date < today);
-    const nextDueSchedule = orderedSchedules[0] || null;
+    const overdueSchedules = actionableSchedules.filter((schedule) => schedule.due_date < today);
+    const nextDueSchedule = actionableSchedules[0] || null;
     const overdueAmount = overdueSchedules.reduce((sum, schedule) => sum + getLoanScheduleOutstanding(schedule).totalOutstanding, 0);
     const nextDueAmount = nextDueSchedule ? getLoanScheduleOutstanding(nextDueSchedule).totalOutstanding : 0;
-    const scheduledInterestOutstanding = orderedSchedules.reduce((sum, schedule) => sum + getLoanScheduleOutstanding(schedule).interestOutstanding, 0);
-    const scheduledPrincipalOutstanding = orderedSchedules.reduce((sum, schedule) => sum + getLoanScheduleOutstanding(schedule).principalOutstanding, 0);
+    const scheduledInterestOutstanding = actionableSchedules.reduce((sum, schedule) => sum + getLoanScheduleOutstanding(schedule).interestOutstanding, 0);
+    const scheduledPrincipalOutstanding = actionableSchedules.reduce((sum, schedule) => sum + getLoanScheduleOutstanding(schedule).principalOutstanding, 0);
     const payableInterest = Math.max(Number(loan?.accrued_interest || 0), scheduledInterestOutstanding);
     const outstandingBalance = Number(loan?.outstanding_principal || 0) + payableInterest;
     const dueNowAmount = overdueAmount > 0 ? overdueAmount : nextDueAmount;
@@ -610,6 +621,14 @@ const contributionProviderOptions: Array<{ value: ContributionPaymentValues["pro
 const PAYMENT_APPROVAL_EXPECTATION_MS = 90 * 1000;
 const PAYMENT_PENDING_POLL_MS = 4000;
 const PAYMENT_HANDSET_RESPONSE_POLL_MS = 2000;
+const MEMBER_PORTAL_TOUR_STORAGE_KEY = "saccos.member-portal-tour.v1";
+const DEFAULT_MEMBER_PORTAL_PAYMENT_CONTROLS: MemberPortalPaymentControls = {
+    tenant_id: null,
+    share_contribution_enabled: true,
+    savings_deposit_enabled: true,
+    loan_repayment_enabled: true,
+    updated_at: null
+};
 
 const portalSections = [
     {
@@ -888,7 +907,6 @@ export function MemberPortalPage() {
     const isDesktop = useMediaQuery(theme.breakpoints.up("lg"));
     const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
     const { profile, selectedTenantName, selectedBranchName, signOut, user, twoFactorSetupRequired } = useAuth();
-    const canUsePortalDeposits = true;
     const { pushToast } = useToast();
     const { theme: themeMode, toggleTheme } = useUI();
     const prefersReducedMotion = useReducedMotionSafe();
@@ -904,6 +922,7 @@ export function MemberPortalPage() {
     const [processingGuarantorRequestId, setProcessingGuarantorRequestId] = useState<string | null>(null);
     const [statements, setStatements] = useState<StatementRow[]>([]);
     const [loanTransactions, setLoanTransactions] = useState<LoanTransaction[]>([]);
+    const [memberPortalPaymentControls, setMemberPortalPaymentControls] = useState<MemberPortalPaymentControls>(DEFAULT_MEMBER_PORTAL_PAYMENT_CONTROLS);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [warning, setWarning] = useState<string | null>(null);
@@ -934,6 +953,7 @@ export function MemberPortalPage() {
     const autoBackgroundedPaymentOrderIdRef = useRef<string | null>(null);
     const [selectedPaymentReceipt, setSelectedPaymentReceipt] = useState<PaymentOrder | null>(null);
     const [activeSection, setActiveSection] = useState<PortalSectionId>(portalSections[0].id);
+    const [runFeatureTour, setRunFeatureTour] = useState(false);
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [profileMenuAnchor, setProfileMenuAnchor] = useState<null | HTMLElement>(null);
@@ -985,6 +1005,10 @@ export function MemberPortalPage() {
             description: ""
         }
     });
+    const shareContributionSelfServiceEnabled = memberPortalPaymentControls.share_contribution_enabled;
+    const savingsDepositSelfServiceEnabled = memberPortalPaymentControls.savings_deposit_enabled;
+    const loanRepaymentSelfServiceEnabled = memberPortalPaymentControls.loan_repayment_enabled;
+    const canUsePortalDeposits = shareContributionSelfServiceEnabled || savingsDepositSelfServiceEnabled;
     const memberProfileCompletionForm = useForm<MemberProfileCompletionValues>({
         resolver: zodResolver(memberProfileCompletionSchema),
         mode: "onChange",
@@ -1016,7 +1040,7 @@ export function MemberPortalPage() {
         }
     });
     const requiresMembershipFeePayment = memberApplication?.status === "approved_pending_payment";
-    const canUsePortalPayments = canUsePortalDeposits || requiresMembershipFeePayment;
+    const canUsePortalPayments = canUsePortalDeposits || loanRepaymentSelfServiceEnabled || requiresMembershipFeePayment;
     const membershipFeeOutstanding = Math.max(
         Number(memberApplication?.membership_fee_amount || 0) - Number(memberApplication?.membership_fee_paid || 0),
         0
@@ -1512,6 +1536,7 @@ export function MemberPortalPage() {
     const latestSavingsPaymentOrder = normalizedPaymentOrders.find((order) => order.purpose === "savings_deposit") || null;
     const latestMembershipFeePaymentOrder = normalizedPaymentOrders.find((order) => order.purpose === "membership_fee") || null;
     const latestLoanRepaymentPaymentOrder = normalizedPaymentOrders.find((order) => order.purpose === "loan_repayment") || null;
+    const latestAccountsDepositPaymentOrder = savingsDepositSelfServiceEnabled ? latestSavingsPaymentOrder : latestSharePaymentOrder;
     const trackedContributionOrder = useMemo(() => {
         if (!activeContributionOrderId) {
             return null;
@@ -1698,6 +1723,9 @@ export function MemberPortalPage() {
     const memberAccentAlt = isDarkMode ? "#E6C88A" : brandColors.accent[700];
     const memberAccentSoftBg = alpha(memberAccent, isDarkMode ? 0.18 : 0.12);
     const portalLogoSrc = "/SACCOSS-LOGO.png";
+    const memberPortalTourSeen = typeof window !== "undefined"
+        ? window.localStorage.getItem(MEMBER_PORTAL_TOUR_STORAGE_KEY) === "done"
+        : true;
 
     const handleProfileMenuOpen = (event: MouseEvent<HTMLElement>) => {
         setProfileMenuAnchor(event.currentTarget);
@@ -1712,8 +1740,74 @@ export function MemberPortalPage() {
         handleProfileMenuClose();
     };
 
+    const completeMemberPortalTour = () => {
+        if (typeof window !== "undefined") {
+            window.localStorage.setItem(MEMBER_PORTAL_TOUR_STORAGE_KEY, "done");
+        }
+
+        setRunFeatureTour(false);
+        setActiveSection("member-overview");
+    };
+
+    const startMemberPortalTour = () => {
+        setShowContributionDialog(false);
+        setShowApplyDialog(false);
+        setActiveSection("member-overview");
+        setMobileMenuOpen(false);
+        setRunFeatureTour(true);
+    };
+
+    useEffect(() => {
+        if (
+            loading
+            || runFeatureTour
+            || memberPortalTourSeen
+            || showContributionDialog
+            || showApplyDialog
+            || showProfileCompletionDialog
+        ) {
+            return;
+        }
+
+        const timeoutId = window.setTimeout(() => {
+            setActiveSection("member-overview");
+            setRunFeatureTour(true);
+        }, 900);
+
+        return () => {
+            window.clearTimeout(timeoutId);
+        };
+    }, [loading, memberPortalTourSeen, runFeatureTour, showApplyDialog, showContributionDialog, showProfileCompletionDialog]);
+
     const openDepositDialog = (purpose: MemberPaymentPurpose = "share_contribution", loanId?: string | null) => {
-        if (!canUsePortalPayments) {
+        if (purpose === "share_contribution" && !shareContributionSelfServiceEnabled) {
+            pushToast({
+                title: "Share contribution unavailable",
+                message: "Tenant super admin has turned off self-service share contributions for members.",
+                type: "error"
+            });
+            return;
+        }
+
+        if (purpose === "savings_deposit" && !savingsDepositSelfServiceEnabled) {
+            pushToast({
+                title: "Savings deposit unavailable",
+                message: "Tenant super admin has turned off self-service savings deposits for members.",
+                type: "error"
+            });
+            return;
+        }
+
+        if (purpose === "loan_repayment" && !loanRepaymentSelfServiceEnabled) {
+            pushToast({
+                title: "Loan repayment unavailable",
+                message: "Tenant super admin has turned off self-service loan repayments for members.",
+                type: "error"
+            });
+            return;
+        }
+
+        if (purpose !== "membership_fee" && !canUsePortalPayments) {
             pushToast({
                 title: "Deposits unavailable",
                 message: "Mobile-money deposit integration is not currently available for this workspace.",
@@ -2323,6 +2417,24 @@ export function MemberPortalPage() {
             setWarning(null);
 
             try {
+                try {
+                    const { data: paymentControlsResponse } = await api.get<MemberPortalPaymentControlsResponse>(
+                        endpoints.memberPortalSettings.paymentControls(),
+                        {
+                            params: { tenant_id: profile.tenant_id }
+                        }
+                    );
+                    setMemberPortalPaymentControls(paymentControlsResponse.data || {
+                        ...DEFAULT_MEMBER_PORTAL_PAYMENT_CONTROLS,
+                        tenant_id: profile.tenant_id
+                    });
+                } catch {
+                    setMemberPortalPaymentControls({
+                        ...DEFAULT_MEMBER_PORTAL_PAYMENT_CONTROLS,
+                        tenant_id: profile.tenant_id
+                    });
+                }
+
                 let applicationData: MemberApplication | null = null;
                 try {
                     const { data: applicationResponse } = await api.get<MemberApplicationResponse>(endpoints.memberApplications.me(), {
@@ -2361,7 +2473,6 @@ export function MemberPortalPage() {
                 setMemberRecord(memberRecord);
                 setMemberId(memberRecord.id);
                 setMemberApplication(applicationData);
-                const canUseMemberPayments = canUsePortalDeposits || applicationData?.status === "approved_pending_payment";
 
                 const results = await Promise.allSettled([
                     api.get<MemberAccountsResponse>(endpoints.members.accounts(), {
@@ -2407,11 +2518,9 @@ export function MemberPortalPage() {
                     api.get<LoanTransactionsResponse>(endpoints.finance.loanTransactions(), {
                         params: { tenant_id: profile.tenant_id, page: 1, limit: 100 }
                     }),
-                    canUseMemberPayments
-                        ? api.get<PaymentOrdersResponse>(endpoints.memberPayments.listOrders(), {
-                            params: { tenant_id: profile.tenant_id, page: 1, limit: 100 }
-                        })
-                        : Promise.resolve(null)
+                    api.get<PaymentOrdersResponse>(endpoints.memberPayments.listOrders(), {
+                        params: { tenant_id: profile.tenant_id, page: 1, limit: 100 }
+                    })
                 ]);
 
                 const [accountsResult, loansResult, schedulesResult, productsResult, applicationsResult, guarantorRequestsResult, statementsResult, loanTransactionsResult, paymentOrdersResult] = results;
@@ -2473,10 +2582,7 @@ export function MemberPortalPage() {
                     issues.push(getApiErrorMessage(loanTransactionsResult.reason, "Loan transactions unavailable."));
                 }
 
-                if (!canUseMemberPayments) {
-                    setPaymentOrders([]);
-                    setPaymentOrder(null);
-                } else if (paymentOrdersResult.status === "fulfilled" && paymentOrdersResult.value) {
+                if (paymentOrdersResult.status === "fulfilled" && paymentOrdersResult.value) {
                     const nextPaymentOrders = (paymentOrdersResult.value.data.data?.data || []).map((order) => normalizeContributionOrder(order));
                     setPaymentOrders(nextPaymentOrders);
                     setPaymentOrder((current) => {
@@ -2495,6 +2601,10 @@ export function MemberPortalPage() {
                 }
             } catch (portalError) {
                 setMemberRecord(null);
+                setMemberPortalPaymentControls({
+                    ...DEFAULT_MEMBER_PORTAL_PAYMENT_CONTROLS,
+                    tenant_id: profile.tenant_id
+                });
                 setError(getApiErrorMessage(portalError));
             } finally {
                 setLoading(false);
@@ -2502,7 +2612,7 @@ export function MemberPortalPage() {
         };
 
         void loadPortal();
-    }, [canUsePortalDeposits, profile?.tenant_id, user?.id]);
+    }, [profile?.tenant_id, user?.id]);
 
     useEffect(() => {
         if (!isDesktop) {
@@ -2519,14 +2629,16 @@ export function MemberPortalPage() {
     }, [profile?.phone]);
 
     useEffect(() => {
-        if (!canUsePortalPayments && activeSection === "member-payments") {
+        const canShowPaymentHistorySection = canUsePortalPayments || paymentOrders.length > 0;
+
+        if (!canShowPaymentHistorySection && activeSection === "member-payments") {
             setActiveSection("member-overview");
         }
 
         if (!canUsePortalPayments && showContributionDialog) {
             setShowContributionDialog(false);
         }
-    }, [activeSection, canUsePortalPayments, showContributionDialog]);
+    }, [activeSection, canUsePortalPayments, paymentOrders.length, showContributionDialog]);
 
     const savingsAccounts = useMemo(() => accounts.filter((account) => account.product_type === "savings"), [accounts]);
     const totalSavings = useMemo(
@@ -2553,7 +2665,7 @@ export function MemberPortalPage() {
         () => loans.filter((loan) => ["active", "in_arrears"].includes(loan.status) && (loan.outstanding_principal + loan.accrued_interest) > 0),
         [loans]
     );
-    const canShowLoanRepaymentOption = canUsePortalDeposits && portalRepaymentLoans.length > 0;
+    const canShowLoanRepaymentOption = loanRepaymentSelfServiceEnabled && portalRepaymentLoans.length > 0;
     const paymentTargetAccounts = paymentFlowPurpose === "share_contribution"
         ? shareAccounts
         : paymentFlowPurpose === "loan_repayment"
@@ -2608,11 +2720,25 @@ export function MemberPortalPage() {
     }, [canShowMembershipFeePaymentOption, paymentFlowPurpose]);
 
     useEffect(() => {
-        if (!canShowLoanRepaymentOption && paymentFlowPurpose === "loan_repayment") {
-            setPaymentFlowPurpose("share_contribution");
+        if (!shareContributionSelfServiceEnabled && paymentFlowPurpose === "share_contribution") {
+            setPaymentFlowPurpose(savingsDepositSelfServiceEnabled ? "savings_deposit" : canShowMembershipFeePaymentOption ? "membership_fee" : loanRepaymentSelfServiceEnabled ? "loan_repayment" : "share_contribution");
             setActiveContributionOrderId(null);
         }
-    }, [canShowLoanRepaymentOption, paymentFlowPurpose]);
+    }, [canShowMembershipFeePaymentOption, loanRepaymentSelfServiceEnabled, paymentFlowPurpose, savingsDepositSelfServiceEnabled, shareContributionSelfServiceEnabled]);
+
+    useEffect(() => {
+        if (!savingsDepositSelfServiceEnabled && paymentFlowPurpose === "savings_deposit") {
+            setPaymentFlowPurpose(shareContributionSelfServiceEnabled ? "share_contribution" : canShowMembershipFeePaymentOption ? "membership_fee" : loanRepaymentSelfServiceEnabled ? "loan_repayment" : "share_contribution");
+            setActiveContributionOrderId(null);
+        }
+    }, [canShowMembershipFeePaymentOption, loanRepaymentSelfServiceEnabled, paymentFlowPurpose, savingsDepositSelfServiceEnabled, shareContributionSelfServiceEnabled]);
+
+    useEffect(() => {
+        if (!canShowLoanRepaymentOption && paymentFlowPurpose === "loan_repayment") {
+            setPaymentFlowPurpose(shareContributionSelfServiceEnabled ? "share_contribution" : savingsDepositSelfServiceEnabled ? "savings_deposit" : canShowMembershipFeePaymentOption ? "membership_fee" : "share_contribution");
+            setActiveContributionOrderId(null);
+        }
+    }, [canShowLoanRepaymentOption, canShowMembershipFeePaymentOption, paymentFlowPurpose, savingsDepositSelfServiceEnabled, shareContributionSelfServiceEnabled]);
 
     useEffect(() => {
         if (contributionFlowState || paymentFlowPurpose === "loan_repayment") {
@@ -2756,8 +2882,8 @@ export function MemberPortalPage() {
         [guarantorRequests]
     );
     const visiblePortalSections = useMemo(
-        () => portalSections.filter((section) => canUsePortalPayments || section.id !== "member-payments"),
-        [canUsePortalPayments]
+        () => portalSections.filter((section) => (canUsePortalPayments || paymentOrders.length > 0) || section.id !== "member-payments"),
+        [canUsePortalPayments, paymentOrders.length]
     );
     const transactionCount = statements.length;
     const balanceTrend = groupBalances(statements);
@@ -3109,13 +3235,6 @@ export function MemberPortalPage() {
         () => filteredLoans.reduce((sum, loan) => sum + loan.outstanding_principal + loan.accrued_interest, 0),
         [filteredLoans]
     );
-    const filteredLoanOriginalAmount = useMemo(
-        () => filteredLoans.reduce((sum, loan) => sum + loan.principal_amount, 0),
-        [filteredLoans]
-    );
-    const filteredLoanProgressPercent = filteredLoanOriginalAmount > 0
-        ? ((filteredLoanOriginalAmount - filteredLoansOutstanding) / filteredLoanOriginalAmount) * 100
-        : 0;
     const filteredActiveLoanCount = useMemo(
         () => filteredLoans.filter((loan) => ["active", "in_arrears"].includes(loan.status)).length,
         [filteredLoans]
@@ -3281,15 +3400,7 @@ export function MemberPortalPage() {
         [loansRange, sortedStatements]
     );
     const selectedLoanNextDue = useMemo(
-        () => filteredLoanSchedules.find((schedule) => schedule.status !== "paid") || null,
-        [filteredLoanSchedules]
-    );
-    const selectedLoanNextDueAmount = selectedLoanNextDue
-        ? Math.max(selectedLoanNextDue.principal_due - selectedLoanNextDue.principal_paid, 0) +
-          Math.max(selectedLoanNextDue.interest_due - selectedLoanNextDue.interest_paid, 0)
-        : 0;
-    const selectedLoanPenaltyEstimate = useMemo(
-        () => filteredLoanSchedules.reduce((sum, schedule) => sum + estimatePenaltyForSchedule(schedule), 0),
+        () => filteredLoanSchedules.find(hasMeaningfulLoanScheduleOutstanding) || null,
         [filteredLoanSchedules]
     );
     const prepaymentProjection = useMemo(() => {
@@ -4047,6 +4158,7 @@ export function MemberPortalPage() {
 
     const renderStatGrid = () => (
         <Box
+            data-tour="member-portal-stat-grid"
             sx={{
                 width: { xs: "calc(100vw - 20px)", sm: "100%" },
                 maxWidth: { xs: "calc(100vw - 20px)", sm: "100%" },
@@ -4106,6 +4218,7 @@ export function MemberPortalPage() {
     const renderBorrowingCapacityCard = () => (
         <MotionCard
             variant="outlined"
+            data-tour="member-portal-borrowing-capacity"
             sx={{
                 ...contentCardSx,
                 borderRadius: 4
@@ -4216,6 +4329,7 @@ export function MemberPortalPage() {
 
     const renderHero = () => (
         <MotionCard
+            data-tour="member-portal-hero"
             sx={{
                 width: { xs: "calc(100vw - 20px)", sm: "100%" },
                 minWidth: 0,
@@ -4814,14 +4928,26 @@ export function MemberPortalPage() {
                                         Mobile Money Deposit
                                     </Typography>
                                     <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: "-0.02em" }}>
-                                        Deposit into savings or contributions from one portal flow.
+                                        {savingsDepositSelfServiceEnabled && shareContributionSelfServiceEnabled
+                                            ? "Deposit into savings or contributions from one portal flow."
+                                            : savingsDepositSelfServiceEnabled
+                                                ? "Deposit into savings from the member portal."
+                                                : "Post share contributions from the member portal."}
                                     </Typography>
                                     <Typography variant="body2" color="text.secondary">
-                                        Start one Mobile Money deposit request, choose whether it goes to savings or share contributions, approve it on your phone, and the backend will post it automatically after confirmation.
+                                        {savingsDepositSelfServiceEnabled && shareContributionSelfServiceEnabled
+                                            ? "Start one Mobile Money deposit request, choose whether it goes to savings or share contributions, approve it on your phone, and the backend will post it automatically after confirmation."
+                                            : savingsDepositSelfServiceEnabled
+                                                ? "Start a Mobile Money savings deposit, approve it on your phone, and let the backend post it automatically after confirmation."
+                                                : "Start a Mobile Money share contribution, approve it on your phone, and let the backend post it automatically after confirmation."}
                                     </Typography>
                                     <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-                                        <Chip label={`${savingsAccounts.length} savings account(s)`} variant="outlined" />
-                                        <Chip label={`${shareAccounts.length} share account(s)`} variant="outlined" />
+                                        {savingsDepositSelfServiceEnabled ? (
+                                            <Chip label={`${savingsAccounts.length} savings account(s)`} variant="outlined" />
+                                        ) : null}
+                                        {shareContributionSelfServiceEnabled ? (
+                                            <Chip label={`${shareAccounts.length} share account(s)`} variant="outlined" />
+                                        ) : null}
                                         <Chip
                                             label={
                                                 latestSavingsPaymentOrder || latestSharePaymentOrder
@@ -4837,7 +4963,7 @@ export function MemberPortalPage() {
                                 <Stack spacing={1.1} alignItems={{ xs: "stretch", md: "flex-end" }}>
                                     <Button
                                         variant="contained"
-                                        onClick={() => openDepositDialog("savings_deposit")}
+                                        onClick={() => openDepositDialog(savingsDepositSelfServiceEnabled ? "savings_deposit" : "share_contribution")}
                                         disabled={submittingContribution}
                                         sx={
                                             isDarkMode
@@ -4845,9 +4971,9 @@ export function MemberPortalPage() {
                                                 : undefined
                                         }
                                     >
-                                        Make Deposit
+                                        {savingsDepositSelfServiceEnabled ? "Make Deposit" : "Contribute Now"}
                                     </Button>
-                                    {latestSavingsPaymentOrder?.status === "paid" && !latestSavingsPaymentOrder.posted_at ? (
+                                    {latestAccountsDepositPaymentOrder?.status === "paid" && !latestAccountsDepositPaymentOrder.posted_at ? (
                                         <Button
                                             variant="outlined"
                                             onClick={() => void handleReconcilePaymentOrder()}
@@ -4864,14 +4990,14 @@ export function MemberPortalPage() {
                                 A branch manager must provision at least one savings or share account before this portal can start member deposits.
                             </Alert>
                         ) : null}
-                        {latestSavingsPaymentOrder ? (
+                        {latestAccountsDepositPaymentOrder ? (
                             <Alert
                                 severity={
-                                    latestSavingsPaymentOrder.status === "posted"
+                                    latestAccountsDepositPaymentOrder.status === "posted"
                                         ? "success"
-                                        : latestSavingsPaymentOrder.status === "failed"
+                                        : latestAccountsDepositPaymentOrder.status === "failed"
                                             ? "error"
-                                            : latestSavingsPaymentOrder.status === "expired"
+                                            : latestAccountsDepositPaymentOrder.status === "expired"
                                                 ? "warning"
                                                 : "info"
                                 }
@@ -4880,33 +5006,39 @@ export function MemberPortalPage() {
                             >
                                 <Stack spacing={0.5}>
                                     <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                                        {latestSavingsPaymentOrder.status === "posted"
-                                            ? "Savings deposit completed"
-                                            : latestSavingsPaymentOrder.status === "paid"
+                                        {latestAccountsDepositPaymentOrder.status === "posted"
+                                            ? savingsDepositSelfServiceEnabled
+                                                ? "Savings deposit completed"
+                                                : "Contribution completed"
+                                            : latestAccountsDepositPaymentOrder.status === "paid"
                                                 ? "Payment received, posting in progress"
-                                                : latestSavingsPaymentOrder.status === "pending"
+                                                : latestAccountsDepositPaymentOrder.status === "pending"
                                                 ? "Awaiting member approval"
-                                                : latestSavingsPaymentOrder.status === "failed"
+                                                : latestAccountsDepositPaymentOrder.status === "failed"
                                                     ? "Payment failed"
-                                                    : latestSavingsPaymentOrder.status === "expired"
+                                                    : latestAccountsDepositPaymentOrder.status === "expired"
                                                         ? "Payment expired"
-                                                        : `Order ${latestSavingsPaymentOrder.status.replace(/_/g, " ")}`}
+                                                        : `Order ${latestAccountsDepositPaymentOrder.status.replace(/_/g, " ")}`}
                                 </Typography>
                                 <Typography variant="body2">
-                                    {formatCurrency(latestSavingsPaymentOrder.amount)} via {latestSavingsPaymentOrder.provider.toUpperCase()} · Ref {latestSavingsPaymentOrder.provider_ref || latestSavingsPaymentOrder.external_id}
+                                    {formatCurrency(latestAccountsDepositPaymentOrder.amount)} via {latestAccountsDepositPaymentOrder.provider.toUpperCase()} · Ref {latestAccountsDepositPaymentOrder.provider_ref || latestAccountsDepositPaymentOrder.external_id}
                                 </Typography>
-                                {latestSavingsPaymentOrder.journal_id ? (
-                                    <Typography variant="body2">Journal posted: {latestSavingsPaymentOrder.journal_id}</Typography>
+                                {latestAccountsDepositPaymentOrder.journal_id ? (
+                                    <Typography variant="body2">Journal posted: {latestAccountsDepositPaymentOrder.journal_id}</Typography>
                                 ) : null}
-                                {latestSavingsPaymentOrder.error_message ? (
-                                    <Typography variant="body2">{latestSavingsPaymentOrder.error_message}</Typography>
+                                {latestAccountsDepositPaymentOrder.error_message ? (
+                                    <Typography variant="body2">{latestAccountsDepositPaymentOrder.error_message}</Typography>
                                 ) : null}
                             </Stack>
                             </Alert>
                         ) : null}
                     </CardContent>
                 </MotionCard>
-            ) : null}
+            ) : (
+                <Alert severity="info" variant="outlined">
+                    Tenant super admin has turned off self-service savings deposits and share contributions for members.
+                </Alert>
+            )}
 
             <Grid container spacing={2}>
                 <Grid size={{ xs: 12, md: 6 }}>
@@ -5121,6 +5253,7 @@ export function MemberPortalPage() {
         <Stack spacing={3}>
             <MotionCard
                 variant="outlined"
+                data-tour="member-portal-loan-workspace"
                 sx={{
                     ...contentCardSx,
                     background: theme.palette.mode === "dark"
@@ -5365,182 +5498,30 @@ export function MemberPortalPage() {
                 </MotionCard>
             ) : null}
 
-            <MotionCard variant="outlined" sx={contentCardSx}>
-                <CardContent>
-                    <Stack direction={{ xs: "column", lg: "row" }} spacing={2} justifyContent="space-between">
-                        <Stack spacing={1} sx={{ minWidth: { lg: 320 } }}>
-                            <TextField
-                                select
-                                size="small"
-                                label="Loan Facility"
-                                value={selectedLoan?.id || ""}
-                                onChange={(event) => setLoanDetailId(event.target.value)}
-                            >
-                                {filteredLoans.length ? (
-                                    filteredLoans.map((loan) => (
-                                        <MenuItem key={loan.id} value={loan.id}>
-                                            {loan.loan_number} • {formatCurrency(loan.principal_amount)}
-                                        </MenuItem>
-                                    ))
-                                ) : (
-                                    <MenuItem value="" disabled>
-                                        No loans in selected range
-                                    </MenuItem>
-                                )}
-                            </TextField>
-                            <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-                                <Chip label={`Rate ${selectedLoan?.annual_interest_rate || 0}%`} variant="outlined" />
-                                <Chip
-                                    label={`Progress ${filteredLoanProgressPercent.toFixed(0)}%`}
-                                    variant="outlined"
-                                    sx={{ borderColor: alpha(memberAccent, 0.38), color: memberAccent, fontWeight: 700 }}
-                                />
-                                <Chip label={`Penalty est. ${formatCurrency(selectedLoanPenaltyEstimate)}`} color={selectedLoanPenaltyEstimate > 0 ? "warning" : "default"} variant="outlined" />
-                            </Stack>
-                            <Box sx={{ pt: 0.5 }}>
-                                <Stack direction="row" justifyContent="space-between" sx={{ mb: 0.5 }}>
-                                    <Typography variant="caption" color="text.secondary">
-                                        Repayment progress
-                                    </Typography>
-                                    <Typography variant="caption" sx={{ fontWeight: 700 }}>
-                                        {filteredLoanProgressPercent.toFixed(0)}%
-                                    </Typography>
-                                </Stack>
-                                <LinearProgress
-                                    variant="determinate"
-                                    value={Math.min(Math.max(filteredLoanProgressPercent, 0), 100)}
-                                    sx={{
-                                        height: 8,
-                                        borderRadius: 999,
-                                        bgcolor: alpha(memberAccent, 0.14),
-                                        "& .MuiLinearProgress-bar": {
-                                            borderRadius: 999,
-                                            bgcolor: memberAccent
-                                        }
-                                    }}
-                                />
-                                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.65 }}>
-                                    {selectedLoanNextDue
-                                        ? `Next due ${formatDate(selectedLoanNextDue.due_date)} (${Math.max(getDaysUntil(selectedLoanNextDue.due_date) || 0, 0)} day(s))`
-                                        : "No pending installments in selected range."}
-                                </Typography>
-                            </Box>
-                        </Stack>
-                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ sm: "center" }}>
-                            {canShowLoanRepaymentOption ? (
-                                <Button
-                                    variant="contained"
-                                    onClick={() => openDepositDialog("loan_repayment", selectedLoan?.id || portalRepaymentLoans[0]?.id || null)}
-                                    disabled={submittingContribution || !portalRepaymentLoans.length}
-                                    sx={
-                                        isDarkMode
-                                            ? { bgcolor: memberAccent, color: "#1a1a1a", "&:hover": { bgcolor: memberAccentAlt } }
-                                            : undefined
-                                    }
-                                >
-                                    Repay with Mobile Money
-                                </Button>
-                            ) : null}
-                            <Button
-                                variant="outlined"
-                                startIcon={<DownloadRoundedIcon />}
-                                onClick={handleDownloadLoanStatement}
-                            >
-                                Download Loan Statement PDF
-                            </Button>
-                            <Button variant="outlined" startIcon={<PrintRoundedIcon />} onClick={() => window.print()}>
-                                Printable View
-                            </Button>
-                        </Stack>
-                    </Stack>
-                    {latestLoanRepaymentPaymentOrder ? (
-                        <Alert
-                            severity={
-                                latestLoanRepaymentPaymentOrder.status === "posted"
-                                    ? "success"
-                                    : latestLoanRepaymentPaymentOrder.status === "failed"
-                                        ? "error"
-                                        : latestLoanRepaymentPaymentOrder.status === "expired"
-                                            ? "warning"
-                                            : "info"
-                            }
-                            variant="outlined"
-                            sx={{ mt: 2, alignItems: "flex-start" }}
-                        >
-                            <Stack spacing={0.5}>
-                                <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                                    {latestLoanRepaymentPaymentOrder.status === "posted"
-                                        ? "Latest repayment posted"
-                                        : latestLoanRepaymentPaymentOrder.status === "paid"
-                                            ? "Payment received, posting in progress"
-                                            : latestLoanRepaymentPaymentOrder.status === "pending"
-                                                ? "Awaiting member approval"
-                                                : latestLoanRepaymentPaymentOrder.status === "failed"
-                                                    ? "Repayment failed"
-                                                    : latestLoanRepaymentPaymentOrder.status === "expired"
-                                                        ? "Repayment expired"
-                                                        : `Order ${latestLoanRepaymentPaymentOrder.status.replace(/_/g, " ")}`}
-                                </Typography>
-                                <Typography variant="body2">
-                                    {formatCurrency(latestLoanRepaymentPaymentOrder.amount)} via {latestLoanRepaymentPaymentOrder.provider.toUpperCase()} · Ref {latestLoanRepaymentPaymentOrder.provider_ref || latestLoanRepaymentPaymentOrder.external_id}
-                                </Typography>
-                                <Typography variant="body2">
-                                    Loan: {latestLoanRepaymentPaymentOrder.loan_number || latestLoanRepaymentPaymentOrder.loan_id || "Unknown loan"}
-                                </Typography>
-                                {latestLoanRepaymentPaymentOrder.journal_id ? (
-                                    <Typography variant="body2">Journal posted: {latestLoanRepaymentPaymentOrder.journal_id}</Typography>
-                                ) : null}
-                                {latestLoanRepaymentPaymentOrder.error_message ? (
-                                    <Typography variant="body2">{latestLoanRepaymentPaymentOrder.error_message}</Typography>
-                                ) : null}
-                            </Stack>
-                        </Alert>
-                    ) : null}
-                    <Grid container spacing={2} sx={{ mt: 1 }}>
-                        <Grid size={{ xs: 12, md: 4 }}>
-                            <MetricCard
-                                icon={EventRoundedIcon}
-                                label="Next Due"
-                                value={formatDate(selectedLoanNextDue?.due_date || null)}
-                                helper={`Amount due ${formatCurrency(selectedLoanNextDueAmount)} in ${Math.max(getDaysUntil(selectedLoanNextDue?.due_date || null) || 0, 0)} day(s).`}
-                                tone={selectedLoanNextDueAmount > 0 ? "warning" : "success"}
-                            />
-                        </Grid>
-                        <Grid size={{ xs: 12, md: 4 }}>
-                            <MetricCard
-                                icon={CreditScoreRoundedIcon}
-                                label="Installment Split"
-                                value={formatCurrency(Math.max((selectedLoanNextDue?.principal_due || 0) - (selectedLoanNextDue?.principal_paid || 0), 0))}
-                                helper={`Interest ${formatCurrency(Math.max((selectedLoanNextDue?.interest_due || 0) - (selectedLoanNextDue?.interest_paid || 0), 0))} | Penalty ${formatCurrency(selectedLoanPenaltyEstimate)}`}
-                                tone="primary"
-                            />
-                        </Grid>
-                        <Grid size={{ xs: 12, md: 4 }}>
-                            <MotionCard variant="outlined" sx={{ ...contentCardSx, height: "100%" }}>
-                                <CardContent>
-                                    <Typography variant="subtitle2">Prepayment Simulation</Typography>
-                                    <Stack direction="row" spacing={1} sx={{ mt: 1.25 }} alignItems="center">
-                                        <TextField
-                                            size="small"
-                                            type="number"
-                                            label="Prepay amount"
-                                            value={prepaymentAmount}
-                                            onChange={(event) => setPrepaymentAmount(Number(event.target.value) || 0)}
-                                            fullWidth
-                                        />
-                                    </Stack>
-                                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                                        Projected outstanding: {formatCurrency(prepaymentProjection?.newOutstanding || (selectedLoan?.outstanding_principal || 0))}
-                                    </Typography>
-                                    <Typography variant="body2" color="text.secondary">
-                                        Estimated terms reduced: {prepaymentProjection?.termsReduced || 0}
-                                    </Typography>
-                                </CardContent>
-                            </MotionCard>
-                        </Grid>
-                    </Grid>
-                </CardContent>
-            </MotionCard>
+            <MemberLoanWorkspaceCard
+                selectedLoan={selectedLoan}
+                loans={filteredLoans}
+                loanSchedules={loanSchedules}
+                loanTransactions={loanTransactions}
+                loanDetailId={loanDetailId}
+                onLoanChange={setLoanDetailId}
+                latestLoanRepaymentPaymentOrder={latestLoanRepaymentPaymentOrder}
+                loanRepaymentEnabled={loanRepaymentSelfServiceEnabled}
+                canShowLoanRepaymentOption={canShowLoanRepaymentOption}
+                hasRepaymentLoanOption={Boolean(portalRepaymentLoans.length)}
+                submittingContribution={submittingContribution}
+                onRepay={() => openDepositDialog("loan_repayment", selectedLoan?.id || portalRepaymentLoans[0]?.id || null)}
+                onDownloadStatement={handleDownloadLoanStatement}
+                onPrint={() => window.print()}
+                prepaymentAmount={prepaymentAmount}
+                onPrepaymentAmountChange={setPrepaymentAmount}
+                prepaymentProjection={prepaymentProjection}
+                repayButtonSx={
+                    isDarkMode
+                        ? { bgcolor: memberAccent, color: "#1a1a1a", "&:hover": { bgcolor: memberAccentAlt } }
+                        : undefined
+                }
+            />
 
             <Grid container spacing={2}>
                 <Grid size={{ xs: 12, sm: 6, lg: 4 }}>
@@ -5967,8 +5948,8 @@ export function MemberPortalPage() {
                     </CardContent>
                 </MotionCard>
 
-                {canUsePortalDeposits ? (
-                    <MotionCard variant="outlined" sx={contentCardSx}>
+                {shareContributionSelfServiceEnabled ? (
+                    <MotionCard variant="outlined" data-tour="member-portal-contribution-flow" sx={contentCardSx}>
                     <CardContent sx={{ p: { xs: 2.25, md: 2.75 } }}>
                         <Grid container spacing={2.5} alignItems="center">
                             <Grid size={{ xs: 12, md: 7 }}>
@@ -5977,14 +5958,20 @@ export function MemberPortalPage() {
                                         Mobile Money Deposits
                                     </Typography>
                                     <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: "-0.02em" }}>
-                                        Use one deposit flow for contributions and savings.
+                                        {savingsDepositSelfServiceEnabled
+                                            ? "Use one deposit flow for contributions and savings."
+                                            : "Post share contributions from the member portal."}
                                     </Typography>
                                     <Typography variant="body2" color="text.secondary">
-                                        Choose whether the money should land in your share contribution account or your savings account, approve on your phone, and let the backend post it automatically after Mobile Money confirms success.
+                                        {savingsDepositSelfServiceEnabled
+                                            ? "Choose whether the money should land in your share contribution account or your savings account, approve on your phone, and let the backend post it automatically after Mobile Money confirms success."
+                                            : "Approve a Mobile Money prompt on your phone and let the backend post the contribution directly into your share account after confirmation."}
                                     </Typography>
                                     <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
                                         <Chip label={`${shareAccounts.length} share account(s)`} variant="outlined" />
-                                        <Chip label={`${savingsAccounts.length} savings account(s)`} variant="outlined" />
+                                        {savingsDepositSelfServiceEnabled ? (
+                                            <Chip label={`${savingsAccounts.length} savings account(s)`} variant="outlined" />
+                                        ) : null}
                                         <Chip
                                             label={
                                                 latestSharePaymentOrder || latestSavingsPaymentOrder
@@ -6069,6 +6056,11 @@ export function MemberPortalPage() {
                         ) : null}
                     </CardContent>
                     </MotionCard>
+                ) : null}
+                {!shareContributionSelfServiceEnabled ? (
+                    <Alert severity="info" variant="outlined">
+                        Tenant super admin has turned off self-service share contributions for members.
+                    </Alert>
                 ) : null}
 
                 <Grid container spacing={2} alignItems="stretch">
@@ -6445,7 +6437,7 @@ export function MemberPortalPage() {
                 </Grid>
             </Grid>
 
-            <MotionCard variant="outlined" sx={contentCardSx}>
+            <MotionCard variant="outlined" data-tour="member-portal-payments-ledger" sx={contentCardSx}>
                 <CardContent>
                     <Stack spacing={2}>
                         <Stack
@@ -6937,6 +6929,7 @@ export function MemberPortalPage() {
                 }}
             >
                 <Box
+                    data-tour="member-portal-header"
                     sx={{
                         position: "sticky",
                         top: 0,
@@ -7002,6 +6995,16 @@ export function MemberPortalPage() {
                                     }}
                                 />
                             ) : null}
+                            <IconButton
+                                onClick={startMemberPortalTour}
+                                sx={{
+                                    borderRadius: 1.5,
+                                    border: `1px solid ${alpha(theme.palette.divider, 0.9)}`
+                                }}
+                                aria-label="Start feature tour"
+                            >
+                                <TipsAndUpdatesRoundedIcon />
+                            </IconButton>
                             <IconButton
                                 onClick={handleProfileMenuOpen}
                                 sx={{
@@ -7151,6 +7154,12 @@ export function MemberPortalPage() {
                         </Box>
 
                         <List dense disablePadding sx={{ mt: 0.75 }}>
+                            <ListItemButton sx={{ borderRadius: 0.5, minHeight: 42 }} onClick={() => handleProfileMenuAction(startMemberPortalTour)}>
+                                <ListItemIcon sx={{ minWidth: 34 }}>
+                                    <TipsAndUpdatesRoundedIcon fontSize="small" />
+                                </ListItemIcon>
+                                <ListItemText primary="Take feature tour" />
+                            </ListItemButton>
                             <ListItemButton sx={{ borderRadius: 0.5, minHeight: 42 }} onClick={() => handleProfileMenuAction(handleDownloadStatement)}>
                                 <ListItemIcon sx={{ minWidth: 34 }}>
                                     <DownloadRoundedIcon fontSize="small" />
@@ -7427,6 +7436,13 @@ export function MemberPortalPage() {
                 </Box>
             </Box>
 
+            <MemberPortalFeatureTour
+                run={runFeatureTour}
+                canUsePortalPayments={canUsePortalPayments}
+                onNavigateSection={setActiveSection}
+                onFinish={completeMemberPortalTour}
+            />
+
             <MotionModal open={showContributionDialog} onClose={submittingContribution ? undefined : () => setShowContributionDialog(false)} maxWidth="md" fullWidth>
                 <DialogTitle sx={{ pb: 1.25 }}>
                     <Stack spacing={0.6}>
@@ -7579,8 +7595,12 @@ export function MemberPortalPage() {
                                                     }
                                                 }}
                                             >
-                                                <MenuItem value="share_contribution">Contribution</MenuItem>
-                                                <MenuItem value="savings_deposit">Savings</MenuItem>
+                                                {shareContributionSelfServiceEnabled ? (
+                                                    <MenuItem value="share_contribution">Contribution</MenuItem>
+                                                ) : null}
+                                                {savingsDepositSelfServiceEnabled ? (
+                                                    <MenuItem value="savings_deposit">Savings</MenuItem>
+                                                ) : null}
                                                 {canShowMembershipFeePaymentOption ? (
                                                     <MenuItem value="membership_fee">Membership fee</MenuItem>
                                                 ) : null}

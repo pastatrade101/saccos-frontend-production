@@ -43,6 +43,7 @@ import { NotificationsPage } from "./pages/Notifications";
 import { ResetPasswordPage } from "./pages/ResetPassword";
 import { ServiceUnavailablePage } from "./pages/ServiceUnavailable";
 import { PrivacyPolicyPage, TermsAgreementPage } from "./pages/LegalPages";
+import { PwaInstallPrompt } from "./components/PwaInstallPrompt";
 
 function WorkspaceRedirect() {
     const { session, profile, backendUnavailable, isInternalOps, twoFactorSetupRequired, loading } = useAuth();
@@ -180,183 +181,186 @@ function SetupRouteGuard({ children }: { children: ReactNode }) {
 
 export default function App() {
     return (
-        <Routes>
-            <Route path="/" element={<PublicHomePage />} />
-            <Route path="/signin" element={<SignInRoute />} />
-            <Route path="/signup" element={<SignupRoute />} />
-            <Route path="/reset-password" element={<ResetPasswordPage />} />
-            <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
-            <Route path="/terms-and-agreement" element={<TermsAgreementPage />} />
-            <Route path="/access-denied" element={<AccessDeniedPage />} />
-            <Route path="/service-unavailable" element={<ServiceUnavailablePage />} />
-            <Route
-                element={
-                    <ProtectedRoute
-                        allowedRoles={["platform_admin", "platform_owner", "super_admin", "branch_manager", "treasury_officer", "loan_officer", "teller", "auditor", "member"]}
-                    />
-                }
-            >
-                <Route path="/change-password" element={<ChangePasswordPage />} />
-                <Route path="/security" element={<SecuritySettingsPage />} />
-                <Route path="/notifications" element={<NotificationsPage />} />
-            </Route>
-            <Route element={<ProtectedRoute allowedRoles={["member"]} />}>
-                <Route path="/portal" element={<MemberPortalPage />} />
-            </Route>
+        <>
+            <Routes>
+                <Route path="/" element={<PublicHomePage />} />
+                <Route path="/signin" element={<SignInRoute />} />
+                <Route path="/signup" element={<SignupRoute />} />
+                <Route path="/reset-password" element={<ResetPasswordPage />} />
+                <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
+                <Route path="/terms-and-agreement" element={<TermsAgreementPage />} />
+                <Route path="/access-denied" element={<AccessDeniedPage />} />
+                <Route path="/service-unavailable" element={<ServiceUnavailablePage />} />
+                <Route
+                    element={
+                        <ProtectedRoute
+                            allowedRoles={["platform_admin", "platform_owner", "super_admin", "branch_manager", "treasury_officer", "loan_officer", "teller", "auditor", "member"]}
+                        />
+                    }
+                >
+                    <Route path="/change-password" element={<ChangePasswordPage />} />
+                    <Route path="/security" element={<SecuritySettingsPage />} />
+                    <Route path="/notifications" element={<NotificationsPage />} />
+                </Route>
+                <Route element={<ProtectedRoute allowedRoles={["member"]} />}>
+                    <Route path="/portal" element={<MemberPortalPage />} />
+                </Route>
 
-            <Route element={<ProtectedRoute allowWithoutProfile />}>
-                    <Route element={<AppLayout />}>
-                        <Route path="/setup/super-admin" element={<SetupRouteGuard><SetupSuperAdminPage /></SetupRouteGuard>} />
-                    <Route
-                        element={
-                            <ProtectedRoute
-                                allowedRoles={["platform_admin", "platform_owner", "super_admin", "branch_manager", "treasury_officer", "loan_officer", "teller", "auditor"]}
-                            />
-                        }
-                    >
-                        <Route path="/dashboard" element={<DashboardEntryRoute />} />
-                    </Route>
-                    <Route
-                        element={
-                            <ProtectedRoute allowedRoles={["auditor"]} allowInternalOps={false} />
-                        }
-                    >
-                        <Route path="/auditor/exceptions" element={<AuditorExceptionsPage />} />
-                        <Route path="/auditor/workbench" element={<AuditorWorkbenchPage />} />
-                        <Route path="/auditor/journals" element={<AuditorJournalsPage />} />
-                        <Route path="/auditor/journals/:id" element={<AuditorJournalsPage />} />
-                        <Route path="/auditor/audit-logs" element={<AuditorAuditLogsPage />} />
-                        <Route path="/auditor/reports" element={<AuditorReportsPage />} />
-                    </Route>
-                    <Route
-                        element={
-                            <ProtectedRoute
-                                allowedRoles={["super_admin", "branch_manager", "treasury_officer", "loan_officer", "teller"]}
-                            />
-                        }
-                    >
-                        <Route path="/follow-ups" element={<FollowUpsPage />} />
-                        <Route path="/approvals" element={<ApprovalsPage />} />
-                    </Route>
-                    <Route
-                        element={
-                            <ProtectedRoute allowedRoles={["super_admin", "branch_manager"]} allowInternalOps={false} />
-                        }
-                    >
-                        <Route path="/staff-users" element={<StaffUsersPage />} />
-                    </Route>
-                    <Route
-                        element={
-                            <ProtectedRoute allowedRoles={["branch_manager"]} allowInternalOps={false} />
-                        }
-                    >
-                        <Route path="/products" element={<ProductCatalogPage />} />
-                    </Route>
-                    <Route
-                        element={
-                            <ProtectedRoute
-                                allowedRoles={["super_admin", "branch_manager", "teller"]}
-                                allowInternalOps={false}
-                            />
-                        }
-                    >
-                        <Route path="/members" element={<MembersPage />} />
-                        <Route path="/members/:memberId" element={<MembersPage />} />
-                    </Route>
-                    <Route
-                        element={
-                            <ProtectedRoute
-                                allowedRoles={["super_admin", "branch_manager", "treasury_officer", "auditor"]}
-                                allowInternalOps={false}
-                            />
-                        }
-                    >
-                        <Route path="/member-applications" element={<MemberApplicationsPage />} />
-                    </Route>
-                    <Route
-                        element={
-                            <ProtectedRoute
-                                allowedRoles={["branch_manager"]}
-                                allowInternalOps={false}
-                            />
-                        }
-                    >
-                        <Route path="/members/import" element={<MemberImportPage />} />
-                    </Route>
-                    <Route
-                        element={
-                            <ProtectedRoute allowedRoles={["branch_manager"]} allowInternalOps={false} />
-                        }
-                    >
-                        <Route path="/contributions" element={<ContributionsPage />} />
-                        <Route path="/savings" element={<SavingsPage />} />
-                        <Route path="/payments" element={<PaymentsPage />} />
-                        <Route path="/revenue" element={<ChargeRevenuePage />} />
-                        <Route path="/charge-revenue" element={<ChargeRevenuePage />} />
-                    </Route>
-                    <Route
-                        element={
-                            <ProtectedRoute allowedRoles={["super_admin", "branch_manager"]} allowInternalOps={false} />
-                        }
-                    >
-                        <Route path="/dividends" element={<DividendsPage />} />
-                    </Route>
-                    <Route
-                        element={
-                            <ProtectedRoute allowedRoles={["teller"]} allowInternalOps={false} />
-                        }
-                    >
-                        <Route path="/cash" element={<CashPage />} />
-                    </Route>
-                    <Route
-                        element={
-                            <ProtectedRoute allowedRoles={["branch_manager"]} allowInternalOps={false} />
-                        }
-                    >
-                        <Route path="/cash-control" element={<CashControlPage />} />
-                    </Route>
-                    <Route
-                        element={
-                            <ProtectedRoute allowedRoles={["branch_manager", "loan_officer", "teller"]} allowInternalOps={false} />
-                        }
-                    >
-                        <Route path="/loans" element={<LoansPage />} />
-                        <Route path="/loans/:loanId" element={<LoanDetailPage />} />
-                    </Route>
-                    <Route
-                        element={
-                            <ProtectedRoute
-                                allowedRoles={["super_admin", "branch_manager", "treasury_officer", "loan_officer"]}
-                                allowInternalOps={false}
-                            />
-                        }
-                    >
-                        <Route path="/reports" element={<ReportsPage />} />
-                    </Route>
-                    <Route
-                        element={
-                            <ProtectedRoute
-                                allowedRoles={["super_admin", "branch_manager", "treasury_officer", "auditor"]}
-                                allowInternalOps={false}
-                            />
-                        }
-                    >
-                        <Route path="/treasury" element={<TreasuryPage />} />
-                    </Route>
-                    <Route
-                        element={
-                            <ProtectedRoute
-                                allowedRoles={["super_admin", "branch_manager"]}
-                                allowInternalOps={false}
-                            />
-                        }
-                    >
-                        <Route path="/treasury/policy-settings" element={<TreasuryPolicySettingsPage />} />
+                <Route element={<ProtectedRoute allowWithoutProfile />}>
+                        <Route element={<AppLayout />}>
+                            <Route path="/setup/super-admin" element={<SetupRouteGuard><SetupSuperAdminPage /></SetupRouteGuard>} />
+                        <Route
+                            element={
+                                <ProtectedRoute
+                                    allowedRoles={["platform_admin", "platform_owner", "super_admin", "branch_manager", "treasury_officer", "loan_officer", "teller", "auditor"]}
+                                />
+                            }
+                        >
+                            <Route path="/dashboard" element={<DashboardEntryRoute />} />
+                        </Route>
+                        <Route
+                            element={
+                                <ProtectedRoute allowedRoles={["auditor"]} allowInternalOps={false} />
+                            }
+                        >
+                            <Route path="/auditor/exceptions" element={<AuditorExceptionsPage />} />
+                            <Route path="/auditor/workbench" element={<AuditorWorkbenchPage />} />
+                            <Route path="/auditor/journals" element={<AuditorJournalsPage />} />
+                            <Route path="/auditor/journals/:id" element={<AuditorJournalsPage />} />
+                            <Route path="/auditor/audit-logs" element={<AuditorAuditLogsPage />} />
+                            <Route path="/auditor/reports" element={<AuditorReportsPage />} />
+                        </Route>
+                        <Route
+                            element={
+                                <ProtectedRoute
+                                    allowedRoles={["super_admin", "branch_manager", "treasury_officer", "loan_officer", "teller"]}
+                                />
+                            }
+                        >
+                            <Route path="/follow-ups" element={<FollowUpsPage />} />
+                            <Route path="/approvals" element={<ApprovalsPage />} />
+                        </Route>
+                        <Route
+                            element={
+                                <ProtectedRoute allowedRoles={["super_admin", "branch_manager"]} allowInternalOps={false} />
+                            }
+                        >
+                            <Route path="/staff-users" element={<StaffUsersPage />} />
+                        </Route>
+                        <Route
+                            element={
+                                <ProtectedRoute allowedRoles={["branch_manager"]} allowInternalOps={false} />
+                            }
+                        >
+                            <Route path="/products" element={<ProductCatalogPage />} />
+                        </Route>
+                        <Route
+                            element={
+                                <ProtectedRoute
+                                    allowedRoles={["super_admin", "branch_manager", "teller"]}
+                                    allowInternalOps={false}
+                                />
+                            }
+                        >
+                            <Route path="/members" element={<MembersPage />} />
+                            <Route path="/members/:memberId" element={<MembersPage />} />
+                        </Route>
+                        <Route
+                            element={
+                                <ProtectedRoute
+                                    allowedRoles={["super_admin", "branch_manager", "treasury_officer", "auditor"]}
+                                    allowInternalOps={false}
+                                />
+                            }
+                        >
+                            <Route path="/member-applications" element={<MemberApplicationsPage />} />
+                        </Route>
+                        <Route
+                            element={
+                                <ProtectedRoute
+                                    allowedRoles={["branch_manager"]}
+                                    allowInternalOps={false}
+                                />
+                            }
+                        >
+                            <Route path="/members/import" element={<MemberImportPage />} />
+                        </Route>
+                        <Route
+                            element={
+                                <ProtectedRoute allowedRoles={["branch_manager"]} allowInternalOps={false} />
+                            }
+                        >
+                            <Route path="/contributions" element={<ContributionsPage />} />
+                            <Route path="/savings" element={<SavingsPage />} />
+                            <Route path="/payments" element={<PaymentsPage />} />
+                            <Route path="/revenue" element={<ChargeRevenuePage />} />
+                            <Route path="/charge-revenue" element={<ChargeRevenuePage />} />
+                        </Route>
+                        <Route
+                            element={
+                                <ProtectedRoute allowedRoles={["super_admin", "branch_manager"]} allowInternalOps={false} />
+                            }
+                        >
+                            <Route path="/dividends" element={<DividendsPage />} />
+                        </Route>
+                        <Route
+                            element={
+                                <ProtectedRoute allowedRoles={["teller"]} allowInternalOps={false} />
+                            }
+                        >
+                            <Route path="/cash" element={<CashPage />} />
+                        </Route>
+                        <Route
+                            element={
+                                <ProtectedRoute allowedRoles={["branch_manager"]} allowInternalOps={false} />
+                            }
+                        >
+                            <Route path="/cash-control" element={<CashControlPage />} />
+                        </Route>
+                        <Route
+                            element={
+                                <ProtectedRoute allowedRoles={["branch_manager", "loan_officer", "teller"]} allowInternalOps={false} />
+                            }
+                        >
+                            <Route path="/loans" element={<LoansPage />} />
+                            <Route path="/loans/:loanId" element={<LoanDetailPage />} />
+                        </Route>
+                        <Route
+                            element={
+                                <ProtectedRoute
+                                    allowedRoles={["super_admin", "branch_manager", "treasury_officer", "loan_officer"]}
+                                    allowInternalOps={false}
+                                />
+                            }
+                        >
+                            <Route path="/reports" element={<ReportsPage />} />
+                        </Route>
+                        <Route
+                            element={
+                                <ProtectedRoute
+                                    allowedRoles={["super_admin", "branch_manager", "treasury_officer", "auditor"]}
+                                    allowInternalOps={false}
+                                />
+                            }
+                        >
+                            <Route path="/treasury" element={<TreasuryPage />} />
+                        </Route>
+                        <Route
+                            element={
+                                <ProtectedRoute
+                                    allowedRoles={["super_admin", "branch_manager"]}
+                                    allowInternalOps={false}
+                                />
+                            }
+                        >
+                            <Route path="/treasury/policy-settings" element={<TreasuryPolicySettingsPage />} />
+                        </Route>
                     </Route>
                 </Route>
-            </Route>
 
-            <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+                <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+            <PwaInstallPrompt />
+        </>
     );
 }

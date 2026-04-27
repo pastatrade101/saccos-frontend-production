@@ -12,8 +12,10 @@ import {
     Card,
     CardContent,
     Chip,
+    CircularProgress,
     Divider,
     Stack,
+    Switch,
     TextField,
     Typography
 } from "@mui/material";
@@ -25,13 +27,16 @@ import { useToast } from "../components/Toast";
 import { api, getApiErrorMessage } from "../lib/api";
 import {
     endpoints,
+    type MemberPortalPaymentControlsResponse,
     type TwoFactorBackupCodesResponse,
     type TwoFactorDisableResponse,
     type TwoFactorSetupResponse,
     type TwoFactorValidateRequest,
     type TwoFactorValidateResponse,
-    type TwoFactorVerifyResponse
+    type TwoFactorVerifyResponse,
+    type UpdateMemberPortalPaymentControlsRequest
 } from "../lib/endpoints";
+import type { MemberPortalPaymentControls } from "../types/api";
 
 function buildVerificationPayload(totpCode: string, recoveryCode: string): TwoFactorValidateRequest {
     return {
@@ -51,6 +56,9 @@ export function SecuritySettingsPage() {
     const [recoveryCode, setRecoveryCode] = useState("");
     const [backupCodes, setBackupCodes] = useState<string[]>([]);
     const [loadingAction, setLoadingAction] = useState<string | null>(null);
+    const [memberPortalPaymentControls, setMemberPortalPaymentControls] = useState<MemberPortalPaymentControls | null>(null);
+    const [memberPortalPaymentControlsLoading, setMemberPortalPaymentControlsLoading] = useState(false);
+    const [memberPortalPaymentControlsSavingKey, setMemberPortalPaymentControlsSavingKey] = useState<string | null>(null);
 
     if (!session) {
         return <Navigate to="/signin" replace />;
@@ -65,6 +73,7 @@ export function SecuritySettingsPage() {
     }
 
     const twoFactorEnabled = Boolean(profile.two_factor_enabled && profile.two_factor_verified);
+    const canManageMemberPortalPaymentControls = profile.role === "super_admin" && Boolean(profile.tenant_id);
     const backTarget = profile.role === "member"
         ? "/portal"
         : profile.role === "treasury_officer"
@@ -74,6 +83,73 @@ export function SecuritySettingsPage() {
     const setupIntent = new URLSearchParams(location.search).get("intent");
 
     const managementPayload = buildVerificationPayload(totpCode, recoveryCode);
+
+    const loadMemberPortalPaymentControls = async () => {
+        if (!canManageMemberPortalPaymentControls || !profile.tenant_id) {
+            setMemberPortalPaymentControls(null);
+            return;
+        }
+
+        setMemberPortalPaymentControlsLoading(true);
+        try {
+            const { data } = await api.get<MemberPortalPaymentControlsResponse>(
+                endpoints.memberPortalSettings.paymentControls(),
+                {
+                    params: { tenant_id: profile.tenant_id }
+                }
+            );
+            setMemberPortalPaymentControls(data.data || null);
+        } catch (error) {
+            pushToast({
+                type: "error",
+                title: "Unable to load member payment controls",
+                message: getApiErrorMessage(error)
+            });
+        } finally {
+            setMemberPortalPaymentControlsLoading(false);
+        }
+    };
+
+    const toggleMemberPortalPaymentControl = async (
+        key: "share_contribution_enabled" | "savings_deposit_enabled" | "loan_repayment_enabled",
+        enabled: boolean
+    ) => {
+        if (!canManageMemberPortalPaymentControls || !profile.tenant_id) {
+            return;
+        }
+
+        setMemberPortalPaymentControlsSavingKey(key);
+        try {
+            const payload: UpdateMemberPortalPaymentControlsRequest = {
+                tenant_id: profile.tenant_id,
+                [key]: enabled
+            };
+
+            const { data } = await api.patch<MemberPortalPaymentControlsResponse>(
+                endpoints.memberPortalSettings.paymentControls(),
+                payload
+            );
+
+            setMemberPortalPaymentControls(data.data || null);
+            pushToast({
+                type: "success",
+                title: "Member payment control updated",
+                message: `${key === "loan_repayment_enabled"
+                    ? "Loan repayments"
+                    : key === "savings_deposit_enabled"
+                        ? "Savings deposits"
+                        : "Share contributions"} are now ${enabled ? "enabled" : "disabled"} for member self-service.`
+            });
+        } catch (error) {
+            pushToast({
+                type: "error",
+                title: "Unable to update member payment control",
+                message: getApiErrorMessage(error)
+            });
+        } finally {
+            setMemberPortalPaymentControlsSavingKey(null);
+        }
+    };
 
     const startSetup = async () => {
         setLoadingAction("setup");
@@ -216,6 +292,10 @@ export function SecuritySettingsPage() {
 
         void startSetup();
     }, [loadingAction, setupData, setupIntent, twoFactorEnabled]);
+
+    useEffect(() => {
+        void loadMemberPortalPaymentControls();
+    }, [canManageMemberPortalPaymentControls, profile.tenant_id]);
 
     return (
         <Box sx={{ maxWidth: 1040, mx: "auto", px: { xs: 2, md: 3 }, py: 3 }}>
@@ -511,6 +591,82 @@ export function SecuritySettingsPage() {
                                                 </Box>
                                             ))}
                                         </Box>
+                                    </Stack>
+                                </CardContent>
+                            </Card>
+                        </Box>
+                    )}
+
+                    {canManageMemberPortalPaymentControls && (
+                        <Box sx={{ gridColumn: "1 / -1" }}>
+                            <Card>
+                                <CardContent>
+                                    <Stack spacing={2}>
+                                        <Stack spacing={0.5}>
+                                            <Typography variant="h6" fontWeight={700}>
+                                                Member Portal Payment Controls
+                                            </Typography>
+                                            <Typography variant="body2" color="text.secondary">
+                                                Turn member-initiated mobile money flows on or off without affecting back-office staff posting screens.
+                                            </Typography>
+                                        </Stack>
+                                        <Alert severity="info" variant="outlined">
+                                            When a control is off, the member portal hides the self-service action and the backend rejects direct initiation attempts for that payment type.
+                                        </Alert>
+
+                                        {memberPortalPaymentControlsLoading && !memberPortalPaymentControls ? (
+                                            <Stack direction="row" spacing={1.2} alignItems="center">
+                                                <CircularProgress size={18} />
+                                                <Typography variant="body2" color="text.secondary">
+                                                    Loading member portal payment controls...
+                                                </Typography>
+                                            </Stack>
+                                        ) : null}
+
+                                        {memberPortalPaymentControls ? (
+                                            <Stack divider={<Divider flexItem />} spacing={0}>
+                                                {[
+                                                    {
+                                                        key: "share_contribution_enabled" as const,
+                                                        title: "Share contribution self-service",
+                                                        description: "Allow members to initiate mobile money share contributions from the portal."
+                                                    },
+                                                    {
+                                                        key: "savings_deposit_enabled" as const,
+                                                        title: "Savings deposit self-service",
+                                                        description: "Allow members to initiate mobile money savings deposits from the portal."
+                                                    },
+                                                    {
+                                                        key: "loan_repayment_enabled" as const,
+                                                        title: "Loan repayment self-service",
+                                                        description: "Allow members to initiate mobile money loan repayments from the portal."
+                                                    }
+                                                ].map((item) => (
+                                                    <Stack
+                                                        key={item.key}
+                                                        direction={{ xs: "column", sm: "row" }}
+                                                        spacing={1.5}
+                                                        justifyContent="space-between"
+                                                        alignItems={{ xs: "flex-start", sm: "center" }}
+                                                        sx={{ py: 1.5 }}
+                                                    >
+                                                        <Box sx={{ minWidth: 0 }}>
+                                                            <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                                                                {item.title}
+                                                            </Typography>
+                                                            <Typography variant="body2" color="text.secondary">
+                                                                {item.description}
+                                                            </Typography>
+                                                        </Box>
+                                                        <Switch
+                                                            checked={Boolean(memberPortalPaymentControls[item.key])}
+                                                            onChange={(_, checked) => void toggleMemberPortalPaymentControl(item.key, checked)}
+                                                            disabled={memberPortalPaymentControlsSavingKey === item.key}
+                                                        />
+                                                    </Stack>
+                                                ))}
+                                            </Stack>
+                                        ) : null}
                                     </Stack>
                                 </CardContent>
                             </Card>
