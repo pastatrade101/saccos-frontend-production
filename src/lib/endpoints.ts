@@ -61,6 +61,7 @@ import type {
     SmsTriggerEventType,
     SmsTriggerSetting,
     MemberPortalPaymentControls,
+    WorkspaceTwoFactorSettings,
     PaymentOrder,
     MobileMoneyProvider,
     NotificationItem,
@@ -275,6 +276,9 @@ const routeMap = {
     },
     memberPortalSettings: {
         paymentControls: "/member-portal-settings/payment-controls"
+    },
+    securitySettings: {
+        twoFactor: "/security-settings/two-factor"
     },
     notifications: {
         list: "/notifications",
@@ -505,6 +509,9 @@ export const endpoints = {
     },
     memberPortalSettings: {
         paymentControls: () => routeMap.memberPortalSettings.paymentControls
+    },
+    securitySettings: {
+        twoFactor: () => routeMap.securitySettings.twoFactor
     },
     notifications: {
         list: () => routeMap.notifications.list,
@@ -1488,6 +1495,7 @@ export interface ApprovalRequestResponse extends ApiEnvelope<ApprovalRequest> {}
 export interface SmsTriggerSettingsResponse extends ApiEnvelope<SmsTriggerSetting[]> {}
 export interface SmsTriggerSettingResponse extends ApiEnvelope<SmsTriggerSetting> {}
 export interface MemberPortalPaymentControlsResponse extends ApiEnvelope<MemberPortalPaymentControls> {}
+export interface WorkspaceTwoFactorSettingsResponse extends ApiEnvelope<WorkspaceTwoFactorSettings> {}
 
 export interface UpdateApprovalPolicyRequest {
     tenant_id?: string;
@@ -1524,6 +1532,11 @@ export interface UpdateMemberPortalPaymentControlsRequest {
     share_contribution_enabled?: boolean;
     savings_deposit_enabled?: boolean;
     loan_repayment_enabled?: boolean;
+}
+
+export interface UpdateWorkspaceTwoFactorSettingsRequest {
+    tenant_id?: string;
+    two_factor_auth_enabled: boolean;
 }
 
 export interface PendingApprovalPayload {

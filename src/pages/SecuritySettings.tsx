@@ -34,9 +34,11 @@ import {
     type TwoFactorValidateRequest,
     type TwoFactorValidateResponse,
     type TwoFactorVerifyResponse,
-    type UpdateMemberPortalPaymentControlsRequest
+    type UpdateMemberPortalPaymentControlsRequest,
+    type UpdateWorkspaceTwoFactorSettingsRequest,
+    type WorkspaceTwoFactorSettingsResponse
 } from "../lib/endpoints";
-import type { MemberPortalPaymentControls } from "../types/api";
+import type { MemberPortalPaymentControls, WorkspaceTwoFactorSettings } from "../types/api";
 
 function buildVerificationPayload(totpCode: string, recoveryCode: string): TwoFactorValidateRequest {
     return {
@@ -59,6 +61,9 @@ export function SecuritySettingsPage() {
     const [memberPortalPaymentControls, setMemberPortalPaymentControls] = useState<MemberPortalPaymentControls | null>(null);
     const [memberPortalPaymentControlsLoading, setMemberPortalPaymentControlsLoading] = useState(false);
     const [memberPortalPaymentControlsSavingKey, setMemberPortalPaymentControlsSavingKey] = useState<string | null>(null);
+    const [workspaceTwoFactorSettings, setWorkspaceTwoFactorSettings] = useState<WorkspaceTwoFactorSettings | null>(null);
+    const [workspaceTwoFactorSettingsLoading, setWorkspaceTwoFactorSettingsLoading] = useState(false);
+    const [workspaceTwoFactorSettingsSaving, setWorkspaceTwoFactorSettingsSaving] = useState(false);
 
     if (!session) {
         return <Navigate to="/signin" replace />;
@@ -74,6 +79,8 @@ export function SecuritySettingsPage() {
 
     const twoFactorEnabled = Boolean(profile.two_factor_enabled && profile.two_factor_verified);
     const canManageMemberPortalPaymentControls = profile.role === "super_admin" && Boolean(profile.tenant_id);
+    const canManageWorkspaceTwoFactor = profile.role === "super_admin" && Boolean(profile.tenant_id);
+    const twoFactorWorkspaceEnabled = profile.two_factor_workspace_enabled !== false;
     const backTarget = profile.role === "member"
         ? "/portal"
         : profile.role === "treasury_officer"
@@ -85,7 +92,7 @@ export function SecuritySettingsPage() {
     const managementPayload = buildVerificationPayload(totpCode, recoveryCode);
 
     const loadMemberPortalPaymentControls = async () => {
-        if (!canManageMemberPortalPaymentControls || !profile.tenant_id) {
+        if (!canManageMemberPortalPaymentControls || !profile.tenant_id || twoFactorSetupRequired) {
             setMemberPortalPaymentControls(null);
             return;
         }
@@ -107,6 +114,32 @@ export function SecuritySettingsPage() {
             });
         } finally {
             setMemberPortalPaymentControlsLoading(false);
+        }
+    };
+
+    const loadWorkspaceTwoFactorSettings = async () => {
+        if (!canManageWorkspaceTwoFactor || !profile.tenant_id) {
+            setWorkspaceTwoFactorSettings(null);
+            return;
+        }
+
+        setWorkspaceTwoFactorSettingsLoading(true);
+        try {
+            const { data } = await api.get<WorkspaceTwoFactorSettingsResponse>(
+                endpoints.securitySettings.twoFactor(),
+                {
+                    params: { tenant_id: profile.tenant_id }
+                }
+            );
+            setWorkspaceTwoFactorSettings(data.data || null);
+        } catch (error) {
+            pushToast({
+                type: "error",
+                title: "Unable to load workspace authenticator setting",
+                message: getApiErrorMessage(error)
+            });
+        } finally {
+            setWorkspaceTwoFactorSettingsLoading(false);
         }
     };
 
@@ -148,6 +181,43 @@ export function SecuritySettingsPage() {
             });
         } finally {
             setMemberPortalPaymentControlsSavingKey(null);
+        }
+    };
+
+    const toggleWorkspaceTwoFactor = async (enabled: boolean) => {
+        if (!canManageWorkspaceTwoFactor || !profile.tenant_id) {
+            return;
+        }
+
+        setWorkspaceTwoFactorSettingsSaving(true);
+        try {
+            const payload: UpdateWorkspaceTwoFactorSettingsRequest = {
+                tenant_id: profile.tenant_id,
+                two_factor_auth_enabled: enabled
+            };
+
+            const { data } = await api.patch<WorkspaceTwoFactorSettingsResponse>(
+                endpoints.securitySettings.twoFactor(),
+                payload
+            );
+
+            setWorkspaceTwoFactorSettings(data.data || null);
+            await refreshProfile();
+            pushToast({
+                type: "success",
+                title: "Workspace authenticator setting updated",
+                message: enabled
+                    ? "Authenticator verification is now required again for roles that use it."
+                    : "Authenticator verification is now turned off across this workspace."
+            });
+        } catch (error) {
+            pushToast({
+                type: "error",
+                title: "Unable to update workspace authenticator setting",
+                message: getApiErrorMessage(error)
+            });
+        } finally {
+            setWorkspaceTwoFactorSettingsSaving(false);
         }
     };
 
@@ -286,16 +356,20 @@ export function SecuritySettingsPage() {
     };
 
     useEffect(() => {
-        if (setupIntent !== "setup" || twoFactorEnabled || setupData || loadingAction) {
+        if (setupIntent !== "setup" || !twoFactorWorkspaceEnabled || twoFactorEnabled || setupData || loadingAction) {
             return;
         }
 
         void startSetup();
-    }, [loadingAction, setupData, setupIntent, twoFactorEnabled]);
+    }, [loadingAction, setupData, setupIntent, twoFactorEnabled, twoFactorWorkspaceEnabled]);
 
     useEffect(() => {
         void loadMemberPortalPaymentControls();
-    }, [canManageMemberPortalPaymentControls, profile.tenant_id]);
+    }, [canManageMemberPortalPaymentControls, profile.tenant_id, twoFactorSetupRequired]);
+
+    useEffect(() => {
+        void loadWorkspaceTwoFactorSettings();
+    }, [canManageWorkspaceTwoFactor, profile.tenant_id]);
 
     return (
         <Box sx={{ maxWidth: 1040, mx: "auto", px: { xs: 2, md: 3 }, py: 3 }}>
@@ -318,13 +392,19 @@ export function SecuritySettingsPage() {
                         Two-Factor Authentication
                     </Typography>
                     <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 760 }}>
-                        Protect this SACCO workspace with authenticator-app based verification compatible with Google Authenticator, Microsoft Authenticator, Authy, Bitwarden, 1Password, and similar TOTP apps.
+                        Protect this SACCO workspace with authenticator-app based verification compatible with Google Authenticator, Microsoft Authenticator, Authy, Bitwarden, 1Password, and similar TOTP apps. Super admin can also turn this protection on or off for the whole workspace below.
                     </Typography>
                 </Stack>
 
                 {twoFactorSetupRequired && (
                     <Alert severity="warning" icon={<ShieldRoundedIcon />}>
                         Your role requires two-factor authentication before you can continue using protected financial modules.
+                    </Alert>
+                )}
+
+                {!twoFactorWorkspaceEnabled && (
+                    <Alert severity="info" icon={<SecurityRoundedIcon />}>
+                        Authenticator verification is currently turned off for this workspace by a super admin setting.
                     </Alert>
                 )}
 
@@ -335,6 +415,60 @@ export function SecuritySettingsPage() {
                         gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" }
                     }}
                 >
+                    {canManageWorkspaceTwoFactor && (
+                        <Box sx={{ gridColumn: "1 / -1" }}>
+                            <Card>
+                                <CardContent>
+                                    <Stack spacing={2}>
+                                        <Stack spacing={0.5}>
+                                            <Typography variant="h6" fontWeight={700}>
+                                                Workspace Authenticator Policy
+                                            </Typography>
+                                            <Typography variant="body2" color="text.secondary">
+                                                Turn authenticator verification on or off for everyone in this workspace from one place.
+                                            </Typography>
+                                        </Stack>
+                                        <Alert severity="info" variant="outlined">
+                                            When this is off, staff and member sign-in no longer ask for authenticator codes and protected actions stop requiring step-up verification.
+                                        </Alert>
+
+                                        {workspaceTwoFactorSettingsLoading && !workspaceTwoFactorSettings ? (
+                                            <Stack direction="row" spacing={1.2} alignItems="center">
+                                                <CircularProgress size={18} />
+                                                <Typography variant="body2" color="text.secondary">
+                                                    Loading workspace authenticator setting...
+                                                </Typography>
+                                            </Stack>
+                                        ) : null}
+
+                                        {workspaceTwoFactorSettings ? (
+                                            <Stack
+                                                direction={{ xs: "column", sm: "row" }}
+                                                spacing={1.5}
+                                                justifyContent="space-between"
+                                                alignItems={{ xs: "flex-start", sm: "center" }}
+                                            >
+                                                <Box sx={{ minWidth: 0 }}>
+                                                    <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                                                        Require authenticator verification
+                                                    </Typography>
+                                                    <Typography variant="body2" color="text.secondary">
+                                                        Applies to sign-in enforcement, protected action verification, and new authenticator setup across this workspace.
+                                                    </Typography>
+                                                </Box>
+                                                <Switch
+                                                    checked={workspaceTwoFactorSettings.two_factor_auth_enabled}
+                                                    onChange={(_, checked) => void toggleWorkspaceTwoFactor(checked)}
+                                                    disabled={workspaceTwoFactorSettingsSaving}
+                                                />
+                                            </Stack>
+                                        ) : null}
+                                    </Stack>
+                                </CardContent>
+                            </Card>
+                        </Box>
+                    )}
+
                     <Box>
                         <Card sx={{ height: "100%" }}>
                             <CardContent>
@@ -349,9 +483,15 @@ export function SecuritySettingsPage() {
                                             </Typography>
                                         </Stack>
                                         <Chip
-                                            color={twoFactorEnabled ? "success" : "default"}
-                                            icon={twoFactorEnabled ? <VerifiedRoundedIcon /> : <SecurityRoundedIcon />}
-                                            label={twoFactorEnabled ? "Enabled" : "Not enabled"}
+                                            color={!twoFactorWorkspaceEnabled ? "warning" : twoFactorEnabled ? "success" : "default"}
+                                            icon={!twoFactorWorkspaceEnabled && twoFactorEnabled
+                                                ? <ShieldRoundedIcon />
+                                                : twoFactorEnabled
+                                                    ? <VerifiedRoundedIcon />
+                                                    : <SecurityRoundedIcon />}
+                                            label={!twoFactorWorkspaceEnabled
+                                                ? (twoFactorEnabled ? "Configured but inactive" : "Disabled by workspace")
+                                                : (twoFactorEnabled ? "Enabled" : "Not enabled")}
                                         />
                                     </Stack>
 
@@ -362,7 +502,7 @@ export function SecuritySettingsPage() {
                                             Required for this role
                                         </Typography>
                                         <Typography variant="body1" fontWeight={700}>
-                                            {profile.two_factor_required ? "Yes" : "Optional"}
+                                            {!twoFactorWorkspaceEnabled ? "Disabled at workspace level" : profile.two_factor_required ? "Yes" : "Optional"}
                                         </Typography>
                                     </Stack>
 
@@ -387,6 +527,12 @@ export function SecuritySettingsPage() {
                                                 : "No recent verification"}
                                         </Typography>
                                     </Stack>
+
+                                    {!twoFactorWorkspaceEnabled && twoFactorEnabled && (
+                                        <Alert severity="info" variant="outlined">
+                                            This account still has an authenticator setup saved, but it is not enforced while the workspace setting is off.
+                                        </Alert>
+                                    )}
                                 </Stack>
                             </CardContent>
                         </Card>
@@ -405,7 +551,13 @@ export function SecuritySettingsPage() {
                                         </Typography>
                                     </Stack>
 
-                                    {!twoFactorEnabled && !setupData && (
+                                    {!twoFactorWorkspaceEnabled && (
+                                        <Alert severity="info">
+                                            Authenticator setup is currently unavailable because the workspace-level authenticator setting is turned off.
+                                        </Alert>
+                                    )}
+
+                                    {twoFactorWorkspaceEnabled && !twoFactorEnabled && !setupData && (
                                         <Button
                                             variant="contained"
                                             startIcon={<ShieldRoundedIcon />}
@@ -416,7 +568,7 @@ export function SecuritySettingsPage() {
                                         </Button>
                                     )}
 
-                                    {setupData && (
+                                    {twoFactorWorkspaceEnabled && setupData && (
                                         <Stack spacing={2}>
                                             <Box
                                                 component="img"
@@ -463,7 +615,7 @@ export function SecuritySettingsPage() {
                                         </Stack>
                                     )}
 
-                                    {twoFactorEnabled && (
+                                    {twoFactorWorkspaceEnabled && twoFactorEnabled && (
                                         <Alert severity="success">
                                             Authenticator verification is enabled. You can refresh your verification window, regenerate backup codes, or disable 2FA below.
                                         </Alert>
@@ -473,7 +625,7 @@ export function SecuritySettingsPage() {
                         </Card>
                     </Box>
 
-                    {twoFactorEnabled && (
+                    {twoFactorWorkspaceEnabled && twoFactorEnabled && (
                         <Box sx={{ gridColumn: "1 / -1" }}>
                             <Card>
                                 <CardContent>
@@ -597,7 +749,7 @@ export function SecuritySettingsPage() {
                         </Box>
                     )}
 
-                    {canManageMemberPortalPaymentControls && (
+                    {canManageMemberPortalPaymentControls && !twoFactorSetupRequired && (
                         <Box sx={{ gridColumn: "1 / -1" }}>
                             <Card>
                                 <CardContent>

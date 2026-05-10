@@ -58,6 +58,7 @@ export interface UserProfile {
     must_change_password?: boolean;
     two_factor_enabled?: boolean;
     two_factor_verified?: boolean;
+    two_factor_workspace_enabled?: boolean;
     two_factor_required?: boolean;
     two_factor_setup_required?: boolean;
     two_factor_enabled_at?: string | null;
@@ -697,6 +698,12 @@ export interface MemberPortalPaymentControls {
     share_contribution_enabled: boolean;
     savings_deposit_enabled: boolean;
     loan_repayment_enabled: boolean;
+    updated_at?: string | null;
+}
+
+export interface WorkspaceTwoFactorSettings {
+    tenant_id: string | null;
+    two_factor_auth_enabled: boolean;
     updated_at?: string | null;
 }
 
