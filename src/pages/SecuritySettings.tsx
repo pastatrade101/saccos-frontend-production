@@ -35,10 +35,16 @@ import {
     type TwoFactorValidateResponse,
     type TwoFactorVerifyResponse,
     type UpdateMemberPortalPaymentControlsRequest,
+    type UpdateWorkspacePublicRegistrationSettingsRequest,
     type UpdateWorkspaceTwoFactorSettingsRequest,
+    type WorkspacePublicRegistrationSettingsResponse,
     type WorkspaceTwoFactorSettingsResponse
 } from "../lib/endpoints";
-import type { MemberPortalPaymentControls, WorkspaceTwoFactorSettings } from "../types/api";
+import type {
+    MemberPortalPaymentControls,
+    WorkspacePublicRegistrationSettings,
+    WorkspaceTwoFactorSettings
+} from "../types/api";
 
 function buildVerificationPayload(totpCode: string, recoveryCode: string): TwoFactorValidateRequest {
     return {
@@ -64,6 +70,9 @@ export function SecuritySettingsPage() {
     const [workspaceTwoFactorSettings, setWorkspaceTwoFactorSettings] = useState<WorkspaceTwoFactorSettings | null>(null);
     const [workspaceTwoFactorSettingsLoading, setWorkspaceTwoFactorSettingsLoading] = useState(false);
     const [workspaceTwoFactorSettingsSaving, setWorkspaceTwoFactorSettingsSaving] = useState(false);
+    const [workspacePublicRegistrationSettings, setWorkspacePublicRegistrationSettings] = useState<WorkspacePublicRegistrationSettings | null>(null);
+    const [workspacePublicRegistrationSettingsLoading, setWorkspacePublicRegistrationSettingsLoading] = useState(false);
+    const [workspacePublicRegistrationSettingsSaving, setWorkspacePublicRegistrationSettingsSaving] = useState(false);
 
     if (!session) {
         return <Navigate to="/signin" replace />;
@@ -143,6 +152,32 @@ export function SecuritySettingsPage() {
         }
     };
 
+    const loadWorkspacePublicRegistrationSettings = async () => {
+        if (!canManageWorkspaceTwoFactor || !profile.tenant_id) {
+            setWorkspacePublicRegistrationSettings(null);
+            return;
+        }
+
+        setWorkspacePublicRegistrationSettingsLoading(true);
+        try {
+            const { data } = await api.get<WorkspacePublicRegistrationSettingsResponse>(
+                endpoints.securitySettings.publicRegistration(),
+                {
+                    params: { tenant_id: profile.tenant_id }
+                }
+            );
+            setWorkspacePublicRegistrationSettings(data.data || null);
+        } catch (error) {
+            pushToast({
+                type: "error",
+                title: "Unable to load public registration setting",
+                message: getApiErrorMessage(error)
+            });
+        } finally {
+            setWorkspacePublicRegistrationSettingsLoading(false);
+        }
+    };
+
     const toggleMemberPortalPaymentControl = async (
         key: "share_contribution_enabled" | "savings_deposit_enabled" | "loan_repayment_enabled",
         enabled: boolean
@@ -218,6 +253,42 @@ export function SecuritySettingsPage() {
             });
         } finally {
             setWorkspaceTwoFactorSettingsSaving(false);
+        }
+    };
+
+    const toggleWorkspacePublicRegistration = async (enabled: boolean) => {
+        if (!canManageWorkspaceTwoFactor || !profile.tenant_id) {
+            return;
+        }
+
+        setWorkspacePublicRegistrationSettingsSaving(true);
+        try {
+            const payload: UpdateWorkspacePublicRegistrationSettingsRequest = {
+                tenant_id: profile.tenant_id,
+                public_registration_enabled: enabled
+            };
+
+            const { data } = await api.patch<WorkspacePublicRegistrationSettingsResponse>(
+                endpoints.securitySettings.publicRegistration(),
+                payload
+            );
+
+            setWorkspacePublicRegistrationSettings(data.data || null);
+            pushToast({
+                type: "success",
+                title: "Public registration setting updated",
+                message: enabled
+                    ? "Public membership registration is now visible again."
+                    : "Public membership registration is now hidden for this workspace."
+            });
+        } catch (error) {
+            pushToast({
+                type: "error",
+                title: "Unable to update public registration setting",
+                message: getApiErrorMessage(error)
+            });
+        } finally {
+            setWorkspacePublicRegistrationSettingsSaving(false);
         }
     };
 
@@ -371,6 +442,10 @@ export function SecuritySettingsPage() {
         void loadWorkspaceTwoFactorSettings();
     }, [canManageWorkspaceTwoFactor, profile.tenant_id]);
 
+    useEffect(() => {
+        void loadWorkspacePublicRegistrationSettings();
+    }, [canManageWorkspaceTwoFactor, profile.tenant_id]);
+
     return (
         <Box sx={{ maxWidth: 1040, mx: "auto", px: { xs: 2, md: 3 }, py: 3 }}>
             <Stack spacing={3}>
@@ -460,6 +535,60 @@ export function SecuritySettingsPage() {
                                                     checked={workspaceTwoFactorSettings.two_factor_auth_enabled}
                                                     onChange={(_, checked) => void toggleWorkspaceTwoFactor(checked)}
                                                     disabled={workspaceTwoFactorSettingsSaving}
+                                                />
+                                            </Stack>
+                                        ) : null}
+                                    </Stack>
+                                </CardContent>
+                            </Card>
+                        </Box>
+                    )}
+
+                    {canManageWorkspaceTwoFactor && (
+                        <Box sx={{ gridColumn: "1 / -1" }}>
+                            <Card>
+                                <CardContent>
+                                    <Stack spacing={2}>
+                                        <Stack spacing={0.5}>
+                                            <Typography variant="h6" fontWeight={700}>
+                                                Public Registration
+                                            </Typography>
+                                            <Typography variant="body2" color="text.secondary">
+                                                Show or hide the public membership application feature for this workspace.
+                                            </Typography>
+                                        </Stack>
+                                        <Alert severity="info" variant="outlined">
+                                            When this is off, public visitors no longer see the membership application entry and direct public signup requests are rejected.
+                                        </Alert>
+
+                                        {workspacePublicRegistrationSettingsLoading && !workspacePublicRegistrationSettings ? (
+                                            <Stack direction="row" spacing={1.2} alignItems="center">
+                                                <CircularProgress size={18} />
+                                                <Typography variant="body2" color="text.secondary">
+                                                    Loading public registration setting...
+                                                </Typography>
+                                            </Stack>
+                                        ) : null}
+
+                                        {workspacePublicRegistrationSettings ? (
+                                            <Stack
+                                                direction={{ xs: "column", sm: "row" }}
+                                                spacing={1.5}
+                                                justifyContent="space-between"
+                                                alignItems={{ xs: "flex-start", sm: "center" }}
+                                            >
+                                                <Box sx={{ minWidth: 0 }}>
+                                                    <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                                                        Show public membership registration
+                                                    </Typography>
+                                                    <Typography variant="body2" color="text.secondary">
+                                                        Controls whether new applicants can see and use the public registration form.
+                                                    </Typography>
+                                                </Box>
+                                                <Switch
+                                                    checked={workspacePublicRegistrationSettings.public_registration_enabled}
+                                                    onChange={(_, checked) => void toggleWorkspacePublicRegistration(checked)}
+                                                    disabled={workspacePublicRegistrationSettingsSaving}
                                                 />
                                             </Stack>
                                         ) : null}

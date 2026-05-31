@@ -302,68 +302,18 @@ export function SignInPage() {
 
     return (
         <div className={pageStyles.authShell}>
-            <div className={pageStyles.authFrame}>
-                <aside className={pageStyles.authVisual}>
-                    <img
-                        src="/bk.jpg"
-                        alt="SACCO workspace background"
-                        className={pageStyles.authVisualImage}
-                    />
-                    <div className={pageStyles.authVisualOverlay} />
-                    <div className={pageStyles.authVisualContent}>
-                        <span className={pageStyles.authVisualEyebrow}>Single-tenant SACCO workspace</span>
-                        <div>
-                            <h1 className={pageStyles.authVisualTitle}>
-                                Secure access for staff operations and member service.
-                            </h1>
-                            <p className={pageStyles.authVisualCopy}>
-                                Sign in to manage members, lending, teller activity, approvals, and reporting from one protected SACCO environment.
-                            </p>
-                        </div>
-                        <div className={pageStyles.authVisualAssistRow}>
-                            <span className={pageStyles.authVisualAssistLabel}>New member onboarding</span>
-                            <RouterLink className={pageStyles.authVisualAssistLink} to="/signup">
-                                Start membership
-                            </RouterLink>
-                        </div>
-                        <div className={pageStyles.authVisualMetrics}>
-                            <div className={pageStyles.authVisualMetric}>
-                                <strong>Member access</strong>
-                                <span>Portal balances, repayment visibility, and statements in one login.</span>
-                            </div>
-                            <div className={pageStyles.authVisualMetric}>
-                                <strong>Staff control</strong>
-                                <span>Approvals, collections, savings, loans, and audit workflows stay aligned.</span>
-                            </div>
-                            <div className={pageStyles.authVisualMetric}>
-                                <strong>Protected sign in</strong>
-                                <span>Authenticator-based verification protects financial roles and critical actions.</span>
-                            </div>
-                        </div>
-                        <div className={pageStyles.authPanelFooter}>
-                            <div className={pageStyles.authFooterItem}>
-                                <strong>Two-factor protected</strong>
-                                <span>Financial staff roles use authenticator-based verification to reduce SIM-swap and interception risk.</span>
-                            </div>
-                            <div className={pageStyles.authFooterItem}>
-                                <strong>Need access support?</strong>
-                                <span>Contact your branch administrator if your role was assigned but your first-time setup link does not arrive.</span>
-                            </div>
-                        </div>
-                    </div>
-                </aside>
-
-                <section className={pageStyles.authPanel}>
-                    <div className={pageStyles.authBrandRow}>
+            <div className={`${pageStyles.authFrame} ${pageStyles.authFrameLogin}`}>
+                <section className={`${pageStyles.authPanel} ${pageStyles.authPanelLogin}`}>
+                    <div className={`${pageStyles.authBrandRow} ${pageStyles.authBrandRowCentered}`}>
                         <div className={pageStyles.authBrandIdentity}>
                             <img
-                                src="/SACCOSS-LOGO.png"
-                                alt="SMART SACCOS logo"
+                                src="/icon-ilboru.png"
+                                alt="ILBORU-ALUMNI logo"
                                 className={pageStyles.authBrandLogo}
                             />
                             <div>
-                                <span className={pageStyles.authBrandText}>SMART SACCOS</span>
-                                <span className={pageStyles.authBrandSubtext}>Secure workspace access</span>
+                                <span className={pageStyles.authBrandText}>ILBORU ALUMNI SACCOS LTD</span>
+                                <span className={pageStyles.authBrandSubtext}>Further Together</span>
                             </div>
                         </div>
                         <button
@@ -374,16 +324,6 @@ export function SignInPage() {
                         >
                             {theme === "dark" ? <LightModeRoundedIcon fontSize="small" /> : <DarkModeRoundedIcon fontSize="small" />}
                         </button>
-                    </div>
-
-                    <div className={pageStyles.authPanelTop}>
-                        <div>
-                            <span className={pageStyles.authPanelEyebrow}>Welcome back</span>
-                            <h2 className={pageStyles.authTitle}>Sign in to your workspace</h2>
-                            <p className={pageStyles.authCopy}>
-                                Use your assigned email and password to access the correct workspace for your role. Staff users may be prompted for authenticator verification after password sign in.
-                            </p>
-                        </div>
                     </div>
 
                     <form className={pageStyles.form} onSubmit={onSubmit}>
@@ -421,37 +361,27 @@ export function SignInPage() {
                         </button>
                     </form>
 
-                    <div className={pageStyles.firstLoginCard}>
-                        <div className={pageStyles.firstLoginHeader}>
-                            <strong>First-time access</strong>
-                            <span>
-                                If your account is already provisioned but you do not have a password yet, request a one-time setup link using your registered work email.
-                            </span>
-                        </div>
-                        <div className={pageStyles.firstLoginActions}>
-                            <button
-                                className={pageStyles.authForgotLink}
-                                type="button"
-                                onClick={() => {
-                                    setSetupEmail(form.getValues("email") || "");
-                                    setShowFirstTimeSetup(true);
-                                }}
-                            >
-                                First-time user without password?
-                            </button>
-                        </div>
+                    <div className={pageStyles.authLoginLinks}>
+                        <button
+                            className={pageStyles.authForgotLink}
+                            type="button"
+                            onClick={() => {
+                                setSetupEmail(form.getValues("email") || "");
+                                setShowFirstTimeSetup(true);
+                            }}
+                        >
+                            First-time user without password?
+                        </button>
                     </div>
 
                     <p className={pageStyles.authLegal}>
-                        By signing in, you acknowledge the{" "}
                         <RouterLink className={pageStyles.authLegalLink} to="/privacy-policy">
                             Privacy Policy
                         </RouterLink>{" "}
-                        and{" "}
+                        <span aria-hidden="true">/</span>{" "}
                         <RouterLink className={pageStyles.authLegalLink} to="/terms-and-agreement">
                             Terms & Agreement
                         </RouterLink>
-                        .
                     </p>
                 </section>
             </div>

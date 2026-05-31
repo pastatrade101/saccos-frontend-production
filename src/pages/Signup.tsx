@@ -15,6 +15,7 @@ import {
     Button,
     Checkbox,
     Chip,
+    CircularProgress,
     Divider,
     FormControlLabel,
     FormHelperText,
@@ -180,7 +181,7 @@ function calculateAge(dateOfBirth: string) {
 }
 
 const schema = z.object({
-    branch_id: z.string().uuid("Select a branch."),
+    branch_id: z.string().uuid("Membership intake is not available."),
     first_name: z.string().trim().min(1, "First name is required."),
     last_name: z.string().trim().min(1, "Last name is required."),
     gender: z.enum(["male", "female", "other"], { message: "Select gender." }),
@@ -410,7 +411,7 @@ export function SignupPage() {
                 if (!isMounted) {
                     return;
                 }
-                setBranchesError(getApiErrorMessage(error, "Unable to load branches."));
+                setBranchesError(getApiErrorMessage(error, "Unable to load membership intake details."));
             } finally {
                 if (isMounted) {
                     setBranchesLoading(false);
@@ -433,6 +434,7 @@ export function SignupPage() {
         () => branches.find((branch) => branch.id === selectedBranchId) || null,
         [branches, selectedBranchId]
     );
+    const publicRegistrationUnavailable = !branchesLoading && !branchesError && branches.length === 0;
     const {
         regions,
         districts,
@@ -473,7 +475,7 @@ export function SignupPage() {
 
     const branchHelper = form.formState.errors.branch_id?.message
         || branchesError
-        || (!branchesLoading && branches.length === 0 ? "No branches are accepting applications yet." : "Pick the branch you wish to join.");
+        || (publicRegistrationUnavailable ? "Online membership application will be added in a future update." : "Applications are routed automatically to the SACCO intake team.");
     const passwordValue = form.watch("password");
     const confirmPasswordValue = form.watch("confirm_password");
     const passwordChecks = getPasswordChecks(passwordValue, confirmPasswordValue);
@@ -562,7 +564,7 @@ export function SignupPage() {
             pushToast({
                 type: "success",
                 title: "Application submitted",
-                message: "Your membership request has been recorded with identity documents and is now ready for branch review."
+                message: "Your membership request has been recorded with identity documents and is now ready for SACCO review."
             });
             navigate("/signin");
         } catch (error) {
@@ -602,6 +604,95 @@ export function SignupPage() {
             }
         }
         : undefined;
+
+    if (branchesLoading) {
+        return (
+            <Box
+                sx={{
+                    minHeight: "100vh",
+                    display: "grid",
+                    placeItems: "center",
+                    px: 2.5,
+                    py: 5,
+                    background: shellOverlay
+                }}
+            >
+                <Paper
+                    elevation={0}
+                    sx={{
+                        width: "100%",
+                        maxWidth: 720,
+                        borderRadius: 4,
+                        border: `1px solid ${surfaceBorder}`,
+                        bgcolor: cardBackground,
+                        backdropFilter: "blur(18px)",
+                        p: { xs: 3, md: 4 }
+                    }}
+                >
+                    <Stack spacing={2.5} alignItems="flex-start">
+                        <Typography variant="overline" color="primary.main" sx={{ letterSpacing: 2 }}>
+                            Registration
+                        </Typography>
+                        <Typography variant="h4" fontWeight={800}>
+                            Checking membership application availability
+                        </Typography>
+                        <Typography variant="body1" color="text.secondary">
+                            Please wait while we confirm whether online membership application is available for this SACCO.
+                        </Typography>
+                        <CircularProgress size={30} />
+                    </Stack>
+                </Paper>
+            </Box>
+        );
+    }
+
+    if (publicRegistrationUnavailable) {
+        return (
+            <Box
+                sx={{
+                    minHeight: "100vh",
+                    display: "grid",
+                    placeItems: "center",
+                    px: 2.5,
+                    py: 5,
+                    background: shellOverlay
+                }}
+            >
+                <Paper
+                    elevation={0}
+                    sx={{
+                        width: "100%",
+                        maxWidth: 720,
+                        borderRadius: 4,
+                        border: `1px solid ${surfaceBorder}`,
+                        bgcolor: cardBackground,
+                        backdropFilter: "blur(18px)",
+                        p: { xs: 3, md: 4 }
+                    }}
+                >
+                    <Stack spacing={2.5}>
+                        <Typography variant="overline" color="primary.main" sx={{ letterSpacing: 2 }}>
+                            Registration
+                        </Typography>
+                        <Typography variant="h4" fontWeight={800}>
+                            Online membership application is coming in a future update
+                        </Typography>
+                        <Alert severity="info">
+                            This SACCO is not yet accepting online membership applications. Please contact the SACCO team for onboarding support, or sign in if you already have an account.
+                        </Alert>
+                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                            <Button component={RouterLink} to="/signin" variant="contained">
+                                Sign in
+                            </Button>
+                            <Button component={RouterLink} to="/" variant="outlined">
+                                Back to home
+                            </Button>
+                        </Stack>
+                    </Stack>
+                </Paper>
+            </Box>
+        );
+    }
     const signupFieldSx = muiTheme.palette.mode === "dark"
         ? {
             "& .MuiOutlinedInput-root": {
@@ -735,7 +826,7 @@ export function SignupPage() {
                 return (
                     <StepShell
                         title="Address Information"
-                        description="Capture the residential location used for branch and compliance verification."
+                        description="Capture the residential location used for SACCO and compliance verification."
                     >
                         <Grid container columnSpacing={1.35} rowSpacing={1.6}>
                             <Grid size={{ xs: 12, sm: 6 }}>
@@ -885,7 +976,7 @@ export function SignupPage() {
                 return (
                     <StepShell
                         title="Identification Upload"
-                        description="Attach the identity documents branch managers need to review the application file."
+                        description="Attach the identity documents the SACCO team needs to review the application file."
                     >
                         <Alert severity="info" variant="outlined">
                             Allowed formats: JPG, PNG, PDF. Maximum file size: 5MB per document.
@@ -916,33 +1007,25 @@ export function SignupPage() {
                 return (
                     <StepShell
                         title="Membership Details"
-                        description="Capture the branch, membership category, and SACCO commitment values before submission."
+                        description="Capture the membership category and SACCO commitment values before submission."
                     >
                         <Alert severity="info" variant="outlined">
                             {selectedBranch
-                                ? `Joining ${selectedBranch.name}. Minimum initial shares: ${formatCurrency(selectedBranch.minimum_initial_share_amount)}. Minimum monthly savings commitment: ${formatCurrency(selectedBranch.minimum_monthly_savings_commitment)}. Membership fee after approval: ${formatCurrency(selectedBranch.membership_fee_amount)}.`
-                                : "Choose the branch you want to join so we can apply the correct onboarding requirements."}
+                                ? `${selectedBranch.name} will receive this application. Minimum initial shares: ${formatCurrency(selectedBranch.minimum_initial_share_amount)}. Minimum monthly savings commitment: ${formatCurrency(selectedBranch.minimum_monthly_savings_commitment)}. Membership fee after approval: ${formatCurrency(selectedBranch.membership_fee_amount)}.`
+                                : "Membership intake details are being prepared for your application."}
                         </Alert>
                         <Grid container columnSpacing={1.35} rowSpacing={1.6}>
                             <Grid size={{ xs: 12, md: 4 }}>
                                 <TextField
-                                    select
                                     fullWidth
-                                    label="Branch"
+                                    label="SACCO branch"
                                     size="small"
                                     sx={signupFieldSx}
-                                    value={form.watch("branch_id")}
-                                    onChange={(event) => form.setValue("branch_id", event.target.value, { shouldValidate: true })}
+                                    value={selectedBranch ? `${selectedBranch.name} (${selectedBranch.code})` : ""}
                                     error={Boolean(form.formState.errors.branch_id) || Boolean(branchesError)}
                                     helperText={branchHelper}
-                                    disabled={branchesLoading || branches.length === 0}
-                                >
-                                    {branches.map((branch) => (
-                                        <MenuItem key={branch.id} value={branch.id}>
-                                            {branch.name} ({branch.code})
-                                        </MenuItem>
-                                    ))}
-                                </TextField>
+                                    disabled
+                                />
                             </Grid>
                             <Grid size={{ xs: 12, md: 4 }}>
                                 <TextField select fullWidth label="Membership type" size="small" sx={signupFieldSx} value={form.watch("membership_type")} onChange={(event) => form.setValue("membership_type", event.target.value as SignupValues["membership_type"], { shouldValidate: true })} error={Boolean(form.formState.errors.membership_type)} helperText={form.formState.errors.membership_type?.message}>
@@ -970,7 +1053,7 @@ export function SignupPage() {
                 return (
                     <StepShell
                         title="Security & Password"
-                        description="Create the portal password the applicant will use after branch approval and activation."
+                        description="Create the portal password the applicant will use after membership approval and activation."
                     >
                         <Grid container columnSpacing={1.35} rowSpacing={1.6}>
                             <Grid size={{ xs: 12, md: 6 }}>
@@ -1080,7 +1163,7 @@ export function SignupPage() {
                                     Submission summary
                                 </Typography>
                                 <Typography variant="body2" color="text.secondary">
-                                    {form.watch("first_name")} {form.watch("last_name")} · {selectedBranch?.name || "Branch not selected"} · {formatCurrency(Number(form.watch("initial_share_amount") || 0))} initial shares · {formatCurrency(Number(form.watch("monthly_savings_commitment") || 0))} monthly savings
+                                    {form.watch("first_name")} {form.watch("last_name")} · {selectedBranch?.name || "SACCO intake"} · {formatCurrency(Number(form.watch("initial_share_amount") || 0))} initial shares · {formatCurrency(Number(form.watch("monthly_savings_commitment") || 0))} monthly savings
                                 </Typography>
                             </Stack>
                         </Paper>
@@ -1159,7 +1242,7 @@ export function SignupPage() {
                         <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
                             <Stack spacing={{ xs: 0.9, md: 1 }} sx={{ minWidth: 0 }}>
                                 <Stack direction="row" spacing={1} alignItems="center">
-                                    <Box component="img" src="/SACCOSS-LOGO.png" alt="SMART SACCOS logo" sx={{ width: { xs: 38, md: 42 }, height: { xs: 38, md: 42 }, objectFit: "contain" }} />
+                                    <Box component="img" src="/icon-ilboru.png" alt="ILBORU-ALUMNI logo" sx={{ width: { xs: 38, md: 42 }, height: { xs: 38, md: 42 }, objectFit: "contain" }} />
                                     <Box>
                                         <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: "-0.02em", fontSize: { xs: "1.12rem", md: "1.2rem" } }}>
                                             SMART SACCOS
@@ -1174,7 +1257,7 @@ export function SignupPage() {
                                         Apply for membership
                                     </Typography>
                                     <Typography variant="body1" sx={{ mt: 0.45, maxWidth: 720, color: mutedText, fontSize: { xs: "0.88rem", md: "0.92rem" }, lineHeight: 1.36 }}>
-                                        Complete your details once, upload the required documents, and submit for branch review.
+                                        Complete your details once, upload the required documents, and submit for SACCO review.
                                     </Typography>
                                 </Box>
                             </Stack>
@@ -1231,7 +1314,7 @@ export function SignupPage() {
 
                             <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" alignItems={{ md: "center" }} spacing={2} sx={{ mt: 0.5 }}>
                                 <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-                                    <Chip label={branchesLoading ? "Loading branches" : `${branches.length} branch${branches.length === 1 ? "" : "es"} available`} variant="outlined" />
+                                    <Chip label={selectedBranch ? `Intake routed to ${selectedBranch.name}` : "Membership intake ready"} variant="outlined" />
                                     <Chip label={selectedBranch ? `${formatCurrency(selectedBranch.membership_fee_amount)} membership fee after approval` : "Membership fee collected after approval"} variant="outlined" />
                                 </Stack>
                                 <Stack direction="row" spacing={1.2}>

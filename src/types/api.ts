@@ -707,6 +707,12 @@ export interface WorkspaceTwoFactorSettings {
     updated_at?: string | null;
 }
 
+export interface WorkspacePublicRegistrationSettings {
+    tenant_id: string | null;
+    public_registration_enabled: boolean;
+    updated_at?: string | null;
+}
+
 export interface ApprovalDecision {
     id: string;
     decision: "approved" | "rejected";

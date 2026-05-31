@@ -1,11 +1,9 @@
-const STATIC_CACHE = "saccos-static-v1";
-const RUNTIME_CACHE = "saccos-runtime-v1";
+const STATIC_CACHE = "saccos-static-v2";
+const RUNTIME_CACHE = "saccos-runtime-v2";
 const PRECACHE_URLS = [
   "/offline.html",
   "/manifest.webmanifest",
-  "/pwa-192.png",
-  "/pwa-512.png",
-  "/SACCOSS-LOGO.png"
+  "/icon-ilboru.png"
 ];
 
 self.addEventListener("install", (event) => {

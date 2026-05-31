@@ -1722,7 +1722,7 @@ export function MemberPortalPage() {
     const memberAccentStrong = isDarkMode ? DARK_MEMBER_ACCENT_DEEP : brandColors.primary[900];
     const memberAccentAlt = isDarkMode ? "#E6C88A" : brandColors.accent[700];
     const memberAccentSoftBg = alpha(memberAccent, isDarkMode ? 0.18 : 0.12);
-    const portalLogoSrc = "/SACCOSS-LOGO.png";
+    const portalLogoSrc = "/icon-ilboru.png";
     const memberPortalTourSeen = typeof window !== "undefined"
         ? window.localStorage.getItem(MEMBER_PORTAL_TOUR_STORAGE_KEY) === "done"
         : true;
@@ -6568,7 +6568,7 @@ export function MemberPortalPage() {
                         <Box
                             component="img"
                             src={portalLogoSrc}
-                            alt="SACCOS logo"
+                            alt="ILBORU-ALUMNI logo"
                             sx={{
                                 width: "100%",
                                 height: "100%",
@@ -6594,7 +6594,7 @@ export function MemberPortalPage() {
                             <Box
                                 component="img"
                                 src={portalLogoSrc}
-                                alt="SACCOS logo"
+                                alt="ILBORU-ALUMNI logo"
                                 sx={{
                                     width: "100%",
                                     height: "100%",

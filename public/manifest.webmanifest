@@ -9,14 +9,14 @@
   "theme_color": "#0a0573",
   "icons": [
     {
-      "src": "/pwa-192.png",
-      "sizes": "192x192",
+      "src": "/icon-ilboru.png",
+      "sizes": "400x400",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/pwa-512.png",
-      "sizes": "512x512",
+      "src": "/icon-ilboru.png",
+      "sizes": "400x400",
       "type": "image/png",
       "purpose": "any maskable"
     }

@@ -381,7 +381,7 @@ export function AppLayout() {
         ? alpha(brandColors.primary[900], 0.92)
         : brandColors.primary[900];
     const topBarMuted = alpha("#ffffff", 0.72);
-    const brandLogoSrc = "/SACCOSS-LOGO.png";
+    const brandLogoSrc = "/icon-ilboru.png";
 
     const navigateToSearchOption = (option: SearchOption | null) => {
         if (!option) {
@@ -406,6 +406,7 @@ export function AppLayout() {
                     sx={{
                         width: 40,
                         height: 40,
+                        flexShrink: 0,
                         borderRadius: 1.5,
                         bgcolor: "#ffffff",
                         display: "grid",
@@ -416,16 +417,20 @@ export function AppLayout() {
                     <Box
                         component="img"
                         src={brandLogoSrc}
-                        alt="SMART SACCOS logo"
+                        alt="ILBORU-ALUMNI logo"
                         sx={{ width: 26, height: 26, objectFit: "contain" }}
                     />
                 </Box>
-                <Box>
-                    <Typography variant="subtitle1" fontWeight={700} sx={{ color: sidebarText }}>
-                        SMART SACCOS
+                <Box sx={{ minWidth: 0 }}>
+                    <Typography
+                        variant="subtitle1"
+                        fontWeight={800}
+                        sx={{ color: sidebarText, lineHeight: 1.12, overflowWrap: "anywhere" }}
+                    >
+                        ILBORU ALUMNI SACCOS LTD
                     </Typography>
-                    <Typography variant="caption" sx={{ color: sidebarMuted }}>
-                        Fintech operations workspace
+                    <Typography variant="caption" sx={{ color: sidebarMuted, fontWeight: 700 }}>
+                        Further Together
                     </Typography>
                 </Box>
             </Stack>

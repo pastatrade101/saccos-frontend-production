@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
 import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
@@ -15,6 +15,7 @@ import ShieldRoundedIcon from "@mui/icons-material/ShieldRounded";
 import SupportAgentRoundedIcon from "@mui/icons-material/SupportAgentRounded";
 import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
 import {
+    Alert,
     AppBar,
     Box,
     Button,
@@ -35,6 +36,8 @@ import {
     useTheme
 } from "@mui/material";
 
+import { api } from "../lib/api";
+import { endpoints, type PublicSignupBranchesResponse } from "../lib/endpoints";
 import { useUI } from "../ui/UIProvider";
 
 const coreCapabilities = [
@@ -112,6 +115,7 @@ export function LandingPage() {
     const theme = useTheme();
     const { theme: mode, toggleTheme } = useUI();
     const [mobileNavOpen, setMobileNavOpen] = useState(false);
+    const [publicRegistrationOpen, setPublicRegistrationOpen] = useState<boolean | null>(null);
     const isDark = mode === "dark";
 
     const ownerName = import.meta.env.VITE_MARKETING_OWNER_NAME || "SACCO Team";
@@ -119,7 +123,7 @@ export function LandingPage() {
     const ownerPhone = import.meta.env.VITE_MARKETING_OWNER_PHONE || "";
     const ownerWhatsApp = import.meta.env.VITE_MARKETING_OWNER_WHATSAPP || "";
     const ownerCompany = import.meta.env.VITE_MARKETING_OWNER_COMPANY || "SMART SACCOS";
-    const logoSrc = "/SACCOSS-LOGO.png";
+    const logoSrc = "/icon-ilboru.png";
 
     const whatsappNumber = ownerWhatsApp.replace(/[^\d]/g, "");
     const contactHref = ownerEmail
@@ -150,6 +154,33 @@ export function LandingPage() {
         { label: "Controls", href: "#controls" },
         { label: "Contact", href: "#contact" }
     ] as const;
+
+    useEffect(() => {
+        let isMounted = true;
+
+        const loadPublicRegistration = async () => {
+            try {
+                const response = await api.get<PublicSignupBranchesResponse>(endpoints.public.branches());
+                if (!isMounted) {
+                    return;
+                }
+
+                setPublicRegistrationOpen(Boolean((response.data.data || []).length));
+            } catch {
+                if (!isMounted) {
+                    return;
+                }
+
+                setPublicRegistrationOpen(false);
+            }
+        };
+
+        void loadPublicRegistration();
+
+        return () => {
+            isMounted = false;
+        };
+    }, []);
 
     return (
         <Box
@@ -227,23 +258,25 @@ export function LandingPage() {
                             <Button component={RouterLink} to="/signin" variant="text" color="inherit" sx={{ display: { xs: "none", sm: "inline-flex" } }}>
                                 Sign in
                             </Button>
-                            <Button
-                                component={RouterLink}
-                                to="/signup"
-                                variant="contained"
-                                sx={{
-                                    display: { xs: "none", sm: "inline-flex" },
-                                    borderRadius: 2.25,
-                                    px: 2.4,
-                                    bgcolor: isDark ? primaryAccent : "#0F172A",
-                                    color: isDark ? "#08111f" : "#FFFFFF",
-                                    "&:hover": {
-                                        bgcolor: isDark ? alpha(primaryAccent, 0.9) : alpha("#0F172A", 0.92)
-                                    }
-                                }}
-                            >
-                                Apply now
-                            </Button>
+                            {publicRegistrationOpen === true ? (
+                                <Button
+                                    component={RouterLink}
+                                    to="/signup"
+                                    variant="contained"
+                                    sx={{
+                                        display: { xs: "none", sm: "inline-flex" },
+                                        borderRadius: 2.25,
+                                        px: 2.4,
+                                        bgcolor: isDark ? primaryAccent : "#0F172A",
+                                        color: isDark ? "#08111f" : "#FFFFFF",
+                                        "&:hover": {
+                                            bgcolor: isDark ? alpha(primaryAccent, 0.9) : alpha("#0F172A", 0.92)
+                                        }
+                                    }}
+                                >
+                                    Apply now
+                                </Button>
+                            ) : null}
                             <IconButton sx={{ display: { xs: "inline-flex", md: "none" } }} onClick={() => setMobileNavOpen(true)}>
                                 <MenuRoundedIcon />
                             </IconButton>
@@ -284,19 +317,21 @@ export function LandingPage() {
                         <Button component={RouterLink} to="/signin" variant="outlined" fullWidth onClick={() => setMobileNavOpen(false)}>
                             Sign in
                         </Button>
-                        <Button
-                            component={RouterLink}
-                            to="/signup"
-                            variant="contained"
-                            fullWidth
-                            onClick={() => setMobileNavOpen(false)}
-                            sx={{
-                                bgcolor: isDark ? primaryAccent : "#0F172A",
-                                color: isDark ? "#08111f" : "#FFFFFF"
-                            }}
-                        >
-                            Apply now
-                        </Button>
+                        {publicRegistrationOpen === true ? (
+                            <Button
+                                component={RouterLink}
+                                to="/signup"
+                                variant="contained"
+                                fullWidth
+                                onClick={() => setMobileNavOpen(false)}
+                                sx={{
+                                    bgcolor: isDark ? primaryAccent : "#0F172A",
+                                    color: isDark ? "#08111f" : "#FFFFFF"
+                                }}
+                            >
+                                Apply now
+                            </Button>
+                        ) : null}
                     </Stack>
                 </Box>
             </Drawer>
@@ -380,21 +415,23 @@ export function LandingPage() {
                                     A dedicated digital system for SACCO teams to manage members, contributions, savings, loans, approvals, and reporting in one secure environment.
                                 </Typography>
                                 <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25} useFlexGap flexWrap="wrap">
-                                    <Button
-                                        component={RouterLink}
-                                        to="/signup"
-                                        variant="contained"
-                                        endIcon={<ArrowForwardRoundedIcon />}
-                                        sx={{
-                                            borderRadius: 1.4,
-                                            px: 2.7,
-                                            minHeight: 48,
-                                            bgcolor: isDark ? primaryAccent : "#0F172A",
-                                            color: isDark ? "#08111f" : "#FFFFFF"
-                                        }}
-                                    >
-                                        Start membership
-                                    </Button>
+                                    {publicRegistrationOpen === true ? (
+                                        <Button
+                                            component={RouterLink}
+                                            to="/signup"
+                                            variant="contained"
+                                            endIcon={<ArrowForwardRoundedIcon />}
+                                            sx={{
+                                                borderRadius: 1.4,
+                                                px: 2.7,
+                                                minHeight: 48,
+                                                bgcolor: isDark ? primaryAccent : "#0F172A",
+                                                color: isDark ? "#08111f" : "#FFFFFF"
+                                            }}
+                                        >
+                                            Start membership
+                                        </Button>
+                                    ) : null}
                                     <Button
                                         component={RouterLink}
                                         to="/signin"
@@ -1045,14 +1082,25 @@ export function LandingPage() {
                                         fontSize: { xs: "1.02rem", md: "1rem" }
                                     }}
                                 >
-                                    Apply for membership, sign in to continue operations, or contact the SACCO team for guidance on onboarding, support, and service access.
+                                    {publicRegistrationOpen === false
+                                        ? "Membership self-service will be added in a future update. You can still sign in or contact the SACCO team for assistance."
+                                        : "Apply for membership, sign in to continue operations, or contact the SACCO team for guidance on onboarding, support, and service access."}
                                 </Typography>
                             </Grid>
                             <Grid size={{ xs: 12, lg: 4 }}>
                                 <Stack spacing={1.25}>
-                                    <Button component={RouterLink} to="/signup" variant="contained" size="large" sx={{ borderRadius: 2.25 }}>
-                                        Apply for membership
-                                    </Button>
+                                    {publicRegistrationOpen === true ? (
+                                        <Button component={RouterLink} to="/signup" variant="contained" size="large" sx={{ borderRadius: 2.25 }}>
+                                            Apply for membership
+                                        </Button>
+                                    ) : publicRegistrationOpen === false ? (
+                                        <Chip label="Membership application coming in a future update" color="default" variant="outlined" />
+                                    ) : null}
+                                    {publicRegistrationOpen === false ? (
+                                        <Alert severity="info" variant="outlined">
+                                            Online membership application is not available yet. This feature will be added in a future update.
+                                        </Alert>
+                                    ) : null}
                                     <Button component={RouterLink} to="/signin" variant="outlined" size="large" sx={{ borderRadius: 2.25 }}>
                                         Existing user sign in
                                     </Button>
