@@ -39,9 +39,11 @@ import {
     type CredentialsLinkResponse,
     type ImportJobResponse,
     type ImportJobRowsResponse,
-    type ImportMembersResponse
+    type ImportMembersResponse,
+    type MemberSavingsHistoryImportResponse,
+    type MembersResponse
 } from "../lib/endpoints";
-import type { Branch, ImportJob, ImportJobRow } from "../types/api";
+import type { Branch, ImportJob, ImportJobRow, Member } from "../types/api";
 import { downloadFile, getFilenameFromDisposition } from "../utils/downloadFile";
 import { formatDate } from "../utils/format";
 
@@ -101,14 +103,20 @@ export function MemberImportPage() {
     const { pushToast } = useToast();
     const { selectedTenantId, selectedBranchId } = useAuth();
     const [branches, setBranches] = useState<Branch[]>([]);
+    const [members, setMembers] = useState<Member[]>([]);
     const [job, setJob] = useState<ImportJob | null>(null);
     const [failedRows, setFailedRows] = useState<ImportJobRow[]>([]);
     const [failedRowsTotal, setFailedRowsTotal] = useState(0);
     const [failedRowsPage, setFailedRowsPage] = useState(1);
     const [failedRowsLimit, setFailedRowsLimit] = useState(10);
     const [loadingBranches, setLoadingBranches] = useState(true);
+    const [loadingMembers, setLoadingMembers] = useState(true);
     const [loadingRows, setLoadingRows] = useState(false);
     const [submitting, setSubmitting] = useState(false);
+    const [historySubmitting, setHistorySubmitting] = useState(false);
+    const [historyMemberId, setHistoryMemberId] = useState("");
+    const [historyFile, setHistoryFile] = useState<File | null>(null);
+    const [historyResult, setHistoryResult] = useState<MemberSavingsHistoryImportResponse["data"] | null>(null);
     const [credentialsUrl, setCredentialsUrl] = useState<string | null>(null);
     const [uploadProgress, setUploadProgress] = useState(0);
     const [importStage, setImportStage] = useState<"idle" | "uploading" | "processing">("idle");
@@ -136,6 +144,7 @@ export function MemberImportPage() {
     const selectedFile = form.watch("file");
     const hasSingleBranch = branches.length <= 1;
     const selectedDefaultBranch = branches.find((branch) => branch.id === selectedDefaultBranchId) || branches[0] || null;
+    const selectedHistoryMember = members.find((member) => member.id === historyMemberId) || null;
 
     useEffect(() => {
         if (!submitting || !importStartedAt) {
@@ -155,7 +164,9 @@ export function MemberImportPage() {
     useEffect(() => {
         if (!selectedTenantId) {
             setBranches([]);
+            setMembers([]);
             setLoadingBranches(false);
+            setLoadingMembers(false);
             return;
         }
 
@@ -177,6 +188,31 @@ export function MemberImportPage() {
             })
             .finally(() => {
                 setLoadingBranches(false);
+            });
+
+        setLoadingMembers(true);
+        void api
+            .get<MembersResponse>(endpoints.members.list(), {
+                params: {
+                    tenant_id: selectedTenantId,
+                    page: 1,
+                    limit: 100,
+                    status: "active"
+                }
+            })
+            .then(({ data }) => {
+                setMembers(data.data || []);
+            })
+            .catch((error) => {
+                pushToast({
+                    type: "error",
+                    title: "Member load failed",
+                    message: getApiErrorMessage(error)
+                });
+                setMembers([]);
+            })
+            .finally(() => {
+                setLoadingMembers(false);
             });
     }, [pushToast, selectedTenantId]);
 
@@ -440,6 +476,61 @@ export function MemberImportPage() {
                 title: "Failure export failed",
                 message: getApiErrorMessage(error)
             });
+        }
+    };
+
+    const submitSavingsHistory = async () => {
+        if (!historyMemberId) {
+            pushToast({
+                type: "error",
+                title: "Choose member",
+                message: "Select the member who owns this savings history file."
+            });
+            return;
+        }
+
+        if (!historyFile) {
+            pushToast({
+                type: "error",
+                title: "CSV required",
+                message: "Choose a savings history CSV file before importing."
+            });
+            return;
+        }
+
+        setHistorySubmitting(true);
+        setHistoryResult(null);
+
+        try {
+            const body = new FormData();
+            body.append("member_id", historyMemberId);
+            body.append("file", historyFile);
+
+            const { data } = await api.post<MemberSavingsHistoryImportResponse>(
+                endpoints.imports.memberSavingsHistory(),
+                body,
+                {
+                    headers: {
+                        "Content-Type": "multipart/form-data"
+                    },
+                    timeout: 0
+                }
+            );
+
+            setHistoryResult(data.data);
+            pushToast({
+                type: data.data.failed_rows ? "warning" : "success",
+                title: data.data.failed_rows ? "History imported with issues" : "Savings history imported",
+                message: `${data.data.posted_rows} deposit row(s) posted to the ledger. ${data.data.failed_rows} failed.`
+            });
+        } catch (error) {
+            pushToast({
+                type: "error",
+                title: "History import failed",
+                message: getApiErrorMessage(error)
+            });
+        } finally {
+            setHistorySubmitting(false);
         }
     };
 
@@ -756,6 +847,120 @@ export function MemberImportPage() {
                     </MotionCard>
                 </Grid>
             </Grid>
+
+            <MotionCard variant="outlined" sx={{ borderRadius: 2 }}>
+                <CardContent sx={{ p: 3 }}>
+                    <Stack spacing={2.5}>
+                        <Box>
+                            <Typography variant="h6" fontWeight={700}>
+                                Member savings history
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+                                Select an existing member and upload dated savings deposits. Each row posts through the finance ledger, then the journal and member statement transaction are backdated to the CSV date.
+                            </Typography>
+                        </Box>
+
+                        <Alert severity="info">
+                            CSV columns: <strong>date</strong>, <strong>amount</strong>, optional <strong>cumulative</strong>, <strong>reference</strong>, and <strong>description</strong>. Dates like <strong>3/4/2024</strong> are treated as month/day/year.
+                        </Alert>
+
+                        <Grid container spacing={2}>
+                            <Grid size={{ xs: 12, md: 5 }}>
+                                <TextField
+                                    select
+                                    fullWidth
+                                    label="Member"
+                                    value={historyMemberId}
+                                    disabled={loadingMembers || historySubmitting}
+                                    onChange={(event) => {
+                                        setHistoryMemberId(event.target.value);
+                                        setHistoryResult(null);
+                                    }}
+                                    helperText={selectedHistoryMember?.member_no ? `Member no: ${selectedHistoryMember.member_no}` : "Choose the member whose deposits are in the file."}
+                                >
+                                    <MenuItem value="">Select member</MenuItem>
+                                    {members.map((member) => (
+                                        <MenuItem key={member.id} value={member.id}>
+                                            {member.full_name}{member.member_no ? ` (${member.member_no})` : ""}
+                                        </MenuItem>
+                                    ))}
+                                </TextField>
+                            </Grid>
+
+                            <Grid size={{ xs: 12, md: 7 }}>
+                                <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ xs: "stretch", sm: "center" }}>
+                                    <Button
+                                        variant="outlined"
+                                        component="label"
+                                        startIcon={<UploadFileRoundedIcon />}
+                                        disabled={historySubmitting}
+                                    >
+                                        {historyFile?.name || "Select savings history CSV"}
+                                        <input
+                                            hidden
+                                            type="file"
+                                            accept=".csv,text/csv"
+                                            onChange={(event) => {
+                                                setHistoryFile(event.target.files?.item(0) || null);
+                                                setHistoryResult(null);
+                                            }}
+                                        />
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        variant="text"
+                                        startIcon={<DownloadRoundedIcon />}
+                                        onClick={() => window.open("/member-savings-history-template.csv", "_blank", "noopener,noreferrer")}
+                                    >
+                                        Download history template
+                                    </Button>
+                                </Stack>
+                            </Grid>
+                        </Grid>
+
+                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ xs: "stretch", sm: "center" }}>
+                            <Button
+                                variant="contained"
+                                disabled={historySubmitting || !historyMemberId || !historyFile}
+                                startIcon={<CloudUploadRoundedIcon />}
+                                onClick={() => void submitSavingsHistory()}
+                            >
+                                {historySubmitting ? "Posting history..." : "Post savings history"}
+                            </Button>
+                            {historySubmitting ? (
+                                <Box sx={{ minWidth: 220, flex: 1 }}>
+                                    <LinearProgress sx={{ height: 8, borderRadius: 999 }} />
+                                </Box>
+                            ) : null}
+                        </Stack>
+
+                        {historyResult ? (
+                            <Stack spacing={1.25}>
+                                <Stack direction="row" spacing={1} flexWrap="wrap">
+                                    <Chip label={`Member ${historyResult.member.member_no || historyResult.member.full_name}`} />
+                                    <Chip color="success" label={`${historyResult.posted_rows} posted`} />
+                                    <Chip color={historyResult.failed_rows ? "warning" : "default"} label={`${historyResult.failed_rows} failed`} />
+                                    <Chip label={`Total ${Number(historyResult.total_amount || 0).toLocaleString("en-US")}`} />
+                                </Stack>
+
+                                {historyResult.failed_rows ? (
+                                    <Alert severity="warning">
+                                        {historyResult.failures.slice(0, 3).map((failure) => (
+                                            <Box key={failure.row_number}>
+                                                Row {failure.row_number}: {failure.error}
+                                            </Box>
+                                        ))}
+                                    </Alert>
+                                ) : (
+                                    <Alert severity="success">
+                                        Savings deposit history posted to accounting and member statements successfully.
+                                    </Alert>
+                                )}
+                            </Stack>
+                        ) : null}
+                    </Stack>
+                </CardContent>
+            </MotionCard>
 
             <MotionCard variant="outlined" sx={{ borderRadius: 2 }}>
                 <CardContent sx={{ p: 3 }}>

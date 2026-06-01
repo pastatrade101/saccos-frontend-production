@@ -191,6 +191,7 @@ const routeMap = {
     },
     imports: {
         members: "/imports/members",
+        memberSavingsHistory: "/imports/members/savings-history",
         memberJob: (jobId: string) => `/imports/members/${jobId}`,
         memberJobRows: (jobId: string) => `/imports/members/${jobId}/rows`,
         memberJobFailuresCsv: (jobId: string) => `/imports/members/${jobId}/failures.csv`,
@@ -425,6 +426,7 @@ export const endpoints = {
     },
     imports: {
         members: () => routeMap.imports.members,
+        memberSavingsHistory: () => routeMap.imports.memberSavingsHistory,
         memberJob: (jobId: string) => routeMap.imports.memberJob(jobId),
         memberJobRows: (jobId: string) => routeMap.imports.memberJobRows(jobId),
         memberJobFailuresCsv: (jobId: string) => routeMap.imports.memberJobFailuresCsv(jobId),
@@ -1153,6 +1155,33 @@ export interface ImportMembersResponseData {
 }
 
 export type ImportMembersResponse = ApiEnvelope<ImportMembersResponseData>;
+export interface MemberSavingsHistoryImportResponseData {
+    member: {
+        id: string;
+        full_name: string;
+        member_no?: string | null;
+    };
+    account_id: string;
+    total_rows: number;
+    posted_rows: number;
+    failed_rows: number;
+    total_amount: number;
+    posted: Array<{
+        row_number: number;
+        journal_id: string | null;
+        reference: string;
+        amount: number;
+        occurred_at: string;
+        cumulative: number | null;
+    }>;
+    failures: Array<{
+        row_number: number;
+        error: string;
+        raw: Record<string, string>;
+    }>;
+}
+
+export type MemberSavingsHistoryImportResponse = ApiEnvelope<MemberSavingsHistoryImportResponseData>;
 export type ImportJobResponse = ApiEnvelope<import("../types/api").ImportJob>;
 export type ImportJobRowsResponse = ApiEnvelope<{
     items: import("../types/api").ImportJobRow[];
