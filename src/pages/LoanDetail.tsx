@@ -34,6 +34,7 @@ import {
 } from "../lib/endpoints";
 import type { Loan, LoanSchedule, LoanTransaction, Member } from "../types/api";
 import { formatCurrency, formatDate } from "../utils/format";
+import { formatMonthlyLoanRate } from "../utils/loanInterest";
 
 function MetricCard({
     title,
@@ -450,7 +451,7 @@ export function LoanDetailPage() {
                                         {loan.term_count} {loan.repayment_frequency}
                                     </Typography>
                                     <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                                        Interest {loan.annual_interest_rate}% per annum
+                                        Interest {formatMonthlyLoanRate(loan.annual_interest_rate)}
                                     </Typography>
                                     <Typography variant="body2" color="text.secondary">
                                         Disbursed {formatDate(loan.disbursed_at)}

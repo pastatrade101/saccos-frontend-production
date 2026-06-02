@@ -1,0 +1,2 @@
+date,principal_amount,monthly_interest_rate,term_months,repayment_frequency,first_due_date,reference,description
+2026-04-26,15000000,1.5,6,monthly,2026-05-25,LOAN-HIST-001,Historical loan import

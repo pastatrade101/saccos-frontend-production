@@ -38,13 +38,17 @@ import { api, getApiErrorMessage } from "../lib/api";
 import {
     endpoints,
     type CreateDividendCycleRequest,
+    type CreateManualDividendBatchRequest,
     type DividendApprovalRequest,
     type DividendCycleDetailResponse,
     type DividendCyclesResponse,
     type DividendOptionsResponse,
-    type DividendPaymentRequest
+    type DividendPaymentRequest,
+    type ManualDividendBatchDetailResponse,
+    type ManualDividendBatchesResponse,
+    type RejectManualDividendBatchRequest
 } from "../lib/endpoints";
-import type { DividendAllocation, DividendComponent, DividendCycle, DividendSnapshot } from "../types/api";
+import type { DividendAllocation, DividendComponent, DividendCycle, DividendSnapshot, ManualDividendBatch, ManualDividendBatchRow } from "../types/api";
 import { formatCurrency, formatDate, formatRole } from "../utils/format";
 
 const componentFormSchema = z.object({
@@ -108,6 +112,25 @@ const createCycleSchema = z.object({
 
 type CreateCycleFormValues = z.infer<typeof createCycleSchema>;
 
+const manualDividendRowSchema = z.object({
+    member_id: z.string().uuid(),
+    dividend_date: z.string().min(1),
+    dividend_label: z.string().min(2),
+    source_type: z.enum(["utt", "loan", "other"]).default("utt"),
+    amount: z.coerce.number().positive(),
+    reference: z.string().optional().or(z.literal("")),
+    destination_account_type: z.enum(["savings", "shares"]).default("savings"),
+    notes: z.string().optional().or(z.literal(""))
+});
+
+const manualDividendBatchSchema = z.object({
+    branch_id: z.string().uuid().optional().or(z.literal("")),
+    batch_label: z.string().min(3),
+    rows: z.array(manualDividendRowSchema).min(1)
+});
+
+type ManualDividendBatchFormValues = z.infer<typeof manualDividendBatchSchema>;
+
 const defaultComponent = (): CreateCycleFormValues["components"][number] => ({
     type: "share_dividend",
     basis_method: "average_daily_balance",
@@ -129,6 +152,17 @@ const defaultComponent = (): CreateCycleFormValues["components"][number] => ({
     minimum_payout_threshold: 0,
     max_payout_cap: 0,
     residual_handling: "carry_to_retained_earnings"
+});
+
+const defaultManualDividendRow = (): ManualDividendBatchFormValues["rows"][number] => ({
+    member_id: "",
+    dividend_date: "",
+    dividend_label: "",
+    source_type: "utt",
+    amount: 0,
+    reference: "",
+    destination_account_type: "savings",
+    notes: ""
 });
 
 function MetricCard({
@@ -218,16 +252,25 @@ export function DividendsPage() {
     const { pushToast } = useToast();
     const { profile, selectedTenantId, selectedTenantName } = useAuth();
     const [cycles, setCycles] = useState<DividendCycle[]>([]);
+    const [manualBatches, setManualBatches] = useState<ManualDividendBatch[]>([]);
+    const [manualDetail, setManualDetail] = useState<ManualDividendBatchDetailResponse["data"] | null>(null);
     const [selectedCycleId, setSelectedCycleId] = useState<string | null>(null);
     const [selectedCycleDetail, setSelectedCycleDetail] = useState<DividendCycleDetailResponse["data"] | null>(null);
     const [options, setOptions] = useState<DividendOptionsResponse["data"] | null>(null);
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [showCreateDialog, setShowCreateDialog] = useState(false);
+    const [showManualDialog, setShowManualDialog] = useState(false);
+    const [showManualDetailDialog, setShowManualDetailDialog] = useState(false);
     const [actionDialog, setActionDialog] = useState<null | {
         type: "approve" | "reject";
     }>(null);
+    const [manualActionDialog, setManualActionDialog] = useState<null | {
+        type: "post" | "reject";
+        batch: ManualDividendBatch;
+    }>(null);
     const [actionNotes, setActionNotes] = useState("");
+    const [manualActionNotes, setManualActionNotes] = useState("");
     const importInputRef = useRef<HTMLInputElement | null>(null);
 
     const canManageCycles = Boolean(profile?.role === "branch_manager");
@@ -253,6 +296,24 @@ export function DividendsPage() {
         name: "components"
     });
 
+    const manualForm = useForm<ManualDividendBatchFormValues>({
+        resolver: zodResolver(manualDividendBatchSchema),
+        defaultValues: {
+            branch_id: "",
+            batch_label: "",
+            rows: [defaultManualDividendRow()]
+        }
+    });
+
+    const {
+        fields: manualRows,
+        append: appendManualRow,
+        remove: removeManualRow
+    } = useFieldArray({
+        control: manualForm.control,
+        name: "rows"
+    });
+
     const loadCycles = async () => {
         if (!selectedTenantId) {
             setLoading(false);
@@ -262,14 +323,18 @@ export function DividendsPage() {
         setLoading(true);
 
         try {
-            const [{ data: cyclesResponse }, { data: optionsResponse }] = await Promise.all([
+            const [{ data: cyclesResponse }, { data: manualBatchesResponse }, { data: optionsResponse }] = await Promise.all([
                 api.get<DividendCyclesResponse>(endpoints.dividends.cycles(), {
+                    params: { tenant_id: selectedTenantId, page: 1, limit: 100 }
+                }),
+                api.get<ManualDividendBatchesResponse>(endpoints.dividends.manualBatches(), {
                     params: { tenant_id: selectedTenantId, page: 1, limit: 100 }
                 }),
                 api.get<DividendOptionsResponse>(endpoints.dividends.options())
             ]);
 
             setCycles(cyclesResponse.data || []);
+            setManualBatches(manualBatchesResponse.data || []);
             setOptions(optionsResponse.data);
             setSelectedCycleId((current) => current || cyclesResponse.data?.[0]?.id || null);
         } catch (error) {
@@ -296,6 +361,20 @@ export function DividendsPage() {
         }
     };
 
+    const loadManualBatchDetail = async (batch: ManualDividendBatch) => {
+        try {
+            const { data } = await api.get<ManualDividendBatchDetailResponse>(endpoints.dividends.manualBatch(batch.id));
+            setManualDetail(data.data);
+            setShowManualDetailDialog(true);
+        } catch (error) {
+            pushToast({
+                type: "error",
+                title: "Unable to load manual dividend batch",
+                message: getApiErrorMessage(error)
+            });
+        }
+    };
+
     useEffect(() => {
         void loadCycles();
     }, [selectedTenantId]);
@@ -310,10 +389,15 @@ export function DividendsPage() {
 
     const accountOptions = options?.accounts || [];
     const branchOptions = options?.branches || [];
+    const memberOptions = options?.members || [];
 
     const branchCodeMap = useMemo(() => new Map(
         branchOptions.map((branch) => [branch.code.trim().toLowerCase(), branch.id])
     ), [branchOptions]);
+
+    const memberLabelMap = useMemo(() => new Map(
+        memberOptions.map((member) => [member.id, `${member.member_no || "NO-ID"} - ${member.full_name}`])
+    ), [memberOptions]);
 
     const accountCodeMap = useMemo(() => new Map(
         accountOptions.map((account) => [account.account_code.trim().toLowerCase(), account.id])
@@ -330,6 +414,15 @@ export function DividendsPage() {
         () => cycles.filter((cycle) => cycle.status === "allocated" && cycle.submitted_for_approval_at),
         [cycles]
     );
+
+    const manualSummary = useMemo(() => ({
+        draft: manualBatches.filter((batch) => batch.status === "draft").length,
+        submitted: manualBatches.filter((batch) => batch.status === "submitted").length,
+        posted: manualBatches.filter((batch) => batch.status === "posted").length,
+        totalPendingAmount: manualBatches
+            .filter((batch) => ["draft", "submitted"].includes(batch.status))
+            .reduce((sum, batch) => sum + Number(batch.total_amount || 0), 0)
+    }), [manualBatches]);
 
     const allocationNameMap = useMemo(() => {
         const map = new Map<string, string>();
@@ -356,6 +449,17 @@ export function DividendsPage() {
         { key: "payout", header: "Payout", render: (row) => formatCurrency(row.payout_amount) },
         { key: "status", header: "Status", render: (row) => row.status },
         { key: "paid_at", header: "Paid At", render: (row) => row.paid_at ? formatDate(row.paid_at) : "Pending" }
+    ];
+
+    const manualRowColumns: Column<ManualDividendBatchRow>[] = [
+        { key: "date", header: "Date", render: (row) => formatDate(row.dividend_date) },
+        { key: "member", header: "Member", render: (row) => row.member ? `${row.member.member_no || "NO-ID"} - ${row.member.full_name}` : row.member_id },
+        { key: "dividend", header: "Dividend", render: (row) => row.dividend_label },
+        { key: "source", header: "Source", render: (row) => row.source_type.toUpperCase() },
+        { key: "amount", header: "Amount", render: (row) => formatCurrency(row.amount) },
+        { key: "destination", header: "Destination", render: (row) => row.destination_account_type },
+        { key: "reference", header: "Reference", render: (row) => row.reference },
+        { key: "status", header: "Status", render: (row) => row.status }
     ];
 
     const submitCreateCycle = form.handleSubmit(async (values) => {
@@ -435,6 +539,54 @@ export function DividendsPage() {
         }
     });
 
+    const submitManualDividendBatch = manualForm.handleSubmit(async (values) => {
+        if (!selectedTenantId) {
+            return;
+        }
+
+        setSubmitting(true);
+
+        try {
+            const payload: CreateManualDividendBatchRequest = {
+                tenant_id: selectedTenantId,
+                branch_id: values.branch_id || null,
+                batch_label: values.batch_label,
+                rows: values.rows.map((row) => ({
+                    member_id: row.member_id,
+                    dividend_date: row.dividend_date,
+                    dividend_label: row.dividend_label,
+                    source_type: row.source_type,
+                    amount: Number(row.amount || 0),
+                    reference: row.reference || null,
+                    destination_account_type: row.destination_account_type,
+                    notes: row.notes || null
+                }))
+            };
+
+            const { data } = await api.post<ManualDividendBatchDetailResponse>(endpoints.dividends.manualBatches(), payload);
+            pushToast({
+                type: "success",
+                title: "Manual dividend batch created",
+                message: `${data.data.batch.batch_label} was saved as a draft.`
+            });
+            setShowManualDialog(false);
+            manualForm.reset({
+                branch_id: "",
+                batch_label: "",
+                rows: [defaultManualDividendRow()]
+            });
+            await loadCycles();
+        } catch (error) {
+            pushToast({
+                type: "error",
+                title: "Unable to create manual dividend batch",
+                message: getApiErrorMessage(error)
+            });
+        } finally {
+            setSubmitting(false);
+        }
+    });
+
     const runCycleAction = async (type: "freeze" | "allocate" | "submit" | "approve" | "reject") => {
         if (!selectedCycleId) {
             return;
@@ -485,6 +637,89 @@ export function DividendsPage() {
             setSubmitting(false);
         }
     };
+
+    const runManualBatchAction = async (batch: ManualDividendBatch, type: "submit" | "post" | "reject") => {
+        setSubmitting(true);
+
+        try {
+            if (type === "submit") {
+                await api.post<ManualDividendBatchDetailResponse>(endpoints.dividends.submitManualBatch(batch.id));
+            } else if (type === "post") {
+                await api.post<ManualDividendBatchDetailResponse>(endpoints.dividends.postManualBatch(batch.id));
+            } else {
+                const payload: RejectManualDividendBatchRequest = { notes: manualActionNotes || null };
+                await api.post<ManualDividendBatchDetailResponse>(endpoints.dividends.rejectManualBatch(batch.id), payload);
+            }
+
+            pushToast({
+                type: "success",
+                title: type === "post" ? "Manual dividends posted" : "Manual dividend batch updated",
+                message: type === "post"
+                    ? `${batch.batch_label} was posted to member accounts and ledger.`
+                    : `${batch.batch_label} was ${type === "submit" ? "submitted" : "rejected"}.`
+            });
+            setManualActionDialog(null);
+            setManualActionNotes("");
+            await loadCycles();
+        } catch (error) {
+            pushToast({
+                type: "error",
+                title: "Manual dividend action failed",
+                message: getApiErrorMessage(error)
+            });
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    const manualBatchColumns: Column<ManualDividendBatch>[] = [
+        { key: "label", header: "Batch", render: (row) => row.batch_label },
+        {
+            key: "status",
+            header: "Status",
+            render: (row) => (
+                <Chip
+                    size="small"
+                    label={row.status.toUpperCase()}
+                    color={row.status === "posted" ? "success" : row.status === "submitted" ? "warning" : row.status === "rejected" ? "error" : "default"}
+                />
+            )
+        },
+        { key: "rows", header: "Rows", render: (row) => row.row_count },
+        { key: "total", header: "Total", render: (row) => formatCurrency(row.total_amount) },
+        { key: "created", header: "Created", render: (row) => formatDate(row.created_at) },
+        {
+            key: "action",
+            header: "Action",
+            render: (row) => (
+                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                    <Button size="small" variant="outlined" onClick={() => void loadManualBatchDetail(row)} disabled={submitting}>
+                        Review
+                    </Button>
+                    {canManageCycles && row.status === "draft" ? (
+                        <Button size="small" variant="outlined" onClick={() => void runManualBatchAction(row, "submit")} disabled={submitting}>
+                            Submit
+                        </Button>
+                    ) : null}
+                    {canApproveAndPay && row.status === "submitted" ? (
+                        <>
+                            <Button size="small" variant="contained" onClick={() => setManualActionDialog({ type: "post", batch: row })} disabled={submitting}>
+                                Post
+                            </Button>
+                            <Button size="small" variant="outlined" color="inherit" onClick={() => setManualActionDialog({ type: "reject", batch: row })} disabled={submitting}>
+                                Reject
+                            </Button>
+                        </>
+                    ) : null}
+                    {row.status === "posted" && row.posted_at ? (
+                        <Typography variant="caption" color="text.secondary">
+                            Posted {formatDate(row.posted_at)}
+                        </Typography>
+                    ) : null}
+                </Stack>
+            )
+        }
+    ];
 
     const openImportPicker = () => {
         importInputRef.current?.click();
@@ -637,6 +872,9 @@ export function DividendsPage() {
                             </Button>
                             {canManageCycles ? (
                                 <>
+                                    <Button variant="contained" color="secondary" startIcon={<AddCircleOutlineRoundedIcon />} onClick={() => setShowManualDialog(true)}>
+                                        Manual Dividend Entry
+                                    </Button>
                                     <Button variant="outlined" startIcon={<UploadFileRoundedIcon />} onClick={openImportPicker}>
                                         Import CSV
                                     </Button>
@@ -666,6 +904,38 @@ export function DividendsPage() {
                     <MetricCard label="Paid / Closed" value={`${summary.paid}`} helper="Completed dividend payout cycles." icon={<PaidOutlinedIcon />} />
                 </Grid>
             </Grid>
+
+            <MotionCard variant="outlined">
+                <CardContent>
+                    <Stack spacing={2}>
+                        <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={2}>
+                            <Box>
+                                <Typography variant="h6">Manual Dividend Batches</Typography>
+                                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                                    Excel-style dividend rows using Date, Dividend, and Amount, staged by branch manager before super admin posting.
+                                </Typography>
+                            </Box>
+                            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                                <Chip label={`${manualSummary.draft} draft`} variant="outlined" />
+                                <Chip label={`${manualSummary.submitted} submitted`} color={manualSummary.submitted ? "warning" : "default"} variant="outlined" />
+                                <Chip label={`${manualSummary.posted} posted`} color={manualSummary.posted ? "success" : "default"} variant="outlined" />
+                                <Chip label={`${formatCurrency(manualSummary.totalPendingAmount)} pending`} variant="outlined" />
+                                <Button
+                                    component="a"
+                                    href="/manual-dividend-batch-template.csv"
+                                    download="manual-dividend-batch-template.csv"
+                                    size="small"
+                                    variant="outlined"
+                                    startIcon={<DownloadRoundedIcon />}
+                                >
+                                    Manual Template
+                                </Button>
+                            </Stack>
+                        </Stack>
+                        <DataTable rows={manualBatches} columns={manualBatchColumns} emptyMessage="No manual dividend batches yet." />
+                    </Stack>
+                </CardContent>
+            </MotionCard>
 
             {profile?.role === "super_admin" ? (
                 <MotionCard variant="outlined">
@@ -839,6 +1109,200 @@ export function DividendsPage() {
                     </CardContent>
                 </MotionCard>
             ) : null}
+
+            <MotionModal open={showManualDialog} onClose={submitting ? undefined : () => setShowManualDialog(false)} maxWidth="lg" fullWidth>
+                <DialogTitle>Manual Dividend Entry</DialogTitle>
+                <DialogContent dividers>
+                    <Stack spacing={3} sx={{ pt: 0.5 }}>
+                        {!memberOptions.length ? (
+                            <Alert severity="warning" variant="outlined">
+                                No active branch members are available for dividend entry.
+                            </Alert>
+                        ) : null}
+                        <Box component="form" id="manual-dividend-form" onSubmit={submitManualDividendBatch} sx={{ display: "grid", gap: 2 }}>
+                            <Grid container spacing={2}>
+                                <Grid size={{ xs: 12, md: 6 }}>
+                                    <TextField
+                                        label="Batch Label"
+                                        fullWidth
+                                        {...manualForm.register("batch_label")}
+                                        error={Boolean(manualForm.formState.errors.batch_label)}
+                                        helperText={manualForm.formState.errors.batch_label?.message || "Example: Nsanyiwa UTT and loan dividends"}
+                                    />
+                                </Grid>
+                                <Grid size={{ xs: 12, md: 6 }}>
+                                    <TextField
+                                        select
+                                        label="Branch Scope"
+                                        fullWidth
+                                        value={manualForm.watch("branch_id") || ""}
+                                        onChange={(event) => manualForm.setValue("branch_id", event.target.value, { shouldValidate: true })}
+                                    >
+                                        <MenuItem value="">Use selected members branch</MenuItem>
+                                        {branchOptions.map((branch) => (
+                                            <MenuItem key={branch.id} value={branch.id}>{branch.name}</MenuItem>
+                                        ))}
+                                    </TextField>
+                                </Grid>
+                            </Grid>
+
+                            <Divider />
+
+                            <Stack spacing={2}>
+                                <Stack direction="row" justifyContent="space-between" alignItems="center">
+                                    <Typography variant="subtitle1">Rows</Typography>
+                                    <Button onClick={() => appendManualRow(defaultManualDividendRow())} startIcon={<AddCircleOutlineRoundedIcon />}>
+                                        Add Row
+                                    </Button>
+                                </Stack>
+
+                                {manualRows.map((row, index) => (
+                                    <MotionCard key={row.id} variant="outlined">
+                                        <CardContent>
+                                            <Stack spacing={2}>
+                                                <Stack direction="row" justifyContent="space-between" alignItems="center">
+                                                    <Typography variant="subtitle2">Dividend Row {index + 1}</Typography>
+                                                    {manualRows.length > 1 ? (
+                                                        <Button color="inherit" onClick={() => removeManualRow(index)}>Remove</Button>
+                                                    ) : null}
+                                                </Stack>
+                                                <Grid container spacing={2}>
+                                                    <Grid size={{ xs: 12, md: 4 }}>
+                                                        <TextField
+                                                            select
+                                                            label="Member"
+                                                            fullWidth
+                                                            value={manualForm.watch(`rows.${index}.member_id`) || ""}
+                                                            onChange={(event) => manualForm.setValue(`rows.${index}.member_id`, event.target.value, { shouldValidate: true })}
+                                                            error={Boolean(manualForm.formState.errors.rows?.[index]?.member_id)}
+                                                        >
+                                                            {memberOptions.map((member) => (
+                                                                <MenuItem key={member.id} value={member.id}>{memberLabelMap.get(member.id)}</MenuItem>
+                                                            ))}
+                                                        </TextField>
+                                                    </Grid>
+                                                    <Grid size={{ xs: 12, md: 3 }}>
+                                                        <TextField
+                                                            label="Date"
+                                                            type="date"
+                                                            fullWidth
+                                                            InputLabelProps={{ shrink: true }}
+                                                            {...manualForm.register(`rows.${index}.dividend_date`)}
+                                                            error={Boolean(manualForm.formState.errors.rows?.[index]?.dividend_date)}
+                                                        />
+                                                    </Grid>
+                                                    <Grid size={{ xs: 12, md: 5 }}>
+                                                        <TextField
+                                                            label="Dividend"
+                                                            fullWidth
+                                                            {...manualForm.register(`rows.${index}.dividend_label`)}
+                                                            error={Boolean(manualForm.formState.errors.rows?.[index]?.dividend_label)}
+                                                            helperText={manualForm.formState.errors.rows?.[index]?.dividend_label?.message}
+                                                        />
+                                                    </Grid>
+                                                    <Grid size={{ xs: 12, md: 3 }}>
+                                                        <TextField
+                                                            select
+                                                            label="Source"
+                                                            fullWidth
+                                                            value={manualForm.watch(`rows.${index}.source_type`) || "utt"}
+                                                            onChange={(event) => manualForm.setValue(`rows.${index}.source_type`, event.target.value as "utt" | "loan" | "other", { shouldValidate: true })}
+                                                        >
+                                                            <MenuItem value="utt">UTT</MenuItem>
+                                                            <MenuItem value="loan">Loan Dividend</MenuItem>
+                                                            <MenuItem value="other">Other</MenuItem>
+                                                        </TextField>
+                                                    </Grid>
+                                                    <Grid size={{ xs: 12, md: 3 }}>
+                                                        <TextField
+                                                            label="Amount"
+                                                            type="number"
+                                                            fullWidth
+                                                            {...manualForm.register(`rows.${index}.amount`)}
+                                                            error={Boolean(manualForm.formState.errors.rows?.[index]?.amount)}
+                                                        />
+                                                    </Grid>
+                                                    <Grid size={{ xs: 12, md: 3 }}>
+                                                        <TextField
+                                                            select
+                                                            label="Destination"
+                                                            fullWidth
+                                                            value={manualForm.watch(`rows.${index}.destination_account_type`) || "savings"}
+                                                            onChange={(event) => manualForm.setValue(`rows.${index}.destination_account_type`, event.target.value as "savings" | "shares", { shouldValidate: true })}
+                                                        >
+                                                            <MenuItem value="savings">Savings</MenuItem>
+                                                            <MenuItem value="shares">Shares</MenuItem>
+                                                        </TextField>
+                                                    </Grid>
+                                                    <Grid size={{ xs: 12, md: 3 }}>
+                                                        <TextField label="Reference" fullWidth {...manualForm.register(`rows.${index}.reference`)} />
+                                                    </Grid>
+                                                    <Grid size={{ xs: 12 }}>
+                                                        <TextField label="Notes" fullWidth {...manualForm.register(`rows.${index}.notes`)} />
+                                                    </Grid>
+                                                </Grid>
+                                            </Stack>
+                                        </CardContent>
+                                    </MotionCard>
+                                ))}
+                            </Stack>
+                        </Box>
+                    </Stack>
+                </DialogContent>
+                <DialogActions sx={{ px: 3, py: 2 }}>
+                    <Button onClick={() => setShowManualDialog(false)} disabled={submitting} color="inherit">Cancel</Button>
+                    <Button form="manual-dividend-form" type="submit" variant="contained" disabled={submitting || !memberOptions.length}>
+                        {submitting ? "Saving batch..." : "Save Draft"}
+                    </Button>
+                </DialogActions>
+            </MotionModal>
+
+            <MotionModal open={showManualDetailDialog} onClose={() => setShowManualDetailDialog(false)} maxWidth="lg" fullWidth>
+                <DialogTitle>{manualDetail?.batch.batch_label || "Manual Dividend Batch"}</DialogTitle>
+                <DialogContent dividers>
+                    {manualDetail ? (
+                        <Stack spacing={2}>
+                            <Grid container spacing={1.5}>
+                                <Grid size={{ xs: 12, sm: 4 }}>
+                                    <Box sx={{ p: 1.5, border: `1px solid ${theme.palette.divider}`, borderRadius: 2 }}>
+                                        <Typography variant="caption" color="text.secondary">Status</Typography>
+                                        <Typography variant="body2" sx={{ mt: 0.5 }}>{manualDetail.batch.status.toUpperCase()}</Typography>
+                                    </Box>
+                                </Grid>
+                                <Grid size={{ xs: 12, sm: 4 }}>
+                                    <Box sx={{ p: 1.5, border: `1px solid ${theme.palette.divider}`, borderRadius: 2 }}>
+                                        <Typography variant="caption" color="text.secondary">Rows</Typography>
+                                        <Typography variant="body2" sx={{ mt: 0.5 }}>{manualDetail.batch.row_count}</Typography>
+                                    </Box>
+                                </Grid>
+                                <Grid size={{ xs: 12, sm: 4 }}>
+                                    <Box sx={{ p: 1.5, border: `1px solid ${theme.palette.divider}`, borderRadius: 2 }}>
+                                        <Typography variant="caption" color="text.secondary">Total</Typography>
+                                        <Typography variant="body2" sx={{ mt: 0.5 }}>{formatCurrency(manualDetail.batch.total_amount)}</Typography>
+                                    </Box>
+                                </Grid>
+                            </Grid>
+                            <DataTable rows={manualDetail.rows} columns={manualRowColumns} emptyMessage="No manual dividend rows." />
+                        </Stack>
+                    ) : (
+                        <AppLoader fullscreen={false} minHeight={180} message="Loading manual dividend rows..." />
+                    )}
+                </DialogContent>
+                <DialogActions sx={{ px: 3, py: 2 }}>
+                    <Button onClick={() => setShowManualDetailDialog(false)} color="inherit">Close</Button>
+                    {manualDetail?.batch.status === "submitted" && canApproveAndPay ? (
+                        <Button
+                            variant="contained"
+                            onClick={() => {
+                                setShowManualDetailDialog(false);
+                                setManualActionDialog({ type: "post", batch: manualDetail.batch });
+                            }}
+                        >
+                            Post Batch
+                        </Button>
+                    ) : null}
+                </DialogActions>
+            </MotionModal>
 
             <MotionModal open={showCreateDialog} onClose={submitting ? undefined : () => setShowCreateDialog(false)} maxWidth="lg" fullWidth>
                 <DialogTitle>Create Dividend Cycle</DialogTitle>
@@ -1045,6 +1509,40 @@ export function DividendsPage() {
                                 void runCycleAction("approve");
                             } else if (actionDialog?.type === "reject") {
                                 void runCycleAction("reject");
+                            }
+                        }}
+                    >
+                        {submitting ? "Working..." : "Confirm"}
+                    </Button>
+                </DialogActions>
+            </MotionModal>
+
+            <MotionModal open={Boolean(manualActionDialog)} onClose={submitting ? undefined : () => setManualActionDialog(null)} maxWidth="sm" fullWidth>
+                <DialogTitle>
+                    {manualActionDialog?.type === "post" ? "Post Manual Dividend Batch" : "Reject Manual Dividend Batch"}
+                </DialogTitle>
+                <DialogContent dividers>
+                    <Stack spacing={2} sx={{ pt: 0.5 }}>
+                        <Alert severity={manualActionDialog?.type === "post" ? "warning" : "info"} variant="outlined">
+                            {manualActionDialog?.type === "post"
+                                ? `${manualActionDialog.batch.batch_label} will post ${formatCurrency(manualActionDialog.batch.total_amount)} to member accounts and ledger.`
+                                : `${manualActionDialog?.batch.batch_label || "This batch"} will return to rejected status without posting ledger entries.`}
+                        </Alert>
+                        {manualActionDialog?.type === "reject" ? (
+                            <TextField label="Notes" multiline minRows={4} fullWidth value={manualActionNotes} onChange={(event) => setManualActionNotes(event.target.value)} />
+                        ) : null}
+                    </Stack>
+                </DialogContent>
+                <DialogActions sx={{ px: 3, py: 2 }}>
+                    <Button onClick={() => setManualActionDialog(null)} disabled={submitting} color="inherit">Cancel</Button>
+                    <Button
+                        variant="contained"
+                        disabled={submitting || !manualActionDialog}
+                        onClick={() => {
+                            if (manualActionDialog?.type === "post") {
+                                void runManualBatchAction(manualActionDialog.batch, "post");
+                            } else if (manualActionDialog?.type === "reject") {
+                                void runManualBatchAction(manualActionDialog.batch, "reject");
                             }
                         }}
                     >

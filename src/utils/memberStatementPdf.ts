@@ -2,12 +2,14 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 
 import type { Loan, LoanSchedule, LoanTransaction, StatementRow } from "../types/api";
+import { formatMonthlyLoanRate } from "./loanInterest";
 
 interface MemberStatementPdfPayload {
     memberName: string;
     memberEmail?: string | null;
     tenantName?: string | null;
     branchName?: string | null;
+    logoDataUrl?: string | null;
     generatedBy?: string | null;
     totalSavings: number;
     shareCapital: number;
@@ -21,6 +23,7 @@ interface LoanStatementPdfPayload {
     memberEmail?: string | null;
     tenantName?: string | null;
     branchName?: string | null;
+    logoDataUrl?: string | null;
     generatedBy?: string | null;
     loan: Loan;
     schedules: LoanSchedule[];
@@ -63,6 +66,54 @@ function formatCompactDate(value?: string | null) {
     }).format(new Date(value));
 }
 
+export async function loadReportLogoDataUrl(src = "/icon-ilboru.png") {
+    try {
+        const response = await fetch(src);
+        if (!response.ok) {
+            return null;
+        }
+
+        const blob = await response.blob();
+        return await new Promise<string | null>((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(blob);
+        });
+    } catch {
+        return null;
+    }
+}
+
+function resolveBrandName(tenantName?: string | null) {
+    return tenantName?.trim() || "SACCOS";
+}
+
+function drawReportLogo(doc: jsPDF, logoDataUrl: string | null | undefined, brandName: string, x: number, y: number) {
+    if (logoDataUrl) {
+        try {
+            doc.addImage(logoDataUrl, "PNG", x, y, 34, 34);
+            return;
+        } catch {
+            // Fall back to initials if the browser cannot decode the logo payload.
+        }
+    }
+
+    const initials = brandName
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part.charAt(0).toUpperCase())
+        .join("") || "S";
+
+    doc.setFillColor(31, 168, 230);
+    doc.roundedRect(x, y, 34, 34, 4, 4, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.text(initials, x + 17, y + 21, { align: "center" });
+}
+
 export function downloadMemberStatementPdf(payload: MemberStatementPdfPayload) {
     const doc = new jsPDF({
         orientation: "portrait",
@@ -88,13 +139,16 @@ export function downloadMemberStatementPdf(payload: MemberStatementPdfPayload) {
     doc.setFillColor(...colors.accent);
     doc.rect(0, 78, pageWidth, 10, "F");
 
+    const brandName = resolveBrandName(payload.tenantName);
+    drawReportLogo(doc, payload.logoDataUrl, brandName, margin, 18);
+
     doc.setTextColor(255, 255, 255);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(17);
-    doc.text("SMART SACCOS", margin, 34);
+    doc.text(brandName, margin + 44, 34, { maxWidth: pageWidth / 2 - 44 });
     doc.setFontSize(11);
     doc.setFont("helvetica", "normal");
-    doc.text("Member Financial Statement", margin, 52);
+    doc.text("Member Financial Statement", margin + 44, 52);
 
     const generatedAt = formatDate(new Date().toISOString());
     doc.text(`Generated: ${generatedAt}`, pageWidth - margin, 34, { align: "right" });
@@ -210,7 +264,7 @@ export function downloadMemberStatementPdf(payload: MemberStatementPdfPayload) {
         doc.setFontSize(8.5);
         doc.setTextColor(...colors.muted);
         doc.text(
-            `SMART SACCOS • Confidential Member Statement • Page ${page} of ${pages}`,
+            `${brandName} • Confidential Member Statement • Page ${page} of ${pages}`,
             pageWidth / 2,
             pageHeight - 18,
             { align: "center" }
@@ -258,13 +312,16 @@ export function downloadLoanStatementPdf(payload: LoanStatementPdfPayload) {
     doc.setFillColor(...colors.accent);
     doc.rect(0, 78, pageWidth, 10, "F");
 
+    const brandName = resolveBrandName(payload.tenantName);
+    drawReportLogo(doc, payload.logoDataUrl, brandName, margin, 18);
+
     doc.setTextColor(255, 255, 255);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(17);
-    doc.text("SMART SACCOS", margin, 34);
+    doc.text(brandName, margin + 44, 34, { maxWidth: pageWidth / 2 - 44 });
     doc.setFontSize(11);
     doc.setFont("helvetica", "normal");
-    doc.text("Loan Statement", margin, 52);
+    doc.text("Loan Statement", margin + 44, 52);
 
     const generatedAt = formatDate(new Date().toISOString());
     doc.text(`Generated: ${generatedAt}`, pageWidth - margin, 34, { align: "right" });
@@ -290,7 +347,7 @@ export function downloadLoanStatementPdf(payload: LoanStatementPdfPayload) {
     doc.text(`Loan Number: ${payload.loan.loan_number}`, margin, cursorY);
     doc.text(`Status: ${prettifyType(payload.loan.status)}`, margin + 240, cursorY);
     cursorY += 14;
-    doc.text(`Rate: ${payload.loan.annual_interest_rate}%`, margin, cursorY);
+    doc.text(`Rate: ${formatMonthlyLoanRate(payload.loan.annual_interest_rate)}`, margin, cursorY);
     doc.text(`Repayment: ${prettifyType(payload.loan.repayment_frequency)}`, margin + 240, cursorY);
     cursorY += 14;
     doc.text(`Disbursed: ${formatCompactDate(payload.loan.disbursed_at || payload.loan.created_at)}`, margin, cursorY);
@@ -456,7 +513,7 @@ export function downloadLoanStatementPdf(payload: LoanStatementPdfPayload) {
         doc.setFontSize(8.5);
         doc.setTextColor(...colors.muted);
         doc.text(
-            `SMART SACCOS • Confidential Loan Statement • ${payload.loan.loan_number} • Page ${page} of ${pages}`,
+            `${brandName} • Confidential Loan Statement • ${payload.loan.loan_number} • Page ${page} of ${pages}`,
             pageWidth / 2,
             pageHeight - 18,
             { align: "center" }

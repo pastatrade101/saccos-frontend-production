@@ -33,12 +33,19 @@ import {
     endpoints,
     type ReportExportJobCreateResponse,
     type ReportExportJobDownloadResponse,
-    type ReportExportJobResponse
+    type ReportExportJobResponse,
+    type SaccoFinancialYearSettingsResponse
 } from "../lib/endpoints";
 import { supabase } from "../lib/supabase";
-import type { MemberAccount } from "../types/api";
+import type { MemberAccount, SaccoFinancialYearSettings } from "../types/api";
 import { MotionCard } from "../ui/motion";
 import { downloadFile } from "../utils/downloadFile";
+import {
+    DEFAULT_SACCO_FINANCIAL_YEAR_SETTINGS,
+    dateIso,
+    normalizeSaccoFinancialYearSettings,
+    resolveFinancialYearPeriod
+} from "../utils/financialYear";
 import pageStyles from "./Pages.module.css";
 
 const statementSchema = z.object({
@@ -95,17 +102,8 @@ function wait(ms: number) {
     });
 }
 
-function dateIso(value: Date) {
-    return value.toISOString().slice(0, 10);
-}
-
 function getTodayIso() {
     return dateIso(new Date());
-}
-
-function getYearStartIso() {
-    const now = new Date();
-    return dateIso(new Date(now.getFullYear(), 0, 1));
 }
 
 export function ReportsPage() {
@@ -113,9 +111,11 @@ export function ReportsPage() {
     const { pushToast } = useToast();
     const { selectedTenantId } = useAuth();
     const [accounts, setAccounts] = useState<MemberAccount[]>([]);
+    const [financialYearSettings, setFinancialYearSettings] = useState<SaccoFinancialYearSettings>(DEFAULT_SACCO_FINANCIAL_YEAR_SETTINGS);
     const [downloading, setDownloading] = useState<string | null>(null);
     const todayIso = useMemo(() => getTodayIso(), []);
-    const yearStartIso = useMemo(() => getYearStartIso(), []);
+    const financialYearPeriod = useMemo(() => resolveFinancialYearPeriod(financialYearSettings), [financialYearSettings]);
+    const yearStartIso = financialYearPeriod.startIso;
     const reportsAccent = theme.palette.mode === "dark" ? "#D9B273" : theme.palette.primary.main;
     const reportsAccentStrong = theme.palette.mode === "dark" ? "#C89B52" : theme.palette.primary.dark;
 
@@ -152,6 +152,43 @@ export function ReportsPage() {
             .is("deleted_at", null)
             .then(({ data }) => setAccounts((data || []) as MemberAccount[]));
     }, [selectedTenantId]);
+
+    useEffect(() => {
+        let isActive = true;
+
+        const loadFinancialYearSettings = async () => {
+            if (!selectedTenantId) {
+                setFinancialYearSettings(DEFAULT_SACCO_FINANCIAL_YEAR_SETTINGS);
+                return;
+            }
+
+            try {
+                const { data } = await api.get<SaccoFinancialYearSettingsResponse>(endpoints.saccoSettings.financialYear(), {
+                    params: { tenant_id: selectedTenantId }
+                });
+
+                if (isActive) {
+                    setFinancialYearSettings(normalizeSaccoFinancialYearSettings(data.data));
+                }
+            } catch {
+                if (isActive) {
+                    setFinancialYearSettings(normalizeSaccoFinancialYearSettings({ tenant_id: selectedTenantId }));
+                }
+            }
+        };
+
+        void loadFinancialYearSettings();
+
+        return () => {
+            isActive = false;
+        };
+    }, [selectedTenantId]);
+
+    useEffect(() => {
+        financialForm.setValue("income_from_date", yearStartIso, { shouldValidate: true });
+        form.setValue("from_date", yearStartIso, { shouldValidate: true });
+        form.setValue("to_date", todayIso, { shouldValidate: true });
+    }, [financialForm, form, todayIso, yearStartIso]);
 
     const accountOptions = accounts.map((account) => ({
         value: account.id,
@@ -321,7 +358,7 @@ export function ReportsPage() {
             const quarterStartMonth = Math.floor(now.getMonth() / 3) * 3;
             fromDate = new Date(now.getFullYear(), quarterStartMonth, 1).toISOString().slice(0, 10);
         } else if (preset === "year") {
-            fromDate = new Date(now.getFullYear(), 0, 1).toISOString().slice(0, 10);
+            fromDate = yearStartIso;
         } else {
             const last30 = new Date(now);
             last30.setDate(last30.getDate() - 30);
@@ -342,7 +379,7 @@ export function ReportsPage() {
             const quarterStartMonth = Math.floor(now.getMonth() / 3) * 3;
             fromDate = dateIso(new Date(now.getFullYear(), quarterStartMonth, 1));
         } else if (preset === "year") {
-            fromDate = dateIso(new Date(now.getFullYear(), 0, 1));
+            fromDate = yearStartIso;
         } else {
             const last30 = new Date(now);
             last30.setDate(last30.getDate() - 30);
@@ -383,7 +420,7 @@ export function ReportsPage() {
                 icon: <FactCheckRoundedIcon fontSize="small" />,
                 jobs: [
                     { fileKey: "trial-balance", url: endpoints.reports.trialBalance(), params: { tenant_id: selectedTenantId || undefined, format: "pdf" } },
-                    { fileKey: "member-statements", url: endpoints.reports.memberStatements(), params: { tenant_id: selectedTenantId || undefined, format: "pdf" } }
+                    { fileKey: "member-statements", url: endpoints.reports.memberStatements(), params: { tenant_id: selectedTenantId || undefined, from_date: yearStartIso, to_date: todayIso, format: "pdf" } }
                 ]
             },
             {
@@ -710,7 +747,7 @@ export function ReportsPage() {
                                         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                                             <Chip label="This Month" variant="outlined" onClick={() => applyIncomeDatePreset("month")} sx={{ cursor: "pointer" }} />
                                             <Chip label="This Quarter" variant="outlined" onClick={() => applyIncomeDatePreset("quarter")} sx={{ cursor: "pointer" }} />
-                                            <Chip label="YTD" variant="outlined" onClick={() => applyIncomeDatePreset("year")} sx={{ cursor: "pointer" }} />
+                                            <Chip label="SACCO YTD" variant="outlined" onClick={() => applyIncomeDatePreset("year")} sx={{ cursor: "pointer" }} />
                                             <Chip label="Last 30 Days" variant="outlined" onClick={() => applyIncomeDatePreset("last30")} sx={{ cursor: "pointer" }} />
                                         </Stack>
                                         <div className="grid-2">
@@ -767,7 +804,7 @@ export function ReportsPage() {
                                     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                                         <Chip label="This Month" variant="outlined" onClick={() => applyStatementDatePreset("month")} sx={{ cursor: "pointer" }} />
                                         <Chip label="This Quarter" variant="outlined" onClick={() => applyStatementDatePreset("quarter")} sx={{ cursor: "pointer" }} />
-                                        <Chip label="YTD" variant="outlined" onClick={() => applyStatementDatePreset("year")} sx={{ cursor: "pointer" }} />
+                                        <Chip label="SACCO YTD" variant="outlined" onClick={() => applyStatementDatePreset("year")} sx={{ cursor: "pointer" }} />
                                         <Chip label="Last 30 Days" variant="outlined" onClick={() => applyStatementDatePreset("last30")} sx={{ cursor: "pointer" }} />
                                     </Stack>
                                     <div className="grid-2">

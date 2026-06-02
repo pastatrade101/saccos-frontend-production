@@ -713,6 +713,16 @@ export interface WorkspacePublicRegistrationSettings {
     updated_at?: string | null;
 }
 
+export interface SaccoFinancialYearSettings {
+    tenant_id: string | null;
+    financial_year_start_month: number;
+    financial_year_start_day: number;
+    financial_year_configured_at?: string | null;
+    financial_year_configured_by?: string | null;
+    locked: boolean;
+    updated_at?: string | null;
+}
+
 export interface ApprovalDecision {
     id: string;
     decision: "approved" | "rejected";
@@ -1879,6 +1889,50 @@ export interface DividendPayment {
     journal_entry_id?: string | null;
     reference?: string | null;
     notes?: string | null;
+}
+
+export interface ManualDividendBatch {
+    id: string;
+    tenant_id: string;
+    branch_id?: string | null;
+    batch_label: string;
+    source_format: "excel_date_dividend_amount" | string;
+    status: "draft" | "submitted" | "posted" | "rejected" | "void";
+    row_count: number;
+    total_amount: number;
+    submitted_at?: string | null;
+    submitted_by?: string | null;
+    posted_at?: string | null;
+    posted_by?: string | null;
+    rejected_at?: string | null;
+    rejected_by?: string | null;
+    rejection_notes?: string | null;
+    created_by: string;
+    created_at: string;
+    updated_at?: string;
+}
+
+export interface ManualDividendBatchRow {
+    id: string;
+    batch_id: string;
+    tenant_id: string;
+    branch_id: string;
+    member_id: string;
+    row_position: number;
+    dividend_date: string;
+    dividend_label: string;
+    source_type: "utt" | "loan" | "other";
+    amount: number;
+    reference: string;
+    destination_account_type: "savings" | "shares";
+    notes?: string | null;
+    status: "pending" | "posted" | "void";
+    member_account_id?: string | null;
+    declaration_journal_id?: string | null;
+    payment_journal_id?: string | null;
+    member?: Pick<Member, "id" | "full_name" | "member_no"> | null;
+    created_at?: string;
+    updated_at?: string;
 }
 
 export interface ReportRow {

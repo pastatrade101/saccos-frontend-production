@@ -6,6 +6,7 @@ import {
     Chip,
     Divider,
     Grid,
+    LinearProgress,
     Stack,
     Typography
 } from "@mui/material";
@@ -39,6 +40,7 @@ import {
     type LoanApplicationsResponse,
     type LoanSchedulesResponse,
     type LoansResponse,
+    type MemberAccountsResponse,
     type MemberApplicationsResponse,
     type MembersResponse,
     type PlatformErrorRow,
@@ -51,17 +53,25 @@ import {
     type PlatformSystemMetricsResponse,
     type PlatformTenantTrafficResponse,
     type PlatformTenantTrafficRow,
+    type SaccoFinancialYearSettingsResponse,
     type StatementsResponse,
     type TenantsListResponse,
     type UsersListResponse
 } from "../lib/endpoints";
 import { buildTellerDashboardData } from "../lib/tellerDashboard";
-import type { Branch, Loan, LoanApplication, LoanSchedule, Member, MemberApplication, StaffAccessUser, StatementRow, Tenant } from "../types/api";
+import type { Branch, Loan, LoanApplication, LoanSchedule, Member, MemberAccount, MemberApplication, SaccoFinancialYearSettings, StaffAccessUser, StatementRow, Tenant } from "../types/api";
 import { MotionCard, MotionListItem, MotionSection } from "../ui/motion";
+import {
+    DEFAULT_SACCO_FINANCIAL_YEAR_SETTINGS,
+    type FinancialYearPeriod,
+    normalizeSaccoFinancialYearSettings,
+    resolveFinancialYearPeriod
+} from "../utils/financialYear";
 import { formatCurrency, formatDate, formatRole } from "../utils/format";
 
 interface DashboardState {
     members: Member[];
+    memberAccounts: MemberAccount[];
     statements: StatementRow[];
     loans: Loan[];
     schedules: LoanSchedule[];
@@ -118,6 +128,137 @@ interface StaffPerformanceRow {
     loansIssued: number;
     collectionRate: number;
     applicationsProcessed: number;
+}
+
+type PerformanceLevelColor = "success" | "info" | "warning" | "error" | "default";
+
+interface MemberPerformanceRow {
+    memberId: string;
+    memberName: string;
+    memberNo: string;
+    actualDetailAmount: number;
+    actualFormAmount: number;
+    matchesDetail: boolean;
+    requiredAmount: number;
+    annualTargetAmount: number;
+    remainingAmount: number;
+    reachPercent: number;
+    remainingPercent: number;
+    level: string;
+    levelColor: PerformanceLevelColor;
+}
+
+interface MemberPerformanceSummary {
+    totalActualDetail: number;
+    totalActualForm: number;
+    totalAnnualTarget: number;
+    totalRequiredAmount: number;
+    totalRemainingAmount: number;
+    matchedMembers: number;
+    varianceMembers: number;
+    reachedMembers: number;
+    behindMembers: number;
+    averageReachPercent: number;
+}
+
+const DEFAULT_PERFORMANCE_ANNUAL_TARGET_AMOUNT = 50_000_000;
+const DEFAULT_PERFORMANCE_REQUIRED_AMOUNT = 3_200_000;
+const DASHBOARD_ACCOUNTS_PAGE_LIMIT = 100;
+
+function parseMoneyInput(value: string) {
+    const parsed = Number(value.replace(/[^\d.]/g, ""));
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatSignedCurrency(value: number) {
+    if (value < 0) {
+        return `(${formatCurrency(Math.abs(value))})`;
+    }
+
+    return formatCurrency(value);
+}
+
+function formatSignedPercent(value: number) {
+    return `${Math.round(value)}%`;
+}
+
+function parsePerformanceTargetFromNotes(notes?: string | null) {
+    if (!notes) {
+        return 0;
+    }
+
+    const match = notes.match(/(?:annual_target|performance_target|target)\s*[:=]\s*([0-9,.]+)/i);
+    if (!match?.[1]) {
+        return 0;
+    }
+
+    return parseMoneyInput(match[1]);
+}
+
+function resolveMemberAnnualTarget(member: Member, fallbackAnnualTarget: number) {
+    const notesTarget = parsePerformanceTargetFromNotes(member.notes);
+    if (notesTarget > 0) {
+        return notesTarget;
+    }
+
+    const memberCommitment = Number(member.monthly_savings_commitment || 0);
+    if (memberCommitment > 0) {
+        return memberCommitment;
+    }
+
+    return fallbackAnnualTarget;
+}
+
+function resolvePerformanceLevel(reachPercent: number, actualAmount: number): { label: string; color: PerformanceLevelColor } {
+    if (reachPercent >= 100) {
+        return { label: "Target met", color: "success" };
+    }
+
+    if (reachPercent >= 60) {
+        return { label: "On track", color: "info" };
+    }
+
+    if (reachPercent >= 40) {
+        return { label: "Building", color: "warning" };
+    }
+
+    if (actualAmount > 0) {
+        return { label: "Needs top-up", color: "error" };
+    }
+
+    return { label: "No activity", color: "default" };
+}
+
+async function loadDashboardMemberAccounts(tenantId: string) {
+    const accounts: MemberAccount[] = [];
+    let page = 1;
+
+    while (page <= 20) {
+        const { data } = await api.get<MemberAccountsResponse & { pagination?: { total: number; limit: number; page: number } }>(
+            endpoints.members.accounts(),
+            {
+                params: {
+                    tenant_id: tenantId,
+                    page,
+                    limit: DASHBOARD_ACCOUNTS_PAGE_LIMIT
+                }
+            }
+        );
+        const rows = data.data || [];
+        accounts.push(...rows);
+
+        if (data.pagination?.total && accounts.length >= data.pagination.total) {
+            break;
+        }
+
+        if (rows.length < DASHBOARD_ACCOUNTS_PAGE_LIMIT) {
+            break;
+        }
+
+        page += 1;
+    }
+
+    return accounts;
 }
 
 function groupAmountsByDate(statements: StatementRow[], direction?: "in" | "out") {
@@ -600,6 +741,185 @@ function StaffPerformancePanel({
     );
 }
 
+function MemberPerformanceTargetPanel({
+    rows,
+    summary,
+    financialYearPeriod
+}: {
+    rows: MemberPerformanceRow[];
+    summary: MemberPerformanceSummary;
+    financialYearPeriod: FinancialYearPeriod;
+}) {
+    const theme = useTheme();
+    const cappedBranchProgress = Math.min(Math.max(summary.averageReachPercent, 0), 100);
+    const reachHeader = `% Reach By ${financialYearPeriod.endLabel}`;
+    const remainingHeader = `% Remaining By ${financialYearPeriod.endLabel}`;
+    const columns: Column<MemberPerformanceRow>[] = [
+        {
+            key: "id",
+            header: "ID",
+            render: (row) => (
+                <Stack spacing={0.25}>
+                    <Typography variant="body2" fontWeight={800}>{row.memberNo}</Typography>
+                    <Typography variant="caption" color="text.secondary">{row.memberName}</Typography>
+                </Stack>
+            )
+        },
+        {
+            key: "actual_detail",
+            header: "Actual Detail",
+            render: (row) => <Typography variant="body2" fontWeight={700}>{formatCurrency(row.actualDetailAmount)}</Typography>
+        },
+        {
+            key: "actual_forms",
+            header: "Actual From Forms",
+            render: (row) => <Typography variant="body2" fontWeight={700}>{formatCurrency(row.actualFormAmount)}</Typography>
+        },
+        {
+            key: "matches",
+            header: "True/False",
+            render: (row) => (
+                <Chip
+                    size="small"
+                    label={row.matchesDetail ? "TRUE" : "FALSE"}
+                    color={row.matchesDetail ? "success" : "warning"}
+                    variant={row.matchesDetail ? "outlined" : "filled"}
+                />
+            )
+        },
+        {
+            key: "required_amount",
+            header: "Needed",
+            render: (row) => formatCurrency(row.requiredAmount)
+        },
+        {
+            key: "annual_target",
+            header: "Annual Target",
+            render: (row) => formatCurrency(row.annualTargetAmount)
+        },
+        {
+            key: "remaining_amount",
+            header: "Remaining Amount",
+            render: (row) => (
+                <Typography variant="body2" color={row.remainingAmount < 0 ? "warning.main" : "success.main"} fontWeight={700}>
+                    {formatSignedCurrency(row.remainingAmount)}
+                </Typography>
+            )
+        },
+        {
+            key: "reach",
+            header: reachHeader,
+            render: (row) => (
+                <Stack spacing={0.75} sx={{ minWidth: 150 }}>
+                    <Typography variant="caption" color="text.secondary">
+                        {row.reachPercent.toFixed(0)}%
+                    </Typography>
+                    <LinearProgress
+                        variant="determinate"
+                        value={Math.min(Math.max(row.reachPercent, 0), 100)}
+                        sx={{
+                            height: 8,
+                            borderRadius: 999,
+                            bgcolor: alpha(theme.palette.text.primary, 0.1),
+                            "& .MuiLinearProgress-bar": {
+                                bgcolor: row.reachPercent >= 100
+                                    ? theme.palette.success.main
+                                    : row.reachPercent >= 60
+                                        ? theme.palette.info.main
+                                        : row.reachPercent >= 40
+                                            ? theme.palette.warning.main
+                                            : theme.palette.error.main
+                            }
+                        }}
+                    />
+                </Stack>
+            )
+        },
+        {
+            key: "remaining_percent",
+            header: remainingHeader,
+            render: (row) => (
+                <Typography variant="body2" color={row.remainingPercent < 0 ? "warning.main" : "success.main"} fontWeight={700}>
+                    {formatSignedPercent(row.remainingPercent)}
+                </Typography>
+            )
+        }
+    ];
+
+    return (
+        <Stack spacing={2}>
+            <MotionCard variant="outlined" inView>
+                <CardContent>
+                    <Stack spacing={2}>
+                        <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" gap={1.5}>
+                            <Box>
+                                <Typography variant="h6">Performance Target</Typography>
+                                <Typography variant="body2" color="text.secondary">
+                                    Automatic branch view for the SACCO year from {financialYearPeriod.startLabel} to {financialYearPeriod.endLabel}.
+                                </Typography>
+                            </Box>
+                            <Chip
+                                label={`SACCO year ${financialYearPeriod.startLabel} - ${financialYearPeriod.endLabel}`}
+                                color="primary"
+                                variant="outlined"
+                                sx={{ width: "fit-content" }}
+                            />
+                        </Stack>
+
+                        <Box
+                            sx={{
+                                display: "grid",
+                                gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(4, 1fr)" },
+                                gap: 1.25
+                            }}
+                        >
+                            <Box sx={{ p: 1.35, border: "1px solid", borderColor: "divider", borderRadius: 1.5 }}>
+                                <Typography variant="caption" color="text.secondary">Average Reach</Typography>
+                                <Typography variant="h6">{summary.averageReachPercent.toFixed(0)}%</Typography>
+                                <LinearProgress
+                                    variant="determinate"
+                                    value={cappedBranchProgress}
+                                    sx={{ mt: 0.75, height: 8, borderRadius: 999 }}
+                                />
+                            </Box>
+                            <Box sx={{ p: 1.35, border: "1px solid", borderColor: "divider", borderRadius: 1.5 }}>
+                                <Typography variant="caption" color="text.secondary">Total Actual</Typography>
+                                <Typography variant="h6">{formatCurrency(summary.totalActualForm)}</Typography>
+                            </Box>
+                            <Box sx={{ p: 1.35, border: "1px solid", borderColor: "divider", borderRadius: 1.5 }}>
+                                <Typography variant="caption" color="text.secondary">Total Annual Target</Typography>
+                                <Typography variant="h6">
+                                    {formatCurrency(summary.totalAnnualTarget)}
+                                </Typography>
+                            </Box>
+                            <Box sx={{ p: 1.35, border: "1px solid", borderColor: "divider", borderRadius: 1.5 }}>
+                                <Typography variant="caption" color="text.secondary">Remaining Amount</Typography>
+                                <Typography variant="h6" color={summary.totalRemainingAmount < 0 ? "warning.main" : "success.main"}>
+                                    {formatSignedCurrency(summary.totalRemainingAmount)}
+                                </Typography>
+                            </Box>
+                            <Box sx={{ p: 1.35, border: "1px solid", borderColor: "divider", borderRadius: 1.5 }}>
+                                <Typography variant="caption" color="text.secondary">Detail Validation</Typography>
+                                <Typography variant="h6" color={summary.varianceMembers > 0 ? "warning.main" : "success.main"}>
+                                    {summary.matchedMembers} true / {summary.varianceMembers} false
+                                </Typography>
+                            </Box>
+                        </Box>
+                    </Stack>
+                </CardContent>
+            </MotionCard>
+
+            <DataTable
+                rows={rows}
+                columns={columns}
+                emptyMessage="No active members are available for performance target tracking."
+                maxHeight={520}
+                stickyHeader
+            />
+        </Stack>
+    );
+}
+
 function DashboardLoadingState() {
     return <AppLoader fullscreen={false} minHeight="72vh" message="Loading dashboard..." />;
 }
@@ -671,6 +991,7 @@ export function DashboardPage() {
     const { profile, selectedTenantId, branchIds, selectedTenantName, isInternalOps } = useAuth();
     const [state, setState] = useState<DashboardState>({
         members: [],
+        memberAccounts: [],
         statements: [],
         loans: [],
         schedules: [],
@@ -678,6 +999,7 @@ export function DashboardPage() {
         memberApplications: [],
         staffUsers: []
     });
+    const [financialYearSettings, setFinancialYearSettings] = useState<SaccoFinancialYearSettings>(DEFAULT_SACCO_FINANCIAL_YEAR_SETTINGS);
     const [platformState, setPlatformState] = useState<PlatformState>({
         tenants: [],
         branches: [],
@@ -759,6 +1081,24 @@ export function DashboardPage() {
             }
         };
 
+        const loadFinancialYearSettings = async (tenantId: string) => {
+            try {
+                const { data } = await api.get<SaccoFinancialYearSettingsResponse>(endpoints.saccoSettings.financialYear(), {
+                    params: { tenant_id: tenantId }
+                });
+
+                if (!isActive) {
+                    return;
+                }
+
+                setFinancialYearSettings(normalizeSaccoFinancialYearSettings(data.data));
+            } catch {
+                if (isActive) {
+                    setFinancialYearSettings(normalizeSaccoFinancialYearSettings({ tenant_id: tenantId }));
+                }
+            }
+        };
+
         const loadDashboard = async () => {
             if (isInternalOps) {
                 setLoading(true);
@@ -830,6 +1170,7 @@ export function DashboardPage() {
                 if (isActive) {
                     setState({
                         members: [],
+                        memberAccounts: [],
                         statements: [],
                         loans: [],
                         schedules: [],
@@ -848,7 +1189,13 @@ export function DashboardPage() {
             setError(null);
 
             try {
-                const [{ data: membersResponse }, statementsResponse, { data: loansResponse }, { data: schedulesResponse }] = await Promise.all([
+                const [
+                    { data: membersResponse },
+                    statementsResponse,
+                    { data: loansResponse },
+                    { data: schedulesResponse },
+                    memberAccounts
+                ] = await Promise.all([
                     api.get<MembersResponse>(endpoints.members.list(), {
                         params: { tenant_id: selectedTenantId, page: 1, limit: 100 }
                     }),
@@ -860,7 +1207,8 @@ export function DashboardPage() {
                     }),
                     api.get<LoanSchedulesResponse>(endpoints.finance.loanSchedules(), {
                         params: { tenant_id: selectedTenantId, page: 1, limit: 100 }
-                    })
+                    }),
+                    loadDashboardMemberAccounts(selectedTenantId)
                 ]);
 
                 if (!isActive) {
@@ -869,6 +1217,7 @@ export function DashboardPage() {
 
                 setState({
                     members: membersResponse.data || [],
+                    memberAccounts,
                     statements: statementsResponse.data.data || [],
                     loans: loansResponse.data || [],
                     schedules: (schedulesResponse.data || []).filter((schedule) => ["pending", "partial", "overdue"].includes(schedule.status)),
@@ -877,6 +1226,7 @@ export function DashboardPage() {
                     staffUsers: []
                 });
 
+                void loadFinancialYearSettings(selectedTenantId);
                 void loadSupplementalData(profile?.role || "", selectedTenantId);
             } catch (loadError) {
                 if (isActive) {
@@ -896,11 +1246,31 @@ export function DashboardPage() {
         };
     }, [isInternalOps, profile?.role, selectedTenantId]);
 
+    const financialYearPeriod = useMemo(() => resolveFinancialYearPeriod(financialYearSettings), [financialYearSettings]);
+
     const metrics = useMemo(() => {
         const branchMembers = branchIds.length
             ? state.members.filter((member) => branchIds.includes(member.branch_id))
             : state.members;
         const branchMemberIds = new Set(branchMembers.map((member) => member.id));
+        const activeBranchMemberIds = new Set(
+            branchMembers
+                .filter((member) => member.status === "active")
+                .map((member) => member.id)
+        );
+        const branchSavingsBalance = state.memberAccounts
+            .filter((account) => {
+                if (account.status === "closed" || account.product_type !== "savings") {
+                    return false;
+                }
+
+                if (!activeBranchMemberIds.has(account.member_id)) {
+                    return false;
+                }
+
+                return !branchIds.length || branchIds.includes(account.branch_id);
+            })
+            .reduce((sum, account) => sum + Number(account.available_balance || 0) + Number(account.locked_balance || 0), 0);
         const totalDeposits = state.statements
             .filter((entry) => entry.direction === "in")
             .reduce((sum, entry) => sum + entry.amount, 0);
@@ -916,13 +1286,17 @@ export function DashboardPage() {
         const branchLoanIds = new Set(branchLoans.map((loan) => loan.id));
         const branchSchedules = state.schedules.filter((schedule) => branchLoanIds.has(schedule.loan_id));
         const branchStatements = state.statements.filter((entry) => !branchIds.length || branchMemberIds.has(entry.member_id));
-        const branchDepositIntake = branchStatements
+        const branchYearStatements = branchStatements.filter((entry) =>
+            entry.transaction_date >= financialYearPeriod.startIso
+            && entry.transaction_date <= financialYearPeriod.endIso
+        );
+        const branchDepositIntake = branchYearStatements
             .filter((entry) => entry.direction === "in")
             .reduce((sum, entry) => sum + entry.amount, 0);
-        const branchWithdrawalOutflow = branchStatements
+        const branchWithdrawalOutflow = branchYearStatements
             .filter((entry) => entry.direction === "out")
             .reduce((sum, entry) => sum + entry.amount, 0);
-        const branchContributionTotal = branchStatements
+        const branchContributionTotal = branchYearStatements
             .filter((entry) => entry.transaction_type === "share_contribution")
             .reduce((sum, entry) => sum + entry.amount, 0);
         const branchOverdueOutstanding = branchLoans
@@ -950,7 +1324,7 @@ export function DashboardPage() {
             overdueSchedules: overdueSchedules.length,
             branchMembers: branchMembers.length,
             branchActiveMembers: branchMembers.filter((member) => member.status === "active").length,
-            branchSavings: branchDepositIntake - branchWithdrawalOutflow,
+            branchSavings: branchSavingsBalance,
             branchDepositIntake,
             branchWithdrawalOutflow,
             branchContributionTotal,
@@ -963,11 +1337,100 @@ export function DashboardPage() {
             branchOutflowsToday,
             branchNetToday,
             branchOpeningBalance,
-            branchStatements,
+            branchStatements: branchYearStatements,
             branchLoans,
             branchSchedules
         };
-    }, [branchIds, state]);
+    }, [branchIds, financialYearPeriod.endIso, financialYearPeriod.startIso, state]);
+
+    const performanceAnnualTargetAmount = DEFAULT_PERFORMANCE_ANNUAL_TARGET_AMOUNT;
+    const performanceRequiredAmount = DEFAULT_PERFORMANCE_REQUIRED_AMOUNT;
+
+    const memberPerformanceRows = useMemo<MemberPerformanceRow[]>(() => {
+        const branchMembers = branchIds.length
+            ? state.members.filter((member) => branchIds.includes(member.branch_id))
+            : state.members;
+        const activeMembers = branchMembers.filter((member) => member.status === "active");
+        const activeMemberIds = new Set(activeMembers.map((member) => member.id));
+        const accountBalances = new Map<string, { savingsBalance: number; sharesBalance: number }>();
+
+        state.memberAccounts.forEach((account) => {
+            if (!activeMemberIds.has(account.member_id) || account.status === "closed") {
+                return;
+            }
+
+            if (branchIds.length && !branchIds.includes(account.branch_id)) {
+                return;
+            }
+
+            const currentBalance = accountBalances.get(account.member_id) || { savingsBalance: 0, sharesBalance: 0 };
+            const balance = Number(account.available_balance || 0) + Number(account.locked_balance || 0);
+
+            if (account.product_type === "savings") {
+                currentBalance.savingsBalance += balance;
+            }
+
+            if (account.product_type === "shares") {
+                currentBalance.sharesBalance += balance;
+            }
+
+            accountBalances.set(account.member_id, currentBalance);
+        });
+
+        return activeMembers
+            .map((member) => {
+                const balances = accountBalances.get(member.id) || { savingsBalance: 0, sharesBalance: 0 };
+                const actualDetailAmount = balances.savingsBalance;
+                const actualFormAmount = balances.savingsBalance;
+                const annualTargetAmount = resolveMemberAnnualTarget(member, performanceAnnualTargetAmount);
+                const remainingAmount = actualDetailAmount - annualTargetAmount;
+                const reachPercent = annualTargetAmount > 0 ? (actualFormAmount / annualTargetAmount) * 100 : 0;
+                const remainingPercent = reachPercent - 100;
+                const matchesDetail = Math.abs(actualDetailAmount - actualFormAmount) <= 0.005;
+                const level = resolvePerformanceLevel(reachPercent, actualFormAmount);
+
+                return {
+                    memberId: member.id,
+                    memberName: member.full_name,
+                    memberNo: member.member_no || member.id.slice(0, 8),
+                    actualDetailAmount,
+                    actualFormAmount,
+                    matchesDetail,
+                    requiredAmount: performanceRequiredAmount,
+                    annualTargetAmount,
+                    remainingAmount,
+                    reachPercent,
+                    remainingPercent,
+                    level: level.label,
+                    levelColor: level.color
+                };
+            })
+            .sort((left, right) =>
+                left.memberNo.localeCompare(right.memberNo, undefined, { numeric: true, sensitivity: "base" })
+                || left.memberName.localeCompare(right.memberName)
+            );
+    }, [branchIds, performanceAnnualTargetAmount, performanceRequiredAmount, state.memberAccounts, state.members]);
+
+    const memberPerformanceSummary = useMemo<MemberPerformanceSummary>(() => {
+        const totalActualDetail = memberPerformanceRows.reduce((sum, row) => sum + row.actualDetailAmount, 0);
+        const totalActualForm = memberPerformanceRows.reduce((sum, row) => sum + row.actualFormAmount, 0);
+        const totalAnnualTarget = memberPerformanceRows.reduce((sum, row) => sum + row.annualTargetAmount, 0);
+        const totalRequiredAmount = memberPerformanceRows.reduce((sum, row) => sum + row.requiredAmount, 0);
+        const totalRemainingAmount = memberPerformanceRows.reduce((sum, row) => sum + row.remainingAmount, 0);
+
+        return {
+            totalActualDetail,
+            totalActualForm,
+            totalAnnualTarget,
+            totalRequiredAmount,
+            totalRemainingAmount,
+            matchedMembers: memberPerformanceRows.filter((row) => row.matchesDetail).length,
+            varianceMembers: memberPerformanceRows.filter((row) => !row.matchesDetail).length,
+            reachedMembers: memberPerformanceRows.filter((row) => row.reachPercent >= 100).length,
+            behindMembers: memberPerformanceRows.filter((row) => row.reachPercent < 100).length,
+            averageReachPercent: totalAnnualTarget > 0 ? (totalActualForm / totalAnnualTarget) * 100 : 0
+        };
+    }, [memberPerformanceRows]);
 
     const cashTrend = groupAmountsByDate(state.statements);
     const depositTrend = groupAmountsByDate(state.statements, "in");
@@ -1990,6 +2453,11 @@ export function DashboardPage() {
                                             color={hasCashImbalance ? "error" : "success"}
                                             variant="outlined"
                                         />
+                                        <Chip
+                                            label={`SACCO year ${financialYearPeriod.startLabel} - ${financialYearPeriod.endLabel}`}
+                                            color="primary"
+                                            variant="outlined"
+                                        />
                                     </Stack>
                                 </Stack>
                                 <Stack direction={{ xs: "column", sm: "row" }} spacing={1} useFlexGap flexWrap="wrap">
@@ -2286,6 +2754,12 @@ export function DashboardPage() {
                     <>
                         <Grid size={{ xs: 12 }}>
                             <Stack spacing={2}>
+                                <MemberPerformanceTargetPanel
+                                    rows={memberPerformanceRows}
+                                    summary={memberPerformanceSummary}
+                                    financialYearPeriod={financialYearPeriod}
+                                />
+
                                 <Box
                                     sx={{
                                         display: "flex",

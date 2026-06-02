@@ -18,6 +18,8 @@ import type {
     DividendCycle,
     DividendPayment,
     DividendSnapshot,
+    ManualDividendBatch,
+    ManualDividendBatchRow,
     PaginatedResult,
     AuditorSummary,
     AuditorException,
@@ -63,6 +65,7 @@ import type {
     MemberPortalPaymentControls,
     WorkspaceTwoFactorSettings,
     WorkspacePublicRegistrationSettings,
+    SaccoFinancialYearSettings,
     PaymentOrder,
     MobileMoneyProvider,
     NotificationItem,
@@ -192,6 +195,9 @@ const routeMap = {
     imports: {
         members: "/imports/members",
         memberSavingsHistory: "/imports/members/savings-history",
+        memberShareHistory: "/imports/members/share-history",
+        memberLoanHistory: "/imports/members/loan-history",
+        memberDividendHistory: "/imports/members/dividend-history",
         memberJob: (jobId: string) => `/imports/members/${jobId}`,
         memberJobRows: (jobId: string) => `/imports/members/${jobId}/rows`,
         memberJobFailuresCsv: (jobId: string) => `/imports/members/${jobId}/failures.csv`,
@@ -220,6 +226,11 @@ const routeMap = {
     },
     dividends: {
         options: "/dividends/options",
+        manualBatches: "/dividends/manual-batches",
+        manualBatch: (batchId: string) => `/dividends/manual-batches/${batchId}`,
+        submitManualBatch: (batchId: string) => `/dividends/manual-batches/${batchId}/submit`,
+        postManualBatch: (batchId: string) => `/dividends/manual-batches/${batchId}/post`,
+        rejectManualBatch: (batchId: string) => `/dividends/manual-batches/${batchId}/reject`,
         cycles: "/dividends/cycles",
         cycle: (cycleId: string) => `/dividends/cycles/${cycleId}`,
         freeze: (cycleId: string) => `/dividends/cycles/${cycleId}/freeze`,
@@ -282,6 +293,9 @@ const routeMap = {
     securitySettings: {
         twoFactor: "/security-settings/two-factor",
         publicRegistration: "/security-settings/public-registration"
+    },
+    saccoSettings: {
+        financialYear: "/sacco-settings/financial-year"
     },
     notifications: {
         list: "/notifications",
@@ -427,6 +441,9 @@ export const endpoints = {
     imports: {
         members: () => routeMap.imports.members,
         memberSavingsHistory: () => routeMap.imports.memberSavingsHistory,
+        memberShareHistory: () => routeMap.imports.memberShareHistory,
+        memberLoanHistory: () => routeMap.imports.memberLoanHistory,
+        memberDividendHistory: () => routeMap.imports.memberDividendHistory,
         memberJob: (jobId: string) => routeMap.imports.memberJob(jobId),
         memberJobRows: (jobId: string) => routeMap.imports.memberJobRows(jobId),
         memberJobFailuresCsv: (jobId: string) => routeMap.imports.memberJobFailuresCsv(jobId),
@@ -455,6 +472,11 @@ export const endpoints = {
     },
     dividends: {
         options: () => routeMap.dividends.options,
+        manualBatches: () => routeMap.dividends.manualBatches,
+        manualBatch: (batchId: string) => routeMap.dividends.manualBatch(batchId),
+        submitManualBatch: (batchId: string) => routeMap.dividends.submitManualBatch(batchId),
+        postManualBatch: (batchId: string) => routeMap.dividends.postManualBatch(batchId),
+        rejectManualBatch: (batchId: string) => routeMap.dividends.rejectManualBatch(batchId),
         cycles: () => routeMap.dividends.cycles,
         cycle: (cycleId: string) => routeMap.dividends.cycle(cycleId),
         freeze: (cycleId: string) => routeMap.dividends.freeze(cycleId),
@@ -517,6 +539,9 @@ export const endpoints = {
     securitySettings: {
         twoFactor: () => routeMap.securitySettings.twoFactor,
         publicRegistration: () => routeMap.securitySettings.publicRegistration
+    },
+    saccoSettings: {
+        financialYear: () => routeMap.saccoSettings.financialYear
     },
     notifications: {
         list: () => routeMap.notifications.list,
@@ -1182,6 +1207,74 @@ export interface MemberSavingsHistoryImportResponseData {
 }
 
 export type MemberSavingsHistoryImportResponse = ApiEnvelope<MemberSavingsHistoryImportResponseData>;
+export interface MemberShareHistoryImportResponseData extends MemberSavingsHistoryImportResponseData {
+    latest_balance: number | null;
+    running_balance_rows_updated: number;
+}
+
+export type MemberShareHistoryImportResponse = ApiEnvelope<MemberShareHistoryImportResponseData>;
+export interface MemberLoanHistoryImportResponseData {
+    member: {
+        id: string;
+        full_name: string;
+        member_no?: string | null;
+    };
+    total_rows: number;
+    posted_rows: number;
+    skipped_rows: number;
+    failed_rows: number;
+    total_amount: number;
+    posted: Array<{
+        row_number: number;
+        loan_id: string | null;
+        loan_number: string | null;
+        journal_id: string | null;
+        reference: string;
+        amount: number;
+        monthly_interest_rate: number | null;
+        annual_interest_rate: number | null;
+        term_months: number;
+        repayment_frequency: "daily" | "weekly" | "monthly";
+        disbursed_at: string | null;
+        first_due_date: string | null;
+        installment_amount: number | null;
+    }>;
+    skipped: Array<{
+        row_number: number;
+        loan_id: string | null;
+        loan_number: string | null;
+        journal_id: string | null;
+        reference: string;
+        amount: number;
+        monthly_interest_rate: number | null;
+        annual_interest_rate: number | null;
+        term_months: number;
+        repayment_frequency: "daily" | "weekly" | "monthly";
+        disbursed_at: string | null;
+        first_due_date: string | null;
+        installment_amount: number | null;
+    }>;
+    failures: Array<{
+        row_number: number;
+        error: string;
+        raw: Record<string, string>;
+    }>;
+}
+
+export type MemberLoanHistoryImportResponse = ApiEnvelope<MemberLoanHistoryImportResponseData>;
+export interface MemberDividendHistoryImportResponseData extends Omit<MemberSavingsHistoryImportResponseData, "posted"> {
+    latest_balance: number | null;
+    running_balance_rows_updated: number;
+    posted: Array<{
+        row_number: number;
+        journal_id: string | null;
+        reference: string;
+        amount: number;
+        occurred_at: string;
+    }>;
+}
+
+export type MemberDividendHistoryImportResponse = ApiEnvelope<MemberDividendHistoryImportResponseData>;
 export type ImportJobResponse = ApiEnvelope<import("../types/api").ImportJob>;
 export type ImportJobRowsResponse = ApiEnvelope<{
     items: import("../types/api").ImportJobRow[];
@@ -1310,6 +1403,28 @@ export interface DividendPaymentRequest {
     description?: string | null;
 }
 
+export interface ManualDividendBatchRowInput {
+    member_id: string;
+    dividend_date: string;
+    dividend_label: string;
+    source_type: "utt" | "loan" | "other";
+    amount: number;
+    reference?: string | null;
+    destination_account_type: "savings" | "shares";
+    notes?: string | null;
+}
+
+export interface CreateManualDividendBatchRequest {
+    tenant_id?: string;
+    branch_id?: string | null;
+    batch_label: string;
+    rows: ManualDividendBatchRowInput[];
+}
+
+export interface RejectManualDividendBatchRequest {
+    notes?: string | null;
+}
+
 export interface DividendOptionsResponse extends ApiEnvelope<{
     branches: Branch[];
     accounts: Array<{
@@ -1319,7 +1434,27 @@ export interface DividendOptionsResponse extends ApiEnvelope<{
         account_type: string;
         system_tag?: string | null;
     }>;
+    members: Pick<Member, "id" | "tenant_id" | "branch_id" | "full_name" | "member_no" | "status">[];
 }> {}
+
+export type ManualDividendBatchesResponse = ApiEnvelope<ManualDividendBatch[]>;
+export type ManualDividendBatchDetailResponse = ApiEnvelope<{
+    batch: ManualDividendBatch;
+    rows: ManualDividendBatchRow[];
+    posting?: {
+        posted_rows: number;
+        total_amount: number;
+        recalculated_running_balance_rows: number;
+        rows: Array<{
+            row_id: string;
+            reference: string;
+            amount: number;
+            destination_account_type: "savings" | "shares";
+            declaration_journal_id: string;
+            payment_journal_id: string;
+        }>;
+    };
+}>;
 
 export type DividendCyclesResponse = ApiEnvelope<DividendCycle[]>;
 export type DividendCycleDetailResponse = ApiEnvelope<{
@@ -1529,6 +1664,7 @@ export interface SmsTriggerSettingResponse extends ApiEnvelope<SmsTriggerSetting
 export interface MemberPortalPaymentControlsResponse extends ApiEnvelope<MemberPortalPaymentControls> {}
 export interface WorkspaceTwoFactorSettingsResponse extends ApiEnvelope<WorkspaceTwoFactorSettings> {}
 export interface WorkspacePublicRegistrationSettingsResponse extends ApiEnvelope<WorkspacePublicRegistrationSettings> {}
+export interface SaccoFinancialYearSettingsResponse extends ApiEnvelope<SaccoFinancialYearSettings> {}
 
 export interface UpdateApprovalPolicyRequest {
     tenant_id?: string;
@@ -1575,6 +1711,12 @@ export interface UpdateWorkspaceTwoFactorSettingsRequest {
 export interface UpdateWorkspacePublicRegistrationSettingsRequest {
     tenant_id?: string;
     public_registration_enabled: boolean;
+}
+
+export interface UpdateSaccoFinancialYearSettingsRequest {
+    tenant_id?: string;
+    financial_year_start_month: number;
+    financial_year_start_day: number;
 }
 
 export interface PendingApprovalPayload {

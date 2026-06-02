@@ -40,6 +40,9 @@ import {
     type ImportJobResponse,
     type ImportJobRowsResponse,
     type ImportMembersResponse,
+    type MemberDividendHistoryImportResponse,
+    type MemberLoanHistoryImportResponse,
+    type MemberShareHistoryImportResponse,
     type MemberSavingsHistoryImportResponse,
     type MembersResponse
 } from "../lib/endpoints";
@@ -117,6 +120,18 @@ export function MemberImportPage() {
     const [historyMemberId, setHistoryMemberId] = useState("");
     const [historyFile, setHistoryFile] = useState<File | null>(null);
     const [historyResult, setHistoryResult] = useState<MemberSavingsHistoryImportResponse["data"] | null>(null);
+    const [shareSubmitting, setShareSubmitting] = useState(false);
+    const [shareMemberId, setShareMemberId] = useState("");
+    const [shareFile, setShareFile] = useState<File | null>(null);
+    const [shareResult, setShareResult] = useState<MemberShareHistoryImportResponse["data"] | null>(null);
+    const [loanSubmitting, setLoanSubmitting] = useState(false);
+    const [loanMemberId, setLoanMemberId] = useState("");
+    const [loanFile, setLoanFile] = useState<File | null>(null);
+    const [loanResult, setLoanResult] = useState<MemberLoanHistoryImportResponse["data"] | null>(null);
+    const [dividendSubmitting, setDividendSubmitting] = useState(false);
+    const [dividendMemberId, setDividendMemberId] = useState("");
+    const [dividendFile, setDividendFile] = useState<File | null>(null);
+    const [dividendResult, setDividendResult] = useState<MemberDividendHistoryImportResponse["data"] | null>(null);
     const [credentialsUrl, setCredentialsUrl] = useState<string | null>(null);
     const [uploadProgress, setUploadProgress] = useState(0);
     const [importStage, setImportStage] = useState<"idle" | "uploading" | "processing">("idle");
@@ -145,6 +160,9 @@ export function MemberImportPage() {
     const hasSingleBranch = branches.length <= 1;
     const selectedDefaultBranch = branches.find((branch) => branch.id === selectedDefaultBranchId) || branches[0] || null;
     const selectedHistoryMember = members.find((member) => member.id === historyMemberId) || null;
+    const selectedShareMember = members.find((member) => member.id === shareMemberId) || null;
+    const selectedLoanMember = members.find((member) => member.id === loanMemberId) || null;
+    const selectedDividendMember = members.find((member) => member.id === dividendMemberId) || null;
 
     useEffect(() => {
         if (!submitting || !importStartedAt) {
@@ -531,6 +549,171 @@ export function MemberImportPage() {
             });
         } finally {
             setHistorySubmitting(false);
+        }
+    };
+
+    const submitShareHistory = async () => {
+        if (!shareMemberId) {
+            pushToast({
+                type: "error",
+                title: "Choose member",
+                message: "Select the member who owns this share history file."
+            });
+            return;
+        }
+
+        if (!shareFile) {
+            pushToast({
+                type: "error",
+                title: "CSV required",
+                message: "Choose a share history CSV file before importing."
+            });
+            return;
+        }
+
+        setShareSubmitting(true);
+        setShareResult(null);
+
+        try {
+            const body = new FormData();
+            body.append("member_id", shareMemberId);
+            body.append("file", shareFile);
+
+            const { data } = await api.post<MemberShareHistoryImportResponse>(
+                endpoints.imports.memberShareHistory(),
+                body,
+                {
+                    headers: {
+                        "Content-Type": "multipart/form-data"
+                    },
+                    timeout: 0
+                }
+            );
+
+            setShareResult(data.data);
+            pushToast({
+                type: data.data.failed_rows ? "warning" : "success",
+                title: data.data.failed_rows ? "Share history imported with issues" : "Share history imported",
+                message: `${data.data.posted_rows} share row(s) posted to the ledger. ${data.data.failed_rows} failed.`
+            });
+        } catch (error) {
+            pushToast({
+                type: "error",
+                title: "Share import failed",
+                message: getApiErrorMessage(error)
+            });
+        } finally {
+            setShareSubmitting(false);
+        }
+    };
+
+    const submitLoanHistory = async () => {
+        if (!loanMemberId) {
+            pushToast({
+                type: "error",
+                title: "Choose member",
+                message: "Select the member who owns this loan history file."
+            });
+            return;
+        }
+
+        if (!loanFile) {
+            pushToast({
+                type: "error",
+                title: "CSV required",
+                message: "Choose a loan history CSV file before importing."
+            });
+            return;
+        }
+
+        setLoanSubmitting(true);
+        setLoanResult(null);
+
+        try {
+            const body = new FormData();
+            body.append("member_id", loanMemberId);
+            body.append("file", loanFile);
+
+            const { data } = await api.post<MemberLoanHistoryImportResponse>(
+                endpoints.imports.memberLoanHistory(),
+                body,
+                {
+                    headers: {
+                        "Content-Type": "multipart/form-data"
+                    },
+                    timeout: 0
+                }
+            );
+
+            setLoanResult(data.data);
+            pushToast({
+                type: data.data.failed_rows ? "warning" : "success",
+                title: data.data.failed_rows ? "Loan import completed with issues" : "Loan history imported",
+                message: `${data.data.posted_rows} loan row(s) posted. ${data.data.skipped_rows} skipped. ${data.data.failed_rows} failed.`
+            });
+        } catch (error) {
+            pushToast({
+                type: "error",
+                title: "Loan import failed",
+                message: getApiErrorMessage(error)
+            });
+        } finally {
+            setLoanSubmitting(false);
+        }
+    };
+
+    const submitDividendHistory = async () => {
+        if (!dividendMemberId) {
+            pushToast({
+                type: "error",
+                title: "Choose member",
+                message: "Select the member who owns this dividend history file."
+            });
+            return;
+        }
+
+        if (!dividendFile) {
+            pushToast({
+                type: "error",
+                title: "CSV required",
+                message: "Choose a dividend history CSV file before importing."
+            });
+            return;
+        }
+
+        setDividendSubmitting(true);
+        setDividendResult(null);
+
+        try {
+            const body = new FormData();
+            body.append("member_id", dividendMemberId);
+            body.append("file", dividendFile);
+
+            const { data } = await api.post<MemberDividendHistoryImportResponse>(
+                endpoints.imports.memberDividendHistory(),
+                body,
+                {
+                    headers: {
+                        "Content-Type": "multipart/form-data"
+                    },
+                    timeout: 0
+                }
+            );
+
+            setDividendResult(data.data);
+            pushToast({
+                type: data.data.failed_rows ? "warning" : "success",
+                title: data.data.failed_rows ? "Dividend history imported with issues" : "Dividend history imported",
+                message: `${data.data.posted_rows} dividend row(s) posted to the ledger. ${data.data.failed_rows} failed.`
+            });
+        } catch (error) {
+            pushToast({
+                type: "error",
+                title: "Dividend import failed",
+                message: getApiErrorMessage(error)
+            });
+        } finally {
+            setDividendSubmitting(false);
         }
     };
 
@@ -954,6 +1137,359 @@ export function MemberImportPage() {
                                 ) : (
                                     <Alert severity="success">
                                         Savings deposit history posted to accounting and member statements successfully.
+                                    </Alert>
+                                )}
+                            </Stack>
+                        ) : null}
+                    </Stack>
+                </CardContent>
+            </MotionCard>
+
+            <MotionCard variant="outlined" sx={{ borderRadius: 2 }}>
+                <CardContent sx={{ p: 3 }}>
+                    <Stack spacing={2.5}>
+                        <Box>
+                            <Typography variant="h6" fontWeight={700}>
+                                Member share history
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+                                Select an existing member and upload dated share contributions. Each row posts through the share contribution ledger, then running balances and the share account balance are recalculated.
+                            </Typography>
+                        </Box>
+
+                        <Alert severity="info">
+                            CSV columns: <strong>date</strong>, <strong>amount</strong>, optional <strong>cumulative</strong>, <strong>reference</strong>, and <strong>description</strong>. Use this for historical share capital so branch performance and member balances reflect the workbook.
+                        </Alert>
+
+                        <Grid container spacing={2}>
+                            <Grid size={{ xs: 12, md: 5 }}>
+                                <TextField
+                                    select
+                                    fullWidth
+                                    label="Member"
+                                    value={shareMemberId}
+                                    disabled={loadingMembers || shareSubmitting}
+                                    onChange={(event) => {
+                                        setShareMemberId(event.target.value);
+                                        setShareResult(null);
+                                    }}
+                                    helperText={selectedShareMember?.member_no ? `Member no: ${selectedShareMember.member_no}` : "Choose the member whose shares are in the file."}
+                                >
+                                    <MenuItem value="">Select member</MenuItem>
+                                    {members.map((member) => (
+                                        <MenuItem key={member.id} value={member.id}>
+                                            {member.full_name}{member.member_no ? ` (${member.member_no})` : ""}
+                                        </MenuItem>
+                                    ))}
+                                </TextField>
+                            </Grid>
+
+                            <Grid size={{ xs: 12, md: 7 }}>
+                                <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ xs: "stretch", sm: "center" }}>
+                                    <Button
+                                        variant="outlined"
+                                        component="label"
+                                        startIcon={<UploadFileRoundedIcon />}
+                                        disabled={shareSubmitting}
+                                    >
+                                        {shareFile?.name || "Select share history CSV"}
+                                        <input
+                                            hidden
+                                            type="file"
+                                            accept=".csv,text/csv"
+                                            onChange={(event) => {
+                                                setShareFile(event.target.files?.item(0) || null);
+                                                setShareResult(null);
+                                            }}
+                                        />
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        variant="text"
+                                        startIcon={<DownloadRoundedIcon />}
+                                        onClick={() => window.open("/member-share-history-template.csv", "_blank", "noopener,noreferrer")}
+                                    >
+                                        Download share template
+                                    </Button>
+                                </Stack>
+                            </Grid>
+                        </Grid>
+
+                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ xs: "stretch", sm: "center" }}>
+                            <Button
+                                variant="contained"
+                                disabled={shareSubmitting || !shareMemberId || !shareFile}
+                                startIcon={<CloudUploadRoundedIcon />}
+                                onClick={() => void submitShareHistory()}
+                            >
+                                {shareSubmitting ? "Posting shares..." : "Post share history"}
+                            </Button>
+                            {shareSubmitting ? (
+                                <Box sx={{ minWidth: 220, flex: 1 }}>
+                                    <LinearProgress sx={{ height: 8, borderRadius: 999 }} />
+                                </Box>
+                            ) : null}
+                        </Stack>
+
+                        {shareResult ? (
+                            <Stack spacing={1.25}>
+                                <Stack direction="row" spacing={1} flexWrap="wrap">
+                                    <Chip label={`Member ${shareResult.member.member_no || shareResult.member.full_name}`} />
+                                    <Chip color="success" label={`${shareResult.posted_rows} posted`} />
+                                    <Chip color={shareResult.failed_rows ? "warning" : "default"} label={`${shareResult.failed_rows} failed`} />
+                                    <Chip label={`Total ${Number(shareResult.total_amount || 0).toLocaleString("en-US")}`} />
+                                    {shareResult.latest_balance !== null ? (
+                                        <Chip label={`Latest shares ${Number(shareResult.latest_balance || 0).toLocaleString("en-US")}`} />
+                                    ) : null}
+                                </Stack>
+
+                                {shareResult.failed_rows ? (
+                                    <Alert severity="warning">
+                                        {shareResult.failures.slice(0, 3).map((failure) => (
+                                            <Box key={failure.row_number}>
+                                                Row {failure.row_number}: {failure.error}
+                                            </Box>
+                                        ))}
+                                    </Alert>
+                                ) : (
+                                    <Alert severity="success">
+                                        Share history posted to accounting and member statements successfully.
+                                    </Alert>
+                                )}
+                            </Stack>
+                        ) : null}
+                    </Stack>
+                </CardContent>
+            </MotionCard>
+
+            <MotionCard variant="outlined" sx={{ borderRadius: 2 }}>
+                <CardContent sx={{ p: 3 }}>
+                    <Stack spacing={2.5}>
+                        <Box>
+                            <Typography variant="h6" fontWeight={700}>
+                                Member loan history
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+                                Select an existing member and upload historical loans. Each row creates a loan through the finance disbursement path, posts the journal, backdates the loan, and shifts the repayment schedule from the imported dates.
+                            </Typography>
+                        </Box>
+
+                        <Alert severity="info">
+                            CSV columns: <strong>date</strong>, <strong>principal_amount</strong>, <strong>monthly_interest_rate</strong>, <strong>term_months</strong>, optional <strong>first_due_date</strong>, <strong>repayment_frequency</strong>, <strong>reference</strong>, and <strong>description</strong>. Use monthly percentage values like <strong>1.5</strong> for 1.5% per month.
+                        </Alert>
+
+                        <Grid container spacing={2}>
+                            <Grid size={{ xs: 12, md: 5 }}>
+                                <TextField
+                                    select
+                                    fullWidth
+                                    label="Member"
+                                    value={loanMemberId}
+                                    disabled={loadingMembers || loanSubmitting}
+                                    onChange={(event) => {
+                                        setLoanMemberId(event.target.value);
+                                        setLoanResult(null);
+                                    }}
+                                    helperText={selectedLoanMember?.member_no ? `Member no: ${selectedLoanMember.member_no}` : "Choose the member whose loan is in the file."}
+                                >
+                                    <MenuItem value="">Select member</MenuItem>
+                                    {members.map((member) => (
+                                        <MenuItem key={member.id} value={member.id}>
+                                            {member.full_name}{member.member_no ? ` (${member.member_no})` : ""}
+                                        </MenuItem>
+                                    ))}
+                                </TextField>
+                            </Grid>
+
+                            <Grid size={{ xs: 12, md: 7 }}>
+                                <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ xs: "stretch", sm: "center" }}>
+                                    <Button
+                                        variant="outlined"
+                                        component="label"
+                                        startIcon={<UploadFileRoundedIcon />}
+                                        disabled={loanSubmitting}
+                                    >
+                                        {loanFile?.name || "Select loan history CSV"}
+                                        <input
+                                            hidden
+                                            type="file"
+                                            accept=".csv,text/csv"
+                                            onChange={(event) => {
+                                                setLoanFile(event.target.files?.item(0) || null);
+                                                setLoanResult(null);
+                                            }}
+                                        />
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        variant="text"
+                                        startIcon={<DownloadRoundedIcon />}
+                                        onClick={() => window.open("/member-loan-history-template.csv", "_blank", "noopener,noreferrer")}
+                                    >
+                                        Download loan template
+                                    </Button>
+                                </Stack>
+                            </Grid>
+                        </Grid>
+
+                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ xs: "stretch", sm: "center" }}>
+                            <Button
+                                variant="contained"
+                                disabled={loanSubmitting || !loanMemberId || !loanFile}
+                                startIcon={<CloudUploadRoundedIcon />}
+                                onClick={() => void submitLoanHistory()}
+                            >
+                                {loanSubmitting ? "Posting loan..." : "Post loan history"}
+                            </Button>
+                            {loanSubmitting ? (
+                                <Box sx={{ minWidth: 220, flex: 1 }}>
+                                    <LinearProgress sx={{ height: 8, borderRadius: 999 }} />
+                                </Box>
+                            ) : null}
+                        </Stack>
+
+                        {loanResult ? (
+                            <Stack spacing={1.25}>
+                                <Stack direction="row" spacing={1} flexWrap="wrap">
+                                    <Chip label={`Member ${loanResult.member.member_no || loanResult.member.full_name}`} />
+                                    <Chip color="success" label={`${loanResult.posted_rows} posted`} />
+                                    <Chip color={loanResult.skipped_rows ? "warning" : "default"} label={`${loanResult.skipped_rows} skipped`} />
+                                    <Chip color={loanResult.failed_rows ? "warning" : "default"} label={`${loanResult.failed_rows} failed`} />
+                                    <Chip label={`Principal ${Number(loanResult.total_amount || 0).toLocaleString("en-US")}`} />
+                                </Stack>
+
+                                {loanResult.failed_rows ? (
+                                    <Alert severity="warning">
+                                        {loanResult.failures.slice(0, 3).map((failure) => (
+                                            <Box key={failure.row_number}>
+                                                Row {failure.row_number}: {failure.error}
+                                            </Box>
+                                        ))}
+                                    </Alert>
+                                ) : (
+                                    <Alert severity="success">
+                                        Loan history posted to accounting and the repayment schedule successfully.
+                                    </Alert>
+                                )}
+                            </Stack>
+                        ) : null}
+                    </Stack>
+                </CardContent>
+            </MotionCard>
+
+            <MotionCard variant="outlined" sx={{ borderRadius: 2 }}>
+                <CardContent sx={{ p: 3 }}>
+                    <Stack spacing={2.5}>
+                        <Box>
+                            <Typography variant="h6" fontWeight={700}>
+                                Member dividend history
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+                                Select an existing member and upload dated dividend credits. Each row posts as a dividend allocation into the member savings ledger so historical workbook totals can reconcile.
+                            </Typography>
+                        </Box>
+
+                        <Alert severity="warning">
+                            Do not upload the grand-total cell. Use only dividend amounts. In the Nsanyiwa sheet, <strong>D46</strong> is the grand total, while <strong>J44</strong> is the dividend total.
+                        </Alert>
+
+                        <Alert severity="info">
+                            CSV columns: <strong>date</strong>, <strong>amount</strong>, optional <strong>reference</strong>, and <strong>description</strong>. Dates like <strong>5/5/2026</strong> are treated as month/day/year.
+                        </Alert>
+
+                        <Grid container spacing={2}>
+                            <Grid size={{ xs: 12, md: 5 }}>
+                                <TextField
+                                    select
+                                    fullWidth
+                                    label="Member"
+                                    value={dividendMemberId}
+                                    disabled={loadingMembers || dividendSubmitting}
+                                    onChange={(event) => {
+                                        setDividendMemberId(event.target.value);
+                                        setDividendResult(null);
+                                    }}
+                                    helperText={selectedDividendMember?.member_no ? `Member no: ${selectedDividendMember.member_no}` : "Choose the member whose dividends are in the file."}
+                                >
+                                    <MenuItem value="">Select member</MenuItem>
+                                    {members.map((member) => (
+                                        <MenuItem key={member.id} value={member.id}>
+                                            {member.full_name}{member.member_no ? ` (${member.member_no})` : ""}
+                                        </MenuItem>
+                                    ))}
+                                </TextField>
+                            </Grid>
+
+                            <Grid size={{ xs: 12, md: 7 }}>
+                                <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ xs: "stretch", sm: "center" }}>
+                                    <Button
+                                        variant="outlined"
+                                        component="label"
+                                        startIcon={<UploadFileRoundedIcon />}
+                                        disabled={dividendSubmitting}
+                                    >
+                                        {dividendFile?.name || "Select dividend history CSV"}
+                                        <input
+                                            hidden
+                                            type="file"
+                                            accept=".csv,text/csv"
+                                            onChange={(event) => {
+                                                setDividendFile(event.target.files?.item(0) || null);
+                                                setDividendResult(null);
+                                            }}
+                                        />
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        variant="text"
+                                        startIcon={<DownloadRoundedIcon />}
+                                        onClick={() => window.open("/member-dividend-history-template.csv", "_blank", "noopener,noreferrer")}
+                                    >
+                                        Download dividend template
+                                    </Button>
+                                </Stack>
+                            </Grid>
+                        </Grid>
+
+                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ xs: "stretch", sm: "center" }}>
+                            <Button
+                                variant="contained"
+                                disabled={dividendSubmitting || !dividendMemberId || !dividendFile}
+                                startIcon={<CloudUploadRoundedIcon />}
+                                onClick={() => void submitDividendHistory()}
+                            >
+                                {dividendSubmitting ? "Posting dividends..." : "Post dividend history"}
+                            </Button>
+                            {dividendSubmitting ? (
+                                <Box sx={{ minWidth: 220, flex: 1 }}>
+                                    <LinearProgress sx={{ height: 8, borderRadius: 999 }} />
+                                </Box>
+                            ) : null}
+                        </Stack>
+
+                        {dividendResult ? (
+                            <Stack spacing={1.25}>
+                                <Stack direction="row" spacing={1} flexWrap="wrap">
+                                    <Chip label={`Member ${dividendResult.member.member_no || dividendResult.member.full_name}`} />
+                                    <Chip color="success" label={`${dividendResult.posted_rows} posted`} />
+                                    <Chip color={dividendResult.failed_rows ? "warning" : "default"} label={`${dividendResult.failed_rows} failed`} />
+                                    <Chip label={`Total ${Number(dividendResult.total_amount || 0).toLocaleString("en-US")}`} />
+                                    {dividendResult.latest_balance !== null ? (
+                                        <Chip label={`Latest balance ${Number(dividendResult.latest_balance || 0).toLocaleString("en-US")}`} />
+                                    ) : null}
+                                </Stack>
+
+                                {dividendResult.failed_rows ? (
+                                    <Alert severity="warning">
+                                        {dividendResult.failures.slice(0, 3).map((failure) => (
+                                            <Box key={failure.row_number}>
+                                                Row {failure.row_number}: {failure.error}
+                                            </Box>
+                                        ))}
+                                    </Alert>
+                                ) : (
+                                    <Alert severity="success">
+                                        Dividend history posted to accounting and member statements successfully.
                                     </Alert>
                                 )}
                             </Stack>

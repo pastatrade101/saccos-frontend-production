@@ -1,5 +1,5 @@
-const STATIC_CACHE = "saccos-static-v2";
-const RUNTIME_CACHE = "saccos-runtime-v2";
+const STATIC_CACHE = "saccos-static-v3";
+const RUNTIME_CACHE = "saccos-runtime-v3";
 const PRECACHE_URLS = [
   "/offline.html",
   "/manifest.webmanifest",

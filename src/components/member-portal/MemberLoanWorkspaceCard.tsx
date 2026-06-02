@@ -28,6 +28,7 @@ import { MotionCard } from "../../ui/motion";
 import type { Loan, LoanSchedule, LoanTransaction, PaymentOrder } from "../../types/api";
 import { brandColors } from "../../theme/colors";
 import { formatCurrency, formatDate } from "../../utils/format";
+import { formatMonthlyLoanRate } from "../../utils/loanInterest";
 
 interface MemberLoanWorkspaceCardProps {
     selectedLoan: Loan | null;
@@ -378,7 +379,7 @@ export function MemberLoanWorkspaceCard({
                                 />
                                 {selectedLoan ? (
                                     <>
-                                        <Chip label={`Rate ${selectedLoan.annual_interest_rate}%`} variant="outlined" />
+                                        <Chip label={`Rate ${formatMonthlyLoanRate(selectedLoan.annual_interest_rate)}`} variant="outlined" />
                                         <Chip label={`${getRepaymentFrequencyLabel(selectedLoan.repayment_frequency)} repayment`} variant="outlined" />
                                         <Chip label={`Penalty est. ${formatCurrency(penaltyEstimate)}`} color={penaltyEstimate > 0 ? "warning" : "default"} variant="outlined" />
                                     </>
@@ -433,7 +434,7 @@ export function MemberLoanWorkspaceCard({
                                             { label: "Loan number", value: selectedLoan?.loan_number || "Not available" },
                                             { label: "Disbursed on", value: formatDate(selectedLoan?.disbursed_at || selectedLoan?.created_at || null) },
                                             { label: "Original principal", value: formatCurrency(selectedLoan?.principal_amount || 0) },
-                                            { label: "Interest rate", value: `${selectedLoan?.annual_interest_rate || 0}% per year` },
+                                            { label: "Interest rate", value: formatMonthlyLoanRate(selectedLoan?.annual_interest_rate || 0) },
                                             { label: "Repayment frequency", value: selectedLoan ? getRepaymentFrequencyLabel(selectedLoan.repayment_frequency) : "Not available" },
                                             { label: "Term length", value: selectedLoan ? `${selectedLoan.term_count} installment(s)` : "Not available" }
                                         ]}

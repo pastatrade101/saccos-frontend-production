@@ -122,7 +122,7 @@ import {
 import { brandColors, darkThemeColors } from "../theme/colors";
 import { useUI } from "../ui/UIProvider";
 import type { Loan, LoanApplication, LoanCapacitySummary, LoanProduct, LoanSchedule, LoanTransaction, Member, MemberAccount, MemberApplication, MemberApplicationStatus, MemberPortalPaymentControls, PaymentOrder, StatementRow } from "../types/api";
-import { downloadLoanStatementPdf, downloadMemberStatementPdf } from "../utils/memberStatementPdf";
+import { downloadLoanStatementPdf, downloadMemberStatementPdf, loadReportLogoDataUrl } from "../utils/memberStatementPdf";
 import { memberApplicationStatusLabels } from "../utils/member-application-status";
 import {
     formatNextOfKinRelationship,
@@ -133,6 +133,7 @@ import {
     NEXT_OF_KIN_RELATIONSHIP_VALUES
 } from "../utils/nextOfKin";
 import { formatCurrency, formatDate, formatRole } from "../utils/format";
+import { annualToMonthlyRate, formatMonthlyLoanRate } from "../utils/loanInterest";
 
 type LoanRepaymentFrequency = "daily" | "weekly" | "monthly";
 
@@ -1489,7 +1490,7 @@ export function MemberPortalPage() {
             return;
         }
 
-        loanApplicationForm.setValue("requested_interest_rate", Number(selectedLoanProduct.annual_interest_rate || 0), {
+        loanApplicationForm.setValue("requested_interest_rate", annualToMonthlyRate(selectedLoanProduct.annual_interest_rate || 0), {
             shouldDirty: false,
             shouldValidate: false
         });
@@ -3548,7 +3549,7 @@ export function MemberPortalPage() {
     const loanColumns: Column<Loan>[] = [
         { key: "loan", header: "Loan", render: (row) => row.loan_number },
         { key: "status", header: "Status", render: (row) => row.status },
-        { key: "rate", header: "Rate", render: (row) => `${row.annual_interest_rate}%` },
+        { key: "rate", header: "Rate", render: (row) => formatMonthlyLoanRate(row.annual_interest_rate) },
         { key: "principal", header: "Outstanding", render: (row) => formatCurrency(row.outstanding_principal) },
         { key: "interest", header: "Accrued Interest", render: (row) => formatCurrency(row.accrued_interest) }
     ];
@@ -3721,7 +3722,7 @@ export function MemberPortalPage() {
     const loanProductOptions = loanProducts.map((product) => ({
         value: product.id,
         label: product.name,
-        secondary: `${product.annual_interest_rate}% · ${formatCurrency(product.min_amount)} min · ${product.max_term_count || "Open"} term`
+        secondary: `${formatMonthlyLoanRate(product.annual_interest_rate)} · ${formatCurrency(product.min_amount)} min · ${product.max_term_count || "Open"} term`
     }));
 
     const canApplyForLoan = true;
@@ -3745,7 +3746,7 @@ export function MemberPortalPage() {
                 requested_amount: application.requested_amount,
                 requested_term_count: application.requested_term_count,
                 requested_repayment_frequency: application.requested_repayment_frequency,
-                requested_interest_rate: application.requested_interest_rate ?? 0,
+                requested_interest_rate: annualToMonthlyRate(application.requested_interest_rate ?? 0),
                 external_reference: application.external_reference || "",
                 confirmation_checked: false
             });
@@ -4073,7 +4074,7 @@ export function MemberPortalPage() {
         }
     };
 
-    const handleDownloadStatement = () => {
+    const handleDownloadStatement = async () => {
         if (!statements.length) {
             pushToast({
                 type: "error",
@@ -4083,11 +4084,13 @@ export function MemberPortalPage() {
             return;
         }
 
+        const logoDataUrl = await loadReportLogoDataUrl(portalLogoSrc);
         downloadMemberStatementPdf({
             memberName: profile?.full_name || "Member",
             memberEmail: user?.email || null,
             tenantName: selectedTenantName,
             branchName: selectedBranchName,
+            logoDataUrl,
             generatedBy: profile?.full_name || user?.email || "Member Portal",
             totalSavings,
             shareCapital: totalShareCapital,
@@ -4097,7 +4100,7 @@ export function MemberPortalPage() {
         });
     };
 
-    const handleDownloadFilteredStatement = (rows: StatementRow[], title: string) => {
+    const handleDownloadFilteredStatement = async (rows: StatementRow[], title: string) => {
         if (!rows.length) {
             pushToast({
                 type: "error",
@@ -4107,11 +4110,13 @@ export function MemberPortalPage() {
             return;
         }
 
+        const logoDataUrl = await loadReportLogoDataUrl(portalLogoSrc);
         downloadMemberStatementPdf({
             memberName: profile?.full_name || "Member",
             memberEmail: user?.email || null,
             tenantName: selectedTenantName,
             branchName: selectedBranchName,
+            logoDataUrl,
             generatedBy: profile?.full_name || user?.email || "Member Portal",
             totalSavings,
             shareCapital: totalShareCapital,
@@ -4121,7 +4126,7 @@ export function MemberPortalPage() {
         });
     };
 
-    const handleDownloadLoanStatement = () => {
+    const handleDownloadLoanStatement = async () => {
         if (!selectedLoan) {
             pushToast({
                 type: "error",
@@ -4144,11 +4149,13 @@ export function MemberPortalPage() {
             return;
         }
 
+        const logoDataUrl = await loadReportLogoDataUrl(portalLogoSrc);
         downloadLoanStatementPdf({
             memberName: profile?.full_name || "Member",
             memberEmail: user?.email || null,
             tenantName: selectedTenantName,
             branchName: selectedBranchName,
+            logoDataUrl,
             generatedBy: profile?.full_name || user?.email || "Member Portal",
             loan: selectedLoan,
             schedules: filteredLoanSchedules,
@@ -8340,7 +8347,7 @@ export function MemberPortalPage() {
                                                         </Typography>
                                                     </Box>
                                                     <Chip
-                                                        label={`${selectedLoanProduct.annual_interest_rate}% per year`}
+                                                        label={formatMonthlyLoanRate(selectedLoanProduct.annual_interest_rate)}
                                                         color="primary"
                                                         variant={isDarkMode ? "filled" : "outlined"}
                                                         sx={{
@@ -8457,9 +8464,9 @@ export function MemberPortalPage() {
                                         </Grid>
                                         <Grid size={{ xs: 12, md: 4 }}>
                                             <TextField
-                                                label="Interest Rate (% per year)"
+                                                label="Interest Rate (% per month)"
                                                 fullWidth
-                                                value={selectedLoanProduct?.annual_interest_rate ?? 0}
+                                                value={annualToMonthlyRate(selectedLoanProduct?.annual_interest_rate ?? 0)}
                                                 helperText="Automatically pulled from the selected loan product."
                                                 InputProps={{ readOnly: true }}
                                             />
@@ -8574,7 +8581,7 @@ export function MemberPortalPage() {
                                                 Estimated Installment
                                             </Typography>
                                             <Typography variant="body2" color="text.secondary">
-                                                Principal: {formatCurrency(requestedLoanAmount || 0)} · Interest: {selectedLoanProduct?.annual_interest_rate ?? 0}% per year · Term: {requestedLoanTerm || 0} months
+                                                Principal: {formatCurrency(requestedLoanAmount || 0)} · Interest: {formatMonthlyLoanRate(selectedLoanProduct?.annual_interest_rate ?? 0)} · Term: {requestedLoanTerm || 0} months
                                             </Typography>
                                             <Typography variant="h6" sx={{ fontWeight: 800 }}>
                                                 {getRepaymentFrequencyLabel(requestedLoanFrequency)} payment: {formatCurrency(installmentPreview?.installment || 0)}

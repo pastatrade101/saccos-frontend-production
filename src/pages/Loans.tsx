@@ -67,6 +67,7 @@ import {
 import type { ApiEnvelope, FinanceResult, Loan, LoanApplication, LoanCapacitySummary, LoanDisbursementOrder, LoanGuarantor, LoanProduct, LoanSchedule, LoanTransaction, Member } from "../types/api";
 import { MotionCard, MotionModal } from "../ui/motion";
 import { formatCurrency, formatDate } from "../utils/format";
+import { annualToMonthlyRate, formatMonthlyLoanRate, monthlyToAnnualRate } from "../utils/loanInterest";
 
 const createApplicationSchema = z.object({
     member_id: z.string().uuid("Select a member."),
@@ -645,7 +646,7 @@ export function LoansPage() {
         defaultValues: {
             recommended_amount: 0,
             recommended_term_count: 12,
-            recommended_interest_rate: 18,
+            recommended_interest_rate: 1.5,
             recommended_repayment_frequency: "monthly",
             risk_rating: "medium",
             appraisal_notes: ""
@@ -1065,7 +1066,7 @@ export function LoansPage() {
             loanProducts.map((product) => ({
                 value: product.id,
                 label: product.name,
-                secondary: `${product.annual_interest_rate}% · ${formatCurrency(product.min_amount)} min`
+                secondary: `${formatMonthlyLoanRate(product.annual_interest_rate)} · ${formatCurrency(product.min_amount)} min`
             })),
         [loanProducts]
     );
@@ -1591,7 +1592,7 @@ export function LoansPage() {
         appraiseForm.reset({
             recommended_amount: application.recommended_amount ?? application.requested_amount,
             recommended_term_count: application.recommended_term_count ?? application.requested_term_count,
-            recommended_interest_rate: application.recommended_interest_rate ?? application.requested_interest_rate ?? 18,
+            recommended_interest_rate: annualToMonthlyRate(application.recommended_interest_rate ?? application.requested_interest_rate ?? 18),
             recommended_repayment_frequency: application.recommended_repayment_frequency ?? application.requested_repayment_frequency,
             risk_rating: (application.risk_rating as AppraiseValues["risk_rating"]) || "medium",
             appraisal_notes: application.appraisal_notes || ""
@@ -1698,7 +1699,7 @@ export function LoansPage() {
                 requested_amount: values.requested_amount,
                 requested_term_count: values.requested_term_count,
                 requested_repayment_frequency: values.requested_repayment_frequency,
-                requested_interest_rate: values.requested_interest_rate ?? null
+                requested_interest_rate: values.requested_interest_rate === undefined ? null : monthlyToAnnualRate(values.requested_interest_rate)
             };
 
             const { data } = await api.post<LoanApplicationResponse>(endpoints.loanApplications.list(), payload);
@@ -1814,6 +1815,7 @@ export function LoansPage() {
 
             const payload: AppraiseLoanApplicationRequest = {
                 ...values,
+                recommended_interest_rate: monthlyToAnnualRate(values.recommended_interest_rate),
                 guarantors: normalizedGuarantors
             };
             await api.post<LoanApplicationResponse>(endpoints.loanApplications.appraise(appraisalTarget.id), payload);
@@ -3640,7 +3642,7 @@ export function LoansPage() {
                                 </Grid>
                                 <Grid size={{ xs: 12, md: 4 }}>
                                     <TextField
-                                        label="Requested Interest %"
+                                        label="Requested Interest % per month"
                                         type="number"
                                         fullWidth
                                         {...createForm.register("requested_interest_rate")}
@@ -3725,8 +3727,8 @@ export function LoansPage() {
                                 </Grid>
                                 <Grid size={{ xs: 12, md: 4 }}>
                                     <TextField
-                                        label="Requested Interest %"
-                                        value={reviewTarget.requested_interest_rate ?? "N/A"}
+                                        label="Requested Interest % per month"
+                                        value={reviewTarget.requested_interest_rate === null || reviewTarget.requested_interest_rate === undefined ? "N/A" : annualToMonthlyRate(reviewTarget.requested_interest_rate)}
                                         fullWidth
                                         InputProps={{ readOnly: true }}
                                     />
@@ -4034,7 +4036,7 @@ export function LoansPage() {
                             </Grid>
                             <Grid size={{ xs: 12, md: 4 }}>
                                 <TextField
-                                    label="Recommended Interest Rate (% per year)"
+                                    label="Recommended Interest Rate (% per month)"
                                     type="number"
                                     fullWidth
                                     {...appraiseForm.register("recommended_interest_rate")}

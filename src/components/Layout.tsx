@@ -91,6 +91,7 @@ const navItems: NavItem[] = [
     { to: "/member-applications", label: "Applications", roles: ["super_admin", "branch_manager", "auditor"], section: "workspace", icon: DescriptionRoundedIcon },
     { to: "/members", label: "Members", roles: ["super_admin", "branch_manager", "teller"], section: "workspace", icon: GroupRoundedIcon },
     { to: "/members/import", label: "Member Import", roles: ["branch_manager"], section: "workspace", icon: StoreRoundedIcon },
+    { to: "/settings/sacco-year", label: "SACCO Year", roles: ["super_admin", "branch_manager"], section: "workspace", icon: SettingsRoundedIcon },
     { to: "/auditor/workbench", label: "Workbench", roles: ["auditor"], section: "workspace", icon: HubRoundedIcon },
     { to: "/auditor/exceptions", label: "Exceptions", roles: ["auditor"], section: "workspace", icon: WarningAmberRoundedIcon },
     { to: "/auditor/journals", label: "Journals", roles: ["auditor"], section: "workspace", icon: RuleFolderRoundedIcon },
@@ -116,7 +117,7 @@ const navGroups: NavGroup[] = [
     { key: "finance", label: "Finance", itemTos: ["/contributions", "/savings", "/loans", "/payments", "/revenue", "/dividends", "/cash-control", "/cash", "/treasury", "/treasury/policy-settings"] },
     { key: "operations", label: "Operations", itemTos: ["/approvals"] },
     { key: "analytics", label: "Analytics", itemTos: ["/reports", "/auditor/reports", "/auditor/workbench", "/auditor/exceptions", "/auditor/journals", "/auditor/audit-logs"] },
-    { key: "setup", label: "Setup", itemTos: ["/setup/super-admin"] }
+    { key: "setup", label: "Setup", itemTos: ["/setup/super-admin", "/settings/sacco-year"] }
 ];
 
 const searchKeywords: Partial<Record<NavItem["to"], string[]>> = {
@@ -126,6 +127,7 @@ const searchKeywords: Partial<Record<NavItem["to"], string[]>> = {
     "/member-applications": ["applications", "kyc", "member approval", "onboarding review"],
     "/members": ["customers", "registry", "member onboarding"],
     "/members/import": ["csv import", "bulk members", "credentials", "portal onboarding"],
+    "/settings/sacco-year": ["financial year", "sacco year", "fiscal year", "year to date", "settings"],
     "/cash-control": ["receipt policy", "teller balancing", "daily cashbook", "cash summary"],
     "/auditor/exceptions": ["audit", "exceptions", "flags", "compliance"],
     "/auditor/workbench": ["audit workbench", "branch risk", "patterns", "heatmap"],
@@ -157,6 +159,10 @@ function getPageTitle(pathname: string) {
 function getPageSubtitle(pathname: string) {
     if (pathname.startsWith("/members/import")) {
         return "Bulk onboard members from CSV with secure one-time credentials.";
+    }
+
+    if (pathname.startsWith("/settings/sacco-year")) {
+        return "Set and review the tenant-wide SACCO financial year used by dashboards and report presets.";
     }
 
     if (pathname.startsWith("/products")) {

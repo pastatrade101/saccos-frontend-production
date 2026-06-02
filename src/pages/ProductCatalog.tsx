@@ -69,6 +69,7 @@ import type {
     ShareProduct
 } from "../types/api";
 import { formatCurrency } from "../utils/format";
+import { annualToMonthlyRate, formatMonthlyLoanRate, monthlyToAnnualRate } from "../utils/loanInterest";
 
 type CatalogKind = "loans" | "savings" | "shares" | "fees" | "penalties" | "posting-rules";
 type CatalogRecord = LoanProduct | SavingsProduct | ShareProduct | FeeRule | PenaltyRule | PostingRule;
@@ -266,6 +267,7 @@ export function ProductCatalogPage() {
     const loanDefaults: Record<string, unknown> = {
         repayment_frequency: "monthly",
         term_unit: "months",
+        annual_interest_rate: 0,
         processing_fee_type: "flat",
         maximum_loan_multiple: 3,
         minimum_membership_duration_months: 0,
@@ -592,7 +594,10 @@ export function ProductCatalogPage() {
             record
                 ? {
                       ...defaults,
-                      ...record
+                      ...record,
+                      ...(kind === "loans" && "annual_interest_rate" in record
+                          ? { annual_interest_rate: annualToMonthlyRate(record.annual_interest_rate) }
+                          : {})
                   } as Record<string, string | number | boolean | null>
                 : { ...defaults }
         );
@@ -724,9 +729,9 @@ export function ProductCatalogPage() {
                 return;
             }
 
-            const interestRate = toNumber(normalized.annual_interest_rate);
-            if (interestRate !== null && interestRate > 100) {
-                showLoanError("Invalid interest rate", "Interest rate must be 100% or lower.");
+            const monthlyInterestRate = toNumber(normalized.annual_interest_rate);
+            if (monthlyInterestRate !== null && monthlyInterestRate > 100) {
+                showLoanError("Invalid monthly interest rate", "Monthly interest rate must be 100% or lower.");
                 return;
             }
 
@@ -784,7 +789,7 @@ export function ProductCatalogPage() {
                 return;
             }
 
-            normalized.annual_interest_rate = interestRate;
+            normalized.annual_interest_rate = monthlyToAnnualRate(monthlyInterestRate ?? 0);
             normalized.insurance_rate = insuranceRate;
             normalized.min_amount = minAmount;
             normalized.max_amount = maxAmount;
@@ -1055,7 +1060,7 @@ export function ProductCatalogPage() {
                                                 <TextField
                                                     fullWidth
                                                     type="number"
-                                                    label="Annual interest %"
+                                                    label="Monthly interest %"
                                                     {...form.register("annual_interest_rate", { valueAsNumber: true })}
                                                     InputProps={{ inputProps: { min: 0, max: 100, step: 0.01 } }}
                                                 />
@@ -2123,7 +2128,7 @@ export function ProductCatalogPage() {
                                     )
                                 },
                                 { key: "code", header: "Code", render: (row) => row.code },
-                                { key: "pricing", header: "Pricing", render: (row) => `${row.annual_interest_rate}% · ${row.interest_method.replace(/_/g, " ")}` },
+                                { key: "pricing", header: "Pricing", render: (row) => `${formatMonthlyLoanRate(row.annual_interest_rate)} · ${row.interest_method.replace(/_/g, " ")}` },
                                 { key: "range", header: "Range", render: (row) => `${formatCurrency(row.min_amount)} · ${row.max_amount ? formatCurrency(row.max_amount) : "Open cap"}` },
                                 { key: "term", header: "Term", render: (row) => `${row.min_term_count} - ${row.max_term_count ?? "Open"}` }
                             ]}
