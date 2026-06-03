@@ -117,11 +117,13 @@ import {
     type InitiateContributionPaymentResponse,
     type PaymentOrdersResponse,
     type PaymentOrderStatusResponse,
-    type ReconcilePaymentOrderResponse
+    type ReconcilePaymentOrderResponse,
+    type SaccoFinancialYearSettingsResponse,
+    type SaccoPerformanceTargetSettingsResponse
 } from "../lib/endpoints";
 import { brandColors, darkThemeColors } from "../theme/colors";
 import { useUI } from "../ui/UIProvider";
-import type { Loan, LoanApplication, LoanCapacitySummary, LoanProduct, LoanSchedule, LoanTransaction, Member, MemberAccount, MemberApplication, MemberApplicationStatus, MemberPortalPaymentControls, PaymentOrder, StatementRow } from "../types/api";
+import type { Loan, LoanApplication, LoanCapacitySummary, LoanProduct, LoanSchedule, LoanTransaction, Member, MemberAccount, MemberApplication, MemberApplicationStatus, MemberPortalPaymentControls, PaymentOrder, SaccoFinancialYearSettings, SaccoPerformanceTargetSettings, StatementRow } from "../types/api";
 import { downloadLoanStatementPdf, downloadMemberStatementPdf, loadReportLogoDataUrl } from "../utils/memberStatementPdf";
 import { memberApplicationStatusLabels } from "../utils/member-application-status";
 import {
@@ -134,6 +136,12 @@ import {
 } from "../utils/nextOfKin";
 import { formatCurrency, formatDate, formatRole } from "../utils/format";
 import { annualToMonthlyRate, formatMonthlyLoanRate } from "../utils/loanInterest";
+import { DEFAULT_SACCO_FINANCIAL_YEAR_SETTINGS, resolveFinancialYearPeriod } from "../utils/financialYear";
+import {
+    calculateMemberPerformanceTarget,
+    DEFAULT_SACCO_PERFORMANCE_TARGET_SETTINGS,
+    normalizeSaccoPerformanceTargetSettings
+} from "../utils/performanceTarget";
 
 type LoanRepaymentFrequency = "daily" | "weekly" | "monthly";
 
@@ -260,6 +268,54 @@ function formatWholeNumber(value: number | string | null | undefined) {
     }
 
     return new Intl.NumberFormat("en-TZ").format(Number(digits));
+}
+
+function parseMoneyValue(value: string) {
+    const parsed = Number(value.replace(/[^\d.]/g, ""));
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function parseSavingsTargetFromNotes(notes?: string | null) {
+    if (!notes) {
+        return 0;
+    }
+
+    const match = notes.match(/(?:annual_target|performance_target|target)\s*[:=]\s*([0-9,.]+)/i);
+    return match?.[1] ? parseMoneyValue(match[1]) : 0;
+}
+
+function resolveMemberSavingsTarget(member?: Member | null) {
+    const notesTarget = parseSavingsTargetFromNotes(member?.notes);
+    if (notesTarget > 0) {
+        return notesTarget;
+    }
+
+    const configuredTarget = Number(member?.monthly_savings_commitment || 0);
+    if (Number.isFinite(configuredTarget) && configuredTarget > 0) {
+        return configuredTarget;
+    }
+
+    return DEFAULT_MEMBER_ANNUAL_SAVINGS_TARGET;
+}
+
+function resolveMemberFinancialLevel(progressPercent: number, actualAmount: number) {
+    if (progressPercent >= 100) {
+        return { label: "Target met", tone: "success" as const };
+    }
+
+    if (progressPercent >= 60) {
+        return { label: "On track", tone: "neutral" as const };
+    }
+
+    if (progressPercent >= 40) {
+        return { label: "Building", tone: "warning" as const };
+    }
+
+    if (actualAmount > 0) {
+        return { label: "Needs top-up", tone: "danger" as const };
+    }
+
+    return { label: "No activity", tone: "neutral" as const };
 }
 
 function getRepaymentPeriodsPerYear(frequency: LoanRepaymentFrequency) {
@@ -623,6 +679,8 @@ const PAYMENT_APPROVAL_EXPECTATION_MS = 90 * 1000;
 const PAYMENT_PENDING_POLL_MS = 4000;
 const PAYMENT_HANDSET_RESPONSE_POLL_MS = 2000;
 const MEMBER_PORTAL_TOUR_STORAGE_KEY = "saccos.member-portal-tour.v1";
+const DEFAULT_MEMBER_ANNUAL_SAVINGS_TARGET = 50_000_000;
+const DEFAULT_MEMBER_REQUIRED_TOP_UP = 3_200_000;
 const DEFAULT_MEMBER_PORTAL_PAYMENT_CONTROLS: MemberPortalPaymentControls = {
     tenant_id: null,
     share_contribution_enabled: true,
@@ -630,6 +688,7 @@ const DEFAULT_MEMBER_PORTAL_PAYMENT_CONTROLS: MemberPortalPaymentControls = {
     loan_repayment_enabled: true,
     updated_at: null
 };
+const DEFAULT_MEMBER_MONTHLY_CONTRIBUTION_AMOUNT = 100_000;
 
 const portalSections = [
     {
@@ -924,6 +983,8 @@ export function MemberPortalPage() {
     const [statements, setStatements] = useState<StatementRow[]>([]);
     const [loanTransactions, setLoanTransactions] = useState<LoanTransaction[]>([]);
     const [memberPortalPaymentControls, setMemberPortalPaymentControls] = useState<MemberPortalPaymentControls>(DEFAULT_MEMBER_PORTAL_PAYMENT_CONTROLS);
+    const [financialYearSettings, setFinancialYearSettings] = useState<SaccoFinancialYearSettings>(DEFAULT_SACCO_FINANCIAL_YEAR_SETTINGS);
+    const [performanceTargetSettings, setPerformanceTargetSettings] = useState<SaccoPerformanceTargetSettings>(DEFAULT_SACCO_PERFORMANCE_TARGET_SETTINGS);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [warning, setWarning] = useState<string | null>(null);
@@ -2436,6 +2497,42 @@ export function MemberPortalPage() {
                     });
                 }
 
+                try {
+                    const { data: financialYearResponse } = await api.get<SaccoFinancialYearSettingsResponse>(
+                        endpoints.saccoSettings.financialYear(),
+                        {
+                            params: { tenant_id: profile.tenant_id }
+                        }
+                    );
+                    setFinancialYearSettings(financialYearResponse.data || {
+                        ...DEFAULT_SACCO_FINANCIAL_YEAR_SETTINGS,
+                        tenant_id: profile.tenant_id
+                    });
+                } catch {
+                    setFinancialYearSettings({
+                        ...DEFAULT_SACCO_FINANCIAL_YEAR_SETTINGS,
+                        tenant_id: profile.tenant_id
+                    });
+                }
+
+                try {
+                    const { data: performanceTargetResponse } = await api.get<SaccoPerformanceTargetSettingsResponse>(
+                        endpoints.saccoSettings.performanceTarget(),
+                        {
+                            params: { tenant_id: profile.tenant_id }
+                        }
+                    );
+                    setPerformanceTargetSettings(normalizeSaccoPerformanceTargetSettings(performanceTargetResponse.data || {
+                        ...DEFAULT_SACCO_PERFORMANCE_TARGET_SETTINGS,
+                        tenant_id: profile.tenant_id
+                    }));
+                } catch {
+                    setPerformanceTargetSettings(normalizeSaccoPerformanceTargetSettings({
+                        ...DEFAULT_SACCO_PERFORMANCE_TARGET_SETTINGS,
+                        tenant_id: profile.tenant_id
+                    }));
+                }
+
                 let applicationData: MemberApplication | null = null;
                 try {
                     const { data: applicationResponse } = await api.get<MemberApplicationResponse>(endpoints.memberApplications.me(), {
@@ -2661,6 +2758,18 @@ export function MemberPortalPage() {
                 .reduce((sum, account) => sum + account.available_balance + account.locked_balance, 0),
         [accounts]
     );
+    const performanceTargetPosition = useMemo(
+        () => calculateMemberPerformanceTarget(memberRecord, accounts, performanceTargetSettings),
+        [accounts, memberRecord, performanceTargetSettings]
+    );
+    const annualSavingsTarget = performanceTargetPosition.annualTargetAmount;
+    const savingsTargetProgress = performanceTargetPosition.reachPercent;
+    const savingsTargetRemaining = performanceTargetPosition.remainingToTargetAmount;
+    const savingsTargetNextRequired = performanceTargetPosition.nextRequiredAmount;
+    const savingsTargetLevel = {
+        label: performanceTargetPosition.statusLabel,
+        tone: performanceTargetPosition.statusTone
+    };
     const shareAccounts = useMemo(() => accounts.filter((account) => account.product_type === "shares"), [accounts]);
     const portalRepaymentLoans = useMemo(
         () => loans.filter((loan) => ["active", "in_arrears"].includes(loan.status) && (loan.outstanding_principal + loan.accrued_interest) > 0),
@@ -2886,11 +2995,11 @@ export function MemberPortalPage() {
         () => portalSections.filter((section) => (canUsePortalPayments || paymentOrders.length > 0) || section.id !== "member-payments"),
         [canUsePortalPayments, paymentOrders.length]
     );
+    const financialYearPeriod = useMemo(() => resolveFinancialYearPeriod(financialYearSettings), [financialYearSettings]);
     const transactionCount = statements.length;
     const balanceTrend = groupBalances(statements);
     const monthlySavingsTrend = useMemo(() => groupSavingsByMonth(statements), [statements]);
     const currentView = visiblePortalSections.find((section) => section.id === activeSection) || visiblePortalSections[0];
-    const latestBalance = statements[0]?.running_balance ?? 0;
     const totalVisibleCapital = totalSavings + totalShareCapital;
     const netPosition = totalVisibleCapital - totalOutstandingLoans;
     const hasOverdueLoan = useMemo(() => loans.some((loan) => loan.status === "in_arrears"), [loans]);
@@ -3067,43 +3176,39 @@ export function MemberPortalPage() {
         () => contributionHistory.filter((row) => isWithinDateRange(row.created_at || row.transaction_date, contributionsRange)),
         [contributionHistory, contributionsRange]
     );
+    const saccoYearContributions = useMemo(
+        () =>
+            contributionHistory.filter((row) =>
+                isWithinDateRange(row.transaction_date || row.created_at, {
+                    preset: "custom",
+                    from: financialYearPeriod.startIso,
+                    to: financialYearPeriod.endIso
+                })
+            ),
+        [contributionHistory, financialYearPeriod.endIso, financialYearPeriod.startIso]
+    );
+    const saccoYearContributionRows = useMemo(
+        () =>
+            saccoYearContributions
+                .filter((row) => row.transaction_type === "share_contribution")
+                .sort((left, right) => new Date(right.transaction_date || right.created_at).getTime() - new Date(left.transaction_date || left.created_at).getTime()),
+        [saccoYearContributions]
+    );
+    const saccoYearDividendRows = useMemo(
+        () => saccoYearContributions.filter((row) => row.transaction_type === "dividend_allocation"),
+        [saccoYearContributions]
+    );
     const contributionActual = useMemo(
-        () => filteredContributions.filter((row) => row.transaction_type === "share_contribution").reduce((sum, row) => sum + row.amount, 0),
-        [filteredContributions]
+        () => saccoYearContributionRows.reduce((sum, row) => sum + row.amount, 0),
+        [saccoYearContributionRows]
     );
     const contributionEntriesCount = filteredContributions.filter((row) => row.transaction_type === "share_contribution").length;
     const dividendEntriesCount = filteredContributions.filter((row) => row.transaction_type === "dividend_allocation").length;
-    const contributionBaselineMonthly = useMemo(() => {
-        const recent = contributionHistory
-            .filter((row) => row.transaction_type === "share_contribution")
-            .slice(0, 6)
-            .map((row) => row.amount);
-
-        if (!recent.length) {
-            return 50000;
-        }
-
-        return Math.max(Math.round(recent.reduce((sum, value) => sum + value, 0) / recent.length), 50000);
-    }, [contributionHistory]);
-    const contributionExpected = useMemo(() => {
-        const fromDate = contributionsRange.from ? new Date(contributionsRange.from) : null;
-        const toDate = contributionsRange.to ? new Date(contributionsRange.to) : null;
-        const fromValid = fromDate && !Number.isNaN(fromDate.getTime());
-        const toValid = toDate && !Number.isNaN(toDate.getTime());
-
-        const months = fromValid && toValid
-            ? Math.max(
-                (toDate.getFullYear() - fromDate.getFullYear()) * 12
-                + (toDate.getMonth() - fromDate.getMonth())
-                + 1,
-                1
-            )
-            : Math.max(Math.ceil(contributionEntriesCount / 2), 1);
-
-        return months * contributionBaselineMonthly;
-    }, [contributionBaselineMonthly, contributionsRange, contributionEntriesCount]);
-    const contributionComplianceRatio = contributionExpected ? (contributionActual / contributionExpected) * 100 : 0;
-    const contributionComplianceStatus = contributionComplianceRatio >= 100 ? "On track" : "Behind schedule";
+    const contributionBaselineMonthly = DEFAULT_MEMBER_MONTHLY_CONTRIBUTION_AMOUNT;
+    const targetActualAmount = performanceTargetPosition.actualFormAmount;
+    const contributionExpected = performanceTargetPosition.annualTargetAmount;
+    const contributionComplianceRatio = performanceTargetPosition.reachPercent;
+    const contributionComplianceStatus = performanceTargetPosition.statusLabel;
     const dividendHistoryByYear = useMemo(() => {
         const grouped = new Map<string, number>();
         filteredContributions
@@ -3122,14 +3227,19 @@ export function MemberPortalPage() {
         [totalDividends, totalShareCapital]
     );
     const nextContributionDue = useMemo(() => {
-        const latest = contributionHistory.find((row) => row.transaction_type === "share_contribution");
+        const latest = saccoYearContributionRows[0] || null;
         if (!latest) {
-            return null;
+            return financialYearPeriod.startDate.toISOString();
         }
         const due = new Date(latest.transaction_date);
         due.setMonth(due.getMonth() + 1);
+
+        if (due.getTime() > financialYearPeriod.endDate.getTime()) {
+            return null;
+        }
+
         return due.toISOString();
-    }, [contributionHistory]);
+    }, [financialYearPeriod.endDate, financialYearPeriod.startDate, saccoYearContributionRows]);
     const contributionScheduleStatus = useMemo(() => {
         if (!nextContributionDue) {
             return "No schedule";
@@ -4182,29 +4292,29 @@ export function MemberPortalPage() {
             <Box sx={{ minWidth: 0 }}>
                 <MetricCard
                     icon={WalletRoundedIcon}
-                    label="Accounts Live"
-                    value={accounts.length.toString().padStart(2, "0")}
-                    helper={`${transactionCount} posted entries visible`}
+                    label="Net Position"
+                    value={formatCurrency(netPosition)}
+                    helper={`${transactionCount} posted statement entries`}
                     tone="primary"
-                    delta={hasNoVisibleFinancialData ? "New" : "Active"}
+                    delta={netPosition >= 0 ? "Positive" : "Negative"}
                 />
             </Box>
             <Box sx={{ minWidth: 0 }}>
                 <MetricCard
                     icon={TrendingUpRoundedIcon}
-                    label="Total Bal"
-                    value={formatCurrency(totalVisibleCapital)}
-                    helper={`Latest visible balance ${formatCurrency(latestBalance)}`}
+                    label="Savings"
+                    value={formatCurrency(totalSavings)}
+                    helper={`${Math.round(savingsTargetProgress)}% of ${formatCurrency(annualSavingsTarget)}`}
                     tone="success"
-                    delta={totalVisibleCapital > 0 ? "Growing" : "Pending"}
+                    delta={savingsTargetLevel.label}
                 />
             </Box>
             <Box sx={{ minWidth: 0 }}>
                 <MetricCard
                     icon={SavingsRoundedIcon}
-                    label="Share Cap"
+                    label="Shares"
                     value={formatCurrency(totalShareCapital)}
-                    helper={`${contributionHistory.length} share/dividend entries`}
+                    helper={`Dividends posted ${formatCurrency(totalDividends)}`}
                     tone="warning"
                     delta={totalDividends > 0 ? "Credited" : "Building"}
                 />
@@ -4334,289 +4444,303 @@ export function MemberPortalPage() {
         </MotionCard>
     );
 
-    const renderHero = () => (
-        <MotionCard
-            data-tour="member-portal-hero"
-            sx={{
-                width: { xs: "calc(100vw - 20px)", sm: "100%" },
-                minWidth: 0,
-                maxWidth: { xs: "calc(100vw - 20px)", sm: "100%" },
-                borderRadius: { xs: 3, md: 4 },
-                height: "100%",
-                color: theme.palette.mode === "dark" ? "#fff" : brandColors.neutral.textPrimary,
-                overflow: "hidden",
-                border: theme.palette.mode === "dark"
-                    ? "1px solid rgba(255,255,255,0.06)"
-                    : `1px solid ${alpha(brandColors.primary[300], 0.34)}`,
-                position: "relative",
-                background: theme.palette.mode === "dark"
-                    ? `linear-gradient(135deg, ${darkThemeColors.elevated}, ${alpha(memberAccentStrong, 0.54)})`
-                    : `linear-gradient(135deg, ${alpha("#FFFFFF", 0.99)} 0%, ${alpha("#F8FBFF", 0.98)} 56%, ${alpha("#EEF4FF", 0.96)} 100%)`,
-                boxShadow: theme.palette.mode === "dark"
-                    ? `0 18px 40px ${alpha(memberAccentStrong, 0.22)}`
-                    : `0 18px 40px ${alpha(brandColors.primary[300], 0.18)}`,
-                "&::before": {
-                    content: '""',
-                    position: "absolute",
-                    inset: 0,
+    const renderHero = () => {
+        const targetProgressValue = Math.min(Math.max(savingsTargetProgress, 0), 100);
+        const targetRows = [
+            { label: "Annual target", value: formatCurrency(annualSavingsTarget) },
+            { label: "Remaining", value: savingsTargetRemaining > 0 ? formatCurrency(savingsTargetRemaining) : "Target met" },
+            { label: "Needed now", value: savingsTargetNextRequired > 0 ? formatCurrency(savingsTargetNextRequired) : "Clear" }
+        ];
+        const positionRows = [
+            { icon: AccountBalanceWalletRoundedIcon, label: "Shares", value: formatCurrency(totalShareCapital), tone: "warning" as const },
+            { icon: TrendingUpRoundedIcon, label: "Dividends", value: formatCurrency(totalDividends), tone: "success" as const },
+            { icon: CreditScoreRoundedIcon, label: "Loan exposure", value: formatCurrency(totalOutstandingLoans), tone: "danger" as const },
+            { icon: EventRoundedIcon, label: "Next loan due", value: nextPaymentDue ? `${formatDate(nextPaymentDue)} · ${formatCurrency(monthlyInstallment)}` : "No due installment", tone: "primary" as const }
+        ];
+
+        return (
+            <MotionCard
+                data-tour="member-portal-hero"
+                sx={{
+                    width: { xs: "calc(100vw - 20px)", sm: "100%" },
+                    minWidth: 0,
+                    maxWidth: { xs: "calc(100vw - 20px)", sm: "100%" },
+                    borderRadius: { xs: 2.4, md: 3 },
+                    color: theme.palette.mode === "dark" ? "#fff" : brandColors.neutral.textPrimary,
+                    overflow: "hidden",
+                    border: theme.palette.mode === "dark"
+                        ? "1px solid rgba(255,255,255,0.08)"
+                        : `1px solid ${alpha(brandColors.primary[300], 0.3)}`,
                     background: theme.palette.mode === "dark"
-                        ? `radial-gradient(circle at 18% 18%, ${alpha("#FFFFFF", 0.16)} 0%, transparent 34%),
-                            radial-gradient(circle at 82% 24%, ${alpha(memberAccentAlt, 0.3)} 0%, transparent 28%),
-                            radial-gradient(circle at 75% 78%, ${alpha("#6EA8FF", 0.22)} 0%, transparent 30%)`
-                        : `radial-gradient(circle at 14% 18%, ${alpha(brandColors.primary[100], 0.9)} 0%, transparent 34%),
-                            radial-gradient(circle at 84% 20%, ${alpha(brandColors.accent[100], 0.82)} 0%, transparent 28%),
-                            radial-gradient(circle at 74% 80%, ${alpha(brandColors.primary[300], 0.18)} 0%, transparent 28%)`,
-                    pointerEvents: "none"
-                }
-            }}
-        >
-            <CardContent sx={{ position: "relative", p: { xs: 2.25, sm: 2.5, md: 4 }, height: "100%" }}>
-                <Stack direction={{ xs: "column", xl: "row" }} spacing={3} justifyContent="space-between" sx={{ height: "100%" }}>
-                    <Stack spacing={1.25} sx={{ maxWidth: 640, minWidth: 0 }}>
-                        <Typography
-                            variant="overline"
-                            sx={{
-                                color: theme.palette.mode === "dark" ? alpha("#FFFFFF", 0.72) : alpha(brandColors.neutral.textSecondary, 0.9),
-                                letterSpacing: "0.22em"
-                            }}
-                        >
-                            Member Dashboard
-                        </Typography>
-                        <Typography
-                            variant="h3"
-                            sx={{
-                                fontWeight: 800,
-                                letterSpacing: "-0.03em",
-                                lineHeight: 1.05,
-                                fontSize: { xs: "2.55rem", sm: "3rem", md: undefined },
-                                overflowWrap: "anywhere"
-                            }}
-                        >
-                            Welcome back, {profile?.full_name?.split(" ")[0] || "Member"}.
-                        </Typography>
-                        <Typography
-                            variant="body1"
-                            sx={{
-                                color: theme.palette.mode === "dark" ? alpha("#FFFFFF", 0.78) : brandColors.neutral.textSecondary,
-                                maxWidth: 560,
-                                overflowWrap: "anywhere"
-                            }}
-                        >
-                            Track your savings, share capital, loan obligations, and contribution history from one secure workspace tied to {selectedTenantName || "your SACCOS"}.
-                        </Typography>
-                        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ pt: 0.85, minWidth: 0 }}>
-                            <Chip
-                                label={selectedBranchName || "Assigned branch"}
-                                sx={{
-                                    maxWidth: "100%",
-                                    bgcolor: theme.palette.mode === "dark" ? alpha("#FFFFFF", 0.12) : alpha(brandColors.primary[100], 0.92),
-                                    color: theme.palette.mode === "dark" ? "#fff" : brandColors.primary[900],
-                                    borderRadius: 1.5,
-                                    backdropFilter: "blur(10px)",
-                                    border: theme.palette.mode === "dark" ? "none" : `1px solid ${alpha(brandColors.primary[300], 0.36)}`,
-                                    fontWeight: 700,
-                                    "& .MuiChip-label": {
-                                        display: "block",
-                                        whiteSpace: "normal"
-                                    }
-                                }}
-                            />
-                            <Chip
-                                label={hasNoVisibleFinancialData ? "Awaiting first posted activity" : "Financial activity visible"}
-                                sx={{
-                                    maxWidth: "100%",
-                                    bgcolor: theme.palette.mode === "dark"
-                                        ? hasNoVisibleFinancialData ? alpha("#FFFFFF", 0.08) : alpha(brandColors.success, 0.18)
-                                        : hasNoVisibleFinancialData ? alpha(brandColors.warning, 0.12) : alpha(brandColors.success, 0.12),
-                                    color: theme.palette.mode === "dark"
-                                        ? "#fff"
-                                        : hasNoVisibleFinancialData ? "#9A6700" : brandColors.success,
-                                    borderRadius: 1.5,
-                                    "& .MuiChip-label": {
-                                        display: "block",
-                                        whiteSpace: "normal"
-                                    }
-                                }}
-                            />
-                        </Stack>
-                    </Stack>
-                    <Paper
-                        variant="outlined"
+                        ? `linear-gradient(135deg, ${darkThemeColors.elevated}, ${alpha(memberAccentStrong, 0.2)})`
+                        : `linear-gradient(135deg, ${alpha("#FFFFFF", 0.99)} 0%, ${alpha("#F7FAFF", 0.98)} 100%)`,
+                    boxShadow: theme.palette.mode === "dark"
+                        ? `0 14px 30px ${alpha("#020617", 0.22)}`
+                        : `0 14px 30px ${alpha(brandColors.primary[300], 0.12)}`
+                }}
+            >
+                <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
+                    <Box
                         sx={{
-                            width: "100%",
-                            minWidth: 0,
-                            maxWidth: { xs: "100%", xl: 360 },
-                            p: { xs: 1.5, sm: 2 },
-                            borderRadius: { xs: 2.2, md: 3 },
-                            bgcolor: theme.palette.mode === "dark" ? alpha("#030712", 0.2) : alpha("#FFFFFF", 0.9),
-                            borderColor: theme.palette.mode === "dark"
-                                ? alpha("#FFFFFF", 0.12)
-                                : alpha(brandColors.primary[300], 0.34),
-                            backdropFilter: "blur(16px)",
-                            boxShadow: theme.palette.mode === "dark"
-                                ? "none"
-                                : `0 12px 28px ${alpha(brandColors.primary[300], 0.12)}`
+                            display: "grid",
+                            gap: { xs: 2, lg: 2.5 },
+                            alignItems: "stretch",
+                            gridTemplateColumns: {
+                                xs: "minmax(0, 1fr)",
+                                lg: "minmax(0, 0.95fr) minmax(340px, 1fr) minmax(330px, 1fr)"
+                            }
                         }}
                     >
-                        <Stack spacing={1.6}>
-                            <Stack
-                                direction={{ xs: "column", sm: "row" }}
-                                justifyContent="space-between"
-                                alignItems={{ xs: "flex-start", sm: "center" }}
-                                spacing={1}
-                            >
+                        <Stack spacing={1.2} sx={{ minWidth: 0, justifyContent: "space-between" }}>
+                            <Box sx={{ minWidth: 0 }}>
                                 <Typography
                                     variant="overline"
                                     sx={{
-                                        color: theme.palette.mode === "dark" ? alpha("#FFFFFF", 0.68) : alpha(brandColors.neutral.textSecondary, 0.9),
-                                        letterSpacing: "0.18em"
+                                        color: theme.palette.mode === "dark" ? alpha("#FFFFFF", 0.72) : alpha(brandColors.neutral.textSecondary, 0.9),
+                                        letterSpacing: "0.14em"
                                     }}
                                 >
-                                    Today
+                                    Member Financial Level
                                 </Typography>
-                                <Chip
-                                    size="small"
-                                    label={standing.label}
+                                <Typography
+                                    variant="h4"
                                     sx={{
-                                        maxWidth: "100%",
-                                        bgcolor: theme.palette.mode === "dark" ? alpha("#FFFFFF", 0.12) : alpha(brandColors.primary[100], 0.9),
-                                        color: theme.palette.mode === "dark" ? "#fff" : brandColors.primary[900],
-                                        fontWeight: 700,
-                                        alignSelf: { xs: "flex-start", sm: "auto" },
-                                        "& .MuiChip-label": {
-                                            px: { xs: 1.2, sm: 1.5 }
-                                        }
+                                        mt: 0.75,
+                                        fontWeight: 800,
+                                        lineHeight: 1.08,
+                                        fontSize: { xs: "2rem", md: "2.35rem" },
+                                        overflowWrap: "anywhere"
                                     }}
-                                />
-                            </Stack>
-                            <Box>
-                                <Typography variant="h5" sx={{ fontWeight: 800, lineHeight: 1.15 }}>
-                                    {nextPaymentDue ? formatDate(nextPaymentDue) : "No installment due"}
+                                >
+                                    {formatCurrency(totalSavings)}
                                 </Typography>
                                 <Typography
                                     variant="body2"
                                     sx={{
-                                        color: theme.palette.mode === "dark" ? alpha("#FFFFFF", 0.72) : brandColors.neutral.textSecondary,
-                                        mt: 0.75
+                                        mt: 0.7,
+                                        color: theme.palette.mode === "dark" ? alpha("#FFFFFF", 0.76) : brandColors.neutral.textSecondary,
+                                        overflowWrap: "anywhere"
                                     }}
                                 >
-                                    {nextPaymentDue
-                                        ? `Next scheduled loan repayment is ${formatCurrency(monthlyInstallment)}.`
-                                        : "Use this portal to keep savings, contributions, and loan activity moving without visiting the branch."}
+                                    {profile?.full_name || "Member"} has reached {Math.round(savingsTargetProgress)}% of the annual savings target.
                                 </Typography>
                             </Box>
-                            <Box
-                                sx={{
-                                    display: "grid",
-                                    gap: 1.2,
-                                    gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "repeat(2, minmax(0, 1fr))" }
-                                }}
-                            >
-                                <Box sx={{ minWidth: 0 }}>
-                                    <Paper
-                                        sx={{
-                                            p: 1.25,
-                                            borderRadius: 2,
-                                            bgcolor: theme.palette.mode === "dark" ? alpha("#FFFFFF", 0.08) : alpha(brandColors.primary[100], 0.54),
-                                            border: theme.palette.mode === "dark"
-                                                ? `1px solid ${alpha("#FFFFFF", 0.1)}`
-                                                : `1px solid ${alpha(brandColors.primary[300], 0.28)}`
-                                        }}
-                                    >
-                                        <Typography
-                                            variant="caption"
-                                            sx={{ color: theme.palette.mode === "dark" ? alpha("#FFFFFF", 0.68) : brandColors.neutral.textSecondary }}
-                                        >
-                                            Pending payments
-                                        </Typography>
-                                        <Typography variant="h5" sx={{ mt: 0.45, fontWeight: 800 }}>
-                                            {pendingPaymentCount}
-                                        </Typography>
-                                    </Paper>
-                                </Box>
-                                <Box sx={{ minWidth: 0 }}>
-                                    <Paper
-                                        sx={{
-                                            p: 1.25,
-                                            borderRadius: 2,
-                                            bgcolor: theme.palette.mode === "dark" ? alpha("#FFFFFF", 0.08) : alpha(brandColors.primary[100], 0.54),
-                                            border: theme.palette.mode === "dark"
-                                                ? `1px solid ${alpha("#FFFFFF", 0.1)}`
-                                                : `1px solid ${alpha(brandColors.primary[300], 0.28)}`
-                                        }}
-                                    >
-                                        <Typography
-                                            variant="caption"
-                                            sx={{ color: theme.palette.mode === "dark" ? alpha("#FFFFFF", 0.68) : brandColors.neutral.textSecondary }}
-                                        >
-                                            Active loans
-                                        </Typography>
-                                        <Typography variant="h5" sx={{ mt: 0.45, fontWeight: 800 }}>
-                                            {activeLoanCount}
-                                        </Typography>
-                                    </Paper>
-                                </Box>
-                            </Box>
+                            <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ minWidth: 0 }}>
+                                <Chip
+                                    label={selectedBranchName || "Assigned branch"}
+                                    sx={{
+                                        bgcolor: theme.palette.mode === "dark" ? alpha("#FFFFFF", 0.12) : alpha(brandColors.primary[100], 0.92),
+                                        color: theme.palette.mode === "dark" ? "#fff" : brandColors.primary[900],
+                                        borderRadius: 1.5,
+                                        fontWeight: 700
+                                    }}
+                                />
+                                <Chip
+                                    label={hasNoVisibleFinancialData ? "Awaiting first activity" : savingsTargetLevel.label}
+                                    sx={{
+                                        bgcolor: hasNoVisibleFinancialData ? alpha(brandColors.warning, 0.12) : alpha(brandColors.success, 0.12),
+                                        color: hasNoVisibleFinancialData ? "#9A6700" : brandColors.success,
+                                        borderRadius: 1.5,
+                                        fontWeight: 700
+                                    }}
+                                />
+                            </Stack>
                             <Stack
-                                direction={{ xs: "column", sm: "row" }}
-                                spacing={1.25}
-                                useFlexGap
-                                sx={{ "& > *": { width: { xs: "100%", sm: "auto" } } }}
+                                direction={{ xs: "column", sm: "row", lg: "column", xl: "row" }}
+                                spacing={1}
+                                sx={{ "& > *": { width: { xs: "100%", sm: "auto", lg: "100%", xl: "auto" } } }}
                             >
                                 <Button
                                     variant="contained"
                                     onClick={() => handleSectionSelect("member-accounts")}
                                     endIcon={<EastRoundedIcon />}
                                     sx={{
-                                        borderRadius: 1.8,
-                                        px: 2.4,
-                                        py: 1.1,
+                                        borderRadius: 1.5,
+                                        px: 2,
                                         bgcolor: theme.palette.mode === "dark" ? memberAccent : brandColors.primary[700],
                                         color: "#fff",
                                         boxShadow: "none",
                                         fontWeight: 700,
-                                        minHeight: 44,
                                         "&:hover": {
                                             bgcolor: theme.palette.mode === "dark" ? memberAccentAlt : brandColors.primary[900],
                                             boxShadow: "none"
                                         }
                                     }}
                                 >
-                                    View Accounts
+                                    Accounts
                                 </Button>
                                 <Button
                                     variant="outlined"
                                     onClick={() => handleSectionSelect("member-loans")}
                                     endIcon={<NorthEastRoundedIcon />}
                                     sx={{
-                                        borderRadius: 1.8,
-                                        px: 2.4,
-                                        py: 1.1,
+                                        borderRadius: 1.5,
+                                        px: 2,
                                         color: theme.palette.mode === "dark" ? "#fff" : brandColors.primary[900],
                                         borderColor: theme.palette.mode === "dark"
-                                            ? alpha("#FFFFFF", 0.2)
-                                            : alpha(brandColors.primary[300], 0.42),
-                                        fontWeight: 700,
-                                        minHeight: 44,
-                                        "&:hover": {
-                                            borderColor: theme.palette.mode === "dark"
-                                                ? alpha("#FFFFFF", 0.38)
-                                                : alpha(brandColors.primary[700], 0.46),
-                                            bgcolor: theme.palette.mode === "dark"
-                                                ? alpha("#FFFFFF", 0.05)
-                                                : alpha(brandColors.primary[100], 0.55)
-                                        }
+                                            ? alpha("#FFFFFF", 0.22)
+                                            : alpha(brandColors.primary[300], 0.5),
+                                        fontWeight: 700
                                     }}
                                 >
-                                    Review Loans
+                                    Loans
                                 </Button>
                             </Stack>
                         </Stack>
-                    </Paper>
-                </Stack>
-            </CardContent>
-        </MotionCard>
-    );
+
+                        <Paper
+                            variant="outlined"
+                            sx={{
+                                minWidth: 0,
+                                p: { xs: 1.5, md: 1.75 },
+                                borderRadius: 2,
+                                bgcolor: theme.palette.mode === "dark" ? alpha("#030712", 0.22) : alpha("#FFFFFF", 0.88),
+                                borderColor: theme.palette.mode === "dark"
+                                    ? alpha("#FFFFFF", 0.12)
+                                    : alpha(brandColors.primary[300], 0.3)
+                            }}
+                        >
+                            <Stack spacing={1.35}>
+                                <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center">
+                                    <Typography variant="overline" sx={{ color: "text.secondary", letterSpacing: "0.12em" }}>
+                                        Savings Target
+                                    </Typography>
+                                    <Chip
+                                        size="small"
+                                        label={`${Math.round(savingsTargetProgress)}%`}
+                                        sx={{
+                                            borderRadius: 1.2,
+                                            bgcolor: alpha(brandColors.primary[100], 0.9),
+                                            color: brandColors.primary[900],
+                                            fontWeight: 800
+                                        }}
+                                    />
+                                </Stack>
+                                <LinearProgress
+                                    variant="determinate"
+                                    value={targetProgressValue}
+                                    sx={{
+                                        height: 9,
+                                        borderRadius: 999,
+                                        bgcolor: alpha(brandColors.success, 0.14),
+                                        "& .MuiLinearProgress-bar": {
+                                            borderRadius: 999,
+                                            bgcolor: brandColors.success
+                                        }
+                                    }}
+                                />
+                                <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: "anywhere" }}>
+                                    {savingsTargetRemaining > 0
+                                        ? `${formatCurrency(savingsTargetRemaining)} remaining before the target is complete.`
+                                        : `${formatCurrency(totalSavings - annualSavingsTarget)} above target.`}
+                                </Typography>
+                                <Stack spacing={0.85}>
+                                    {targetRows.map((row) => (
+                                        <Stack
+                                            key={row.label}
+                                            direction="row"
+                                            spacing={1.5}
+                                            justifyContent="space-between"
+                                            alignItems="baseline"
+                                            sx={{
+                                                minWidth: 0,
+                                                py: 0.65,
+                                                borderBottom: "1px solid",
+                                                borderColor: "divider",
+                                                "&:last-of-type": { borderBottom: 0 }
+                                            }}
+                                        >
+                                            <Typography variant="body2" color="text.secondary" sx={{ flexShrink: 0 }}>
+                                                {row.label}
+                                            </Typography>
+                                            <Typography
+                                                variant="subtitle1"
+                                                sx={{
+                                                    minWidth: 0,
+                                                    fontWeight: 800,
+                                                    textAlign: "right",
+                                                    overflowWrap: "anywhere"
+                                                }}
+                                            >
+                                                {row.value}
+                                            </Typography>
+                                        </Stack>
+                                    ))}
+                                </Stack>
+                            </Stack>
+                        </Paper>
+
+                        <Paper
+                            variant="outlined"
+                            sx={{
+                                minWidth: 0,
+                                p: { xs: 1.5, md: 1.75 },
+                                borderRadius: 2,
+                                bgcolor: theme.palette.mode === "dark" ? alpha("#030712", 0.18) : alpha("#FFFFFF", 0.86),
+                                borderColor: theme.palette.mode === "dark"
+                                    ? alpha("#FFFFFF", 0.1)
+                                    : alpha(brandColors.primary[300], 0.26)
+                            }}
+                        >
+                            <Stack spacing={1.1}>
+                                <Typography variant="overline" sx={{ color: "text.secondary", letterSpacing: "0.12em" }}>
+                                    Current Position
+                                </Typography>
+                                {positionRows.map((item) => {
+                                    const Icon = item.icon;
+                                    const toneColor = item.tone === "success"
+                                        ? brandColors.success
+                                        : item.tone === "warning"
+                                            ? "#B45309"
+                                            : item.tone === "danger"
+                                                ? brandColors.danger
+                                                : memberAccent;
+
+                                    return (
+                                        <Stack
+                                            key={item.label}
+                                            direction="row"
+                                            spacing={1}
+                                            alignItems="center"
+                                            sx={{
+                                                minWidth: 0,
+                                                p: 0.95,
+                                                borderRadius: 1.5,
+                                                bgcolor: theme.palette.mode === "dark" ? alpha("#FFFFFF", 0.05) : alpha(brandColors.primary[100], 0.36)
+                                            }}
+                                        >
+                                            <Box
+                                                sx={{
+                                                    width: 32,
+                                                    height: 32,
+                                                    flexShrink: 0,
+                                                    borderRadius: 1.4,
+                                                    display: "grid",
+                                                    placeItems: "center",
+                                                    bgcolor: alpha(toneColor, 0.12),
+                                                    color: toneColor
+                                                }}
+                                            >
+                                                <Icon fontSize="small" />
+                                            </Box>
+                                            <Box sx={{ minWidth: 0 }}>
+                                                <Typography variant="caption" color="text.secondary">
+                                                    {item.label}
+                                                </Typography>
+                                                <Typography variant="body2" sx={{ fontWeight: 800, overflowWrap: "anywhere" }}>
+                                                    {item.value}
+                                                </Typography>
+                                            </Box>
+                                        </Stack>
+                                    );
+                                })}
+                            </Stack>
+                        </Paper>
+                    </Box>
+                </CardContent>
+            </MotionCard>
+        );
+    };
 
     const renderSpotlightCard = () => (
         <MotionCard
@@ -4667,7 +4791,7 @@ export function MemberPortalPage() {
                                     letterSpacing: "0.16em"
                                 }}
                             >
-                                Member feed
+                                Financial snapshot
                             </Typography>
                         </Stack>
                         <Chip
@@ -4695,7 +4819,7 @@ export function MemberPortalPage() {
                                 letterSpacing: "0.18em"
                             }}
                         >
-                            Featured status
+                            Current position
                         </Typography>
                         <Typography
                             variant="h4"
@@ -4707,11 +4831,7 @@ export function MemberPortalPage() {
                                 overflowWrap: "anywhere"
                             }}
                         >
-                            {hasOverdueLoan
-                                ? "Repayment attention is needed."
-                                : activeLoanCount
-                                    ? "Your active lending position is live."
-                                    : "Your self-service workspace is ready."}
+                            {savingsTargetLevel.label}: {Math.round(savingsTargetProgress)}% of target.
                         </Typography>
                         <Typography
                             variant="body2"
@@ -4721,11 +4841,7 @@ export function MemberPortalPage() {
                                 overflowWrap: "anywhere"
                             }}
                         >
-                            {hasOverdueLoan
-                                ? "An installment is overdue. Use the portal or branch team to settle the due amount quickly."
-                                : activeLoanCount
-                                    ? "Track obligations, see repayment due dates, and keep collections current from your member dashboard."
-                                    : "Start deposits, contributions, and membership actions from one secure member portal session."}
+                            Savings {formatCurrency(totalSavings)} · shares {formatCurrency(totalShareCapital)} · dividends {formatCurrency(totalDividends)} · loan exposure {formatCurrency(totalOutstandingLoans)}.
                         </Typography>
                     </Box>
 
@@ -4733,22 +4849,18 @@ export function MemberPortalPage() {
                         {[
                             {
                                 icon: EventRoundedIcon,
-                                label: "Next due",
-                                value: nextPaymentDue ? `${formatDate(nextPaymentDue)} · ${formatCurrency(monthlyInstallment)}` : "No due installment"
+                                label: "Annual target",
+                                value: formatCurrency(annualSavingsTarget)
                             },
                             {
                                 icon: WorkspacesRoundedIcon,
-                                label: "Pending mobile money",
-                                value: pendingPaymentCount ? `${pendingPaymentCount} order${pendingPaymentCount === 1 ? "" : "s"} awaiting completion` : "No pending order"
+                                label: "Remaining target",
+                                value: savingsTargetRemaining > 0 ? formatCurrency(savingsTargetRemaining) : "Target met"
                             },
                             {
                                 icon: ApprovalRoundedIcon,
-                                label: "Loan workflow",
-                                value: pendingLoanApplications.length
-                                    ? `${pendingLoanApplications.length} application${pendingLoanApplications.length === 1 ? "" : "s"} in progress`
-                                    : pendingGuarantorRequests.length
-                                        ? `${pendingGuarantorRequests.length} guarantor request${pendingGuarantorRequests.length === 1 ? "" : "s"} awaiting action`
-                                        : "No open loan workflow"
+                                label: "Next loan due",
+                                value: nextPaymentDue ? `${formatDate(nextPaymentDue)} · ${formatCurrency(monthlyInstallment)}` : "No due installment"
                             }
                         ].map((item) => {
                             const Icon = item.icon;
@@ -4848,9 +4960,18 @@ export function MemberPortalPage() {
             summary={{
                 totalSavings,
                 totalShareCapital,
+                totalDividends,
                 outstandingLoan: totalOutstandingLoans,
                 availableToWithdraw: availableSavings,
-                netPosition
+                netPosition,
+                annualSavingsTarget,
+                targetProgressPercent: savingsTargetProgress,
+                targetRemainingAmount: savingsTargetRemaining,
+                nextRequiredAmount: savingsTargetNextRequired,
+                targetStatusLabel: savingsTargetLevel.label,
+                targetStatusTone: savingsTargetLevel.tone,
+                nextInstallmentDueDate: nextPaymentDue,
+                nextInstallmentAmount: monthlyInstallment
             }}
             standing={standing}
             savingsCard={{
@@ -5871,7 +5992,14 @@ export function MemberPortalPage() {
 
     const renderContributionsView = () => {
         const complianceCapped = Math.min(Math.max(contributionComplianceRatio, 0), 100);
-        const scheduleToneColor = contributionScheduleStatus === "Overdue"
+        const targetToneColor = performanceTargetPosition.statusTone === "danger"
+            ? brandColors.danger
+            : performanceTargetPosition.statusTone === "warning"
+                ? "#9A6700"
+                : performanceTargetPosition.statusTone === "success"
+                    ? brandColors.success
+                    : memberAccent;
+        const contributionScheduleToneColor = contributionScheduleStatus === "Overdue"
             ? brandColors.danger
             : contributionScheduleStatus === "Due soon"
                 ? "#9A6700"
@@ -6083,9 +6211,9 @@ export function MemberPortalPage() {
                     <Grid size={{ xs: 12, sm: 6, lg: 3 }} sx={{ display: "flex" }}>
                         <AccountSummaryCard
                             icon={TrendingUpRoundedIcon}
-                            label="Period Contributions"
-                            value={formatCurrency(contributionActual)}
-                            helper={`Expected ${formatCurrency(contributionExpected)} for selected period.`}
+                            label="Target Actual"
+                            value={formatCurrency(targetActualAmount)}
+                            helper={`Annual target ${formatCurrency(contributionExpected)} from ${financialYearPeriod.startLabel} to ${financialYearPeriod.endLabel}.`}
                             tone={contributionComplianceRatio >= 100 ? "success" : "warning"}
                         />
                     </Grid>
@@ -6093,8 +6221,8 @@ export function MemberPortalPage() {
                         <AccountSummaryCard
                             icon={AccountBalanceWalletRoundedIcon}
                             label="Dividend Credits"
-                            value={formatCurrency(filteredContributions.filter((row) => row.transaction_type === "dividend_allocation").reduce((sum, row) => sum + row.amount, 0))}
-                            helper={`Effective rate ${effectiveDividendRate.toFixed(2)}% on capital base.`}
+                            value={formatCurrency(saccoYearDividendRows.reduce((sum, row) => sum + row.amount, 0))}
+                            helper={`SACCO year credits. Effective rate ${effectiveDividendRate.toFixed(2)}% on capital base.`}
                             tone="success"
                         />
                     </Grid>
@@ -6110,8 +6238,8 @@ export function MemberPortalPage() {
                                                 borderRadius: 1.5,
                                                 display: "grid",
                                                 placeItems: "center",
-                                                bgcolor: alpha(scheduleToneColor, 0.14),
-                                                color: scheduleToneColor
+                                                bgcolor: alpha(targetToneColor, 0.14),
+                                                color: targetToneColor
                                             }}
                                         >
                                             <TaskAltRoundedIcon fontSize="small" />
@@ -6128,10 +6256,10 @@ export function MemberPortalPage() {
                                         />
                                     </Stack>
                                     <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                                        Compliance & Schedule
+                                        Performance Target
                                     </Typography>
                                     <Typography variant="body2" color="text.secondary">
-                                        {contributionComplianceRatio.toFixed(1)}% target coverage
+                                        {contributionComplianceRatio.toFixed(1)}% reached against the configured annual target.
                                     </Typography>
                                     <LinearProgress
                                         variant="determinate"
@@ -6146,8 +6274,11 @@ export function MemberPortalPage() {
                                         }}
                                     />
                                     <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: "auto" }}>
-                                        Schedule: <Box component="span" sx={{ color: scheduleToneColor, fontWeight: 700 }}>{contributionScheduleStatus}</Box>
-                                        {nextContributionDue ? ` • next due ${formatDate(nextContributionDue)}` : ""}
+                                        Remaining: <Box component="span" sx={{ color: targetToneColor, fontWeight: 700 }}>{formatCurrency(savingsTargetRemaining)}</Box>
+                                        {savingsTargetNextRequired > 0 ? ` • needed now ${formatCurrency(savingsTargetNextRequired)}` : ""}
+                                        <Box component="span" sx={{ display: "block" }}>
+                                            SACCO year {financialYearPeriod.startLabel} - {financialYearPeriod.endLabel}
+                                        </Box>
                                     </Typography>
                                 </Stack>
                             </CardContent>
@@ -6312,8 +6443,8 @@ export function MemberPortalPage() {
                                                 borderRadius: 1.25,
                                                 display: "grid",
                                                 placeItems: "center",
-                                                bgcolor: alpha(scheduleToneColor, 0.12),
-                                                color: scheduleToneColor
+                                                bgcolor: alpha(contributionScheduleToneColor, 0.12),
+                                                color: contributionScheduleToneColor
                                             }}
                                         >
                                             <EventRoundedIcon fontSize="small" />
@@ -6323,10 +6454,13 @@ export function MemberPortalPage() {
                                         </Typography>
                                     </Stack>
                                     <Typography variant="body2" color="text.secondary">
-                                        Status: <Box component="span" sx={{ color: scheduleToneColor, fontWeight: 700 }}>{contributionScheduleStatus}</Box>
+                                        Status: <Box component="span" sx={{ color: contributionScheduleToneColor, fontWeight: 700 }}>{contributionScheduleStatus}</Box>
                                     </Typography>
                                     <Typography variant="body2" color="text.secondary">
-                                        Next expected contribution: {formatDate(nextContributionDue)}
+                                        Next expected SACCO-year contribution: {formatDate(nextContributionDue)}
+                                    </Typography>
+                                    <Typography variant="body2" color="text.secondary">
+                                        SACCO year: {financialYearPeriod.startLabel} - {financialYearPeriod.endLabel}
                                     </Typography>
                                     <Typography variant="body2" color="text.secondary">
                                         Monthly baseline: {formatCurrency(contributionBaselineMonthly)}
@@ -7414,24 +7548,7 @@ export function MemberPortalPage() {
                         <Box sx={{ display: "grid", gap: 3, width: { xs: "calc(100vw - 20px)", sm: "100%" }, maxWidth: { xs: "calc(100vw - 20px)", sm: "100%" }, minWidth: 0 }}>
                                 {activeSection === "member-overview" ? (
                                     <>
-                                        <Box
-                                            sx={{
-                                                display: "grid",
-                                                gap: 2.5,
-                                                gridTemplateColumns: {
-                                                    xs: "minmax(0, 1fr)",
-                                                    xl: "minmax(0, 2fr) minmax(0, 1fr)"
-                                                },
-                                                alignItems: "stretch"
-                                            }}
-                                        >
-                                            <Box sx={{ display: "flex", minWidth: 0 }}>
-                                                {renderHero()}
-                                            </Box>
-                                            <Box sx={{ display: "flex", minWidth: 0 }}>
-                                                {renderSpotlightCard()}
-                                            </Box>
-                                        </Box>
+                                        {renderHero()}
                                         {renderStatGrid()}
                                         {renderBorrowingCapacityCard()}
                                     </>

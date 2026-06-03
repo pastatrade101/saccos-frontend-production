@@ -34,6 +34,24 @@ import type { Branch, DailyCashSummary, ReceiptPolicy, TellerSession } from "../
 import { downloadFile, getFilenameFromDisposition } from "../utils/downloadFile";
 import { formatCurrency, formatDate } from "../utils/format";
 
+const controlledTransactionTypes: UpdateReceiptPolicyRequest["enforce_on_types"] = [
+    "deposit",
+    "withdraw",
+    "share_contribution",
+    "loan_repay",
+    "loan_disburse",
+    "fee_revenue"
+];
+
+const transactionTypeLabels: Record<UpdateReceiptPolicyRequest["enforce_on_types"][number], string> = {
+    deposit: "Savings deposit",
+    withdraw: "Savings withdrawal",
+    share_contribution: "Share contribution",
+    loan_repay: "Loan repayment",
+    loan_disburse: "Loan disbursement",
+    fee_revenue: "Fee / revenue"
+};
+
 function statusChip(status: TellerSession["status"]) {
     if (status === "reviewed") return "success";
     if (status === "closed_pending_review") return "warning";
@@ -60,7 +78,7 @@ export function CashControlPage() {
         max_receipts_per_tx: 3,
         allowed_mime_types: ["image/jpeg", "image/png", "application/pdf"],
         max_file_size_mb: 10,
-        enforce_on_types: ["deposit", "withdraw", "loan_repay", "loan_disburse"]
+        enforce_on_types: controlledTransactionTypes
     });
 
     const editable = profile?.role === "branch_manager" || profile?.role === "super_admin";
@@ -127,12 +145,32 @@ export function CashControlPage() {
     const totals = useMemo(() => {
         return summary.reduce(
             (acc, row) => {
-                acc.deposits += Number(row.deposits_total || 0);
-                acc.withdrawals += Number(row.withdrawals_total || 0);
+                acc.inflow += Number(row.inflow_total ?? row.deposits_total ?? 0);
+                acc.outflow += Number(row.outflow_total ?? row.withdrawals_total ?? 0);
+                acc.savingsDeposits += Number(row.savings_deposit_total || 0);
+                acc.savingsWithdrawals += Number(row.savings_withdrawal_total || 0);
+                acc.shareContributions += Number(row.share_contribution_total || 0);
+                acc.loanRepayments += Number(row.loan_repayment_total || 0);
+                acc.loanDisbursements += Number(row.loan_disbursement_total || 0);
+                acc.feeRevenue += Number(row.fee_revenue_total || 0);
                 acc.variance += Number(row.variance_total || 0);
+                acc.transactions += Number(row.transaction_count || 0);
+                acc.receipts += Number(row.receipt_count || 0);
                 return acc;
             },
-            { deposits: 0, withdrawals: 0, variance: 0 }
+            {
+                inflow: 0,
+                outflow: 0,
+                savingsDeposits: 0,
+                savingsWithdrawals: 0,
+                shareContributions: 0,
+                loanRepayments: 0,
+                loanDisbursements: 0,
+                feeRevenue: 0,
+                variance: 0,
+                transactions: 0,
+                receipts: 0
+            }
         );
     }, [summary]);
 
@@ -205,9 +243,22 @@ export function CashControlPage() {
             </MotionCard>
 
             <Grid container spacing={2}>
-                <Grid size={{ xs: 12, md: 3 }}><MotionCard variant="outlined"><CardContent><Typography variant="overline">Deposits</Typography><Typography variant="h5">{formatCurrency(totals.deposits)}</Typography></CardContent></MotionCard></Grid>
-                <Grid size={{ xs: 12, md: 3 }}><MotionCard variant="outlined"><CardContent><Typography variant="overline">Withdrawals</Typography><Typography variant="h5">{formatCurrency(totals.withdrawals)}</Typography></CardContent></MotionCard></Grid>
+                <Grid size={{ xs: 12, md: 3 }}><MotionCard variant="outlined"><CardContent><Typography variant="overline">Cash Inflow</Typography><Typography variant="h5">{formatCurrency(totals.inflow)}</Typography><Typography variant="body2" color="text.secondary">Savings, shares, loan repayments, and fee revenue.</Typography></CardContent></MotionCard></Grid>
+                <Grid size={{ xs: 12, md: 3 }}><MotionCard variant="outlined"><CardContent><Typography variant="overline">Cash Outflow</Typography><Typography variant="h5">{formatCurrency(totals.outflow)}</Typography><Typography variant="body2" color="text.secondary">Withdrawals and loan disbursements.</Typography></CardContent></MotionCard></Grid>
+                <Grid size={{ xs: 12, md: 3 }}><MotionCard variant="outlined"><CardContent><Typography variant="overline">Net Movement</Typography><Typography variant="h5">{formatCurrency(totals.inflow - totals.outflow)}</Typography><Typography variant="body2" color="text.secondary">{totals.transactions} posted action(s), {totals.receipts} confirmed receipt(s).</Typography></CardContent></MotionCard></Grid>
                 <Grid size={{ xs: 12, md: 3 }}><MotionCard variant="outlined"><CardContent><Typography variant="overline">Variance</Typography><Typography variant="h5">{formatCurrency(totals.variance)}</Typography></CardContent></MotionCard></Grid>
+            </Grid>
+
+            <Grid container spacing={2}>
+                <Grid size={{ xs: 12, sm: 6, lg: 2 }}><MotionCard variant="outlined"><CardContent><Typography variant="overline">Savings In</Typography><Typography variant="h6">{formatCurrency(totals.savingsDeposits)}</Typography></CardContent></MotionCard></Grid>
+                <Grid size={{ xs: 12, sm: 6, lg: 2 }}><MotionCard variant="outlined"><CardContent><Typography variant="overline">Savings Out</Typography><Typography variant="h6">{formatCurrency(totals.savingsWithdrawals)}</Typography></CardContent></MotionCard></Grid>
+                <Grid size={{ xs: 12, sm: 6, lg: 2 }}><MotionCard variant="outlined"><CardContent><Typography variant="overline">Shares</Typography><Typography variant="h6">{formatCurrency(totals.shareContributions)}</Typography></CardContent></MotionCard></Grid>
+                <Grid size={{ xs: 12, sm: 6, lg: 2 }}><MotionCard variant="outlined"><CardContent><Typography variant="overline">Loan Repayments</Typography><Typography variant="h6">{formatCurrency(totals.loanRepayments)}</Typography></CardContent></MotionCard></Grid>
+                <Grid size={{ xs: 12, sm: 6, lg: 2 }}><MotionCard variant="outlined"><CardContent><Typography variant="overline">Fee Revenue</Typography><Typography variant="h6">{formatCurrency(totals.feeRevenue)}</Typography></CardContent></MotionCard></Grid>
+                <Grid size={{ xs: 12, sm: 6, lg: 2 }}><MotionCard variant="outlined"><CardContent><Typography variant="overline">Loan Disbursed</Typography><Typography variant="h6">{formatCurrency(totals.loanDisbursements)}</Typography></CardContent></MotionCard></Grid>
+            </Grid>
+
+            <Grid container spacing={2}>
                 <Grid size={{ xs: 12, md: 3 }}>
                     <MotionCard variant="outlined">
                         <CardContent>
@@ -249,6 +300,35 @@ export function CashControlPage() {
                                 <Alert severity="info">
                                     Uploaded receipts become immutable once they are attached to a posted journal entry.
                                 </Alert>
+                                <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                                    <Chip
+                                        size="small"
+                                        label={policy?.receipt_required ? `Required from ${formatCurrency(policy.required_threshold)}` : "Receipts optional"}
+                                        color={policy?.receipt_required ? "primary" : "default"}
+                                        variant="outlined"
+                                    />
+                                    <Chip
+                                        size="small"
+                                        label={`Max ${policy?.max_receipts_per_tx ?? policyForm.max_receipts_per_tx} receipt(s)`}
+                                        variant="outlined"
+                                    />
+                                    <Chip
+                                        size="small"
+                                        label={`${policy?.max_file_size_mb ?? policyForm.max_file_size_mb} MB max`}
+                                        variant="outlined"
+                                    />
+                                </Stack>
+                                <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
+                                    {(policy?.enforce_on_types || policyForm.enforce_on_types).map((type) => (
+                                        <Chip
+                                            key={type}
+                                            size="small"
+                                            label={transactionTypeLabels[type] || type}
+                                            color={type === "fee_revenue" ? "success" : "default"}
+                                            variant="outlined"
+                                        />
+                                    ))}
+                                </Stack>
                                 {editable ? (
                                     showPolicyEditor ? (
                                         <>
@@ -299,14 +379,28 @@ export function CashControlPage() {
                                             />
                                             <TextField
                                                 label="Enforce on"
-                                                value={policyForm.enforce_on_types.join(", ")}
+                                                select
+                                                SelectProps={{ multiple: true }}
+                                                value={policyForm.enforce_on_types}
                                                 onChange={(event) => setPolicyForm((current) => ({
                                                     ...current,
-                                                    enforce_on_types: event.target.value.split(",").map((value) => value.trim()) as UpdateReceiptPolicyRequest["enforce_on_types"]
+                                                    enforce_on_types: (Array.isArray(event.target.value)
+                                                        ? event.target.value
+                                                        : String(event.target.value).split(",")
+                                                    )
+                                                        .filter((value): value is UpdateReceiptPolicyRequest["enforce_on_types"][number] =>
+                                                            controlledTransactionTypes.includes(value as UpdateReceiptPolicyRequest["enforce_on_types"][number])
+                                                        )
                                                 }))}
                                                 fullWidth
                                                 disabled={!editable}
-                                            />
+                                            >
+                                                {controlledTransactionTypes.map((type) => (
+                                                    <MenuItem key={type} value={type}>
+                                                        {transactionTypeLabels[type]}
+                                                    </MenuItem>
+                                                ))}
+                                            </TextField>
                                             <Stack direction="row" spacing={1.25}>
                                                 <Button variant="contained" onClick={() => void savePolicy()} disabled={saving}>
                                                     {saving ? "Saving..." : "Save policy"}
@@ -359,8 +453,15 @@ export function CashControlPage() {
                                     rows={summary}
                                     columns={[
                                         { key: "date", header: "Date", render: (row) => formatDate(row.business_date) },
-                                        { key: "deposits", header: "Deposits", render: (row) => formatCurrency(row.deposits_total) },
-                                        { key: "withdrawals", header: "Withdrawals", render: (row) => formatCurrency(row.withdrawals_total) },
+                                        { key: "actions", header: "Actions", render: (row) => Number(row.transaction_count || 0) },
+                                        { key: "receipts", header: "Receipts", render: (row) => Number(row.receipt_count || 0) },
+                                        { key: "inflow", header: "Cash Inflow", render: (row) => formatCurrency(row.inflow_total ?? row.deposits_total) },
+                                        { key: "outflow", header: "Cash Outflow", render: (row) => formatCurrency(row.outflow_total ?? row.withdrawals_total) },
+                                        { key: "savings", header: "Savings", render: (row) => `${formatCurrency(row.savings_deposit_total || 0)} in / ${formatCurrency(row.savings_withdrawal_total || 0)} out` },
+                                        { key: "shares", header: "Shares", render: (row) => formatCurrency(row.share_contribution_total || 0) },
+                                        { key: "loan_repay", header: "Loan Repay", render: (row) => formatCurrency(row.loan_repayment_total || 0) },
+                                        { key: "fee_revenue", header: "Fee Revenue", render: (row) => formatCurrency(row.fee_revenue_total || 0) },
+                                        { key: "loan_disburse", header: "Loan Disbursed", render: (row) => formatCurrency(row.loan_disbursement_total || 0) },
                                         { key: "net", header: "Net", render: (row) => formatCurrency(row.net_movement) },
                                         { key: "variance", header: "Variance", render: (row) => formatCurrency(row.variance_total) }
                                     ]}

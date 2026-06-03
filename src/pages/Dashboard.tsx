@@ -37,9 +37,12 @@ import { api, getApiErrorMessage } from "../lib/api";
 import {
     endpoints,
     type BranchesListResponse,
+    type ChargeRevenueSummaryResponse,
+    type DailyCashSummaryResponse,
     type LoanApplicationsResponse,
     type LoanSchedulesResponse,
     type LoansResponse,
+    type ManualDividendBatchesResponse,
     type MemberAccountsResponse,
     type MemberApplicationsResponse,
     type MembersResponse,
@@ -54,12 +57,13 @@ import {
     type PlatformTenantTrafficResponse,
     type PlatformTenantTrafficRow,
     type SaccoFinancialYearSettingsResponse,
+    type SaccoPerformanceTargetSettingsResponse,
     type StatementsResponse,
     type TenantsListResponse,
     type UsersListResponse
 } from "../lib/endpoints";
 import { buildTellerDashboardData } from "../lib/tellerDashboard";
-import type { Branch, Loan, LoanApplication, LoanSchedule, Member, MemberAccount, MemberApplication, SaccoFinancialYearSettings, StaffAccessUser, StatementRow, Tenant } from "../types/api";
+import type { Branch, ChargeRevenueSummary, DailyCashSummary, Loan, LoanApplication, LoanSchedule, ManualDividendBatch, Member, MemberAccount, MemberApplication, SaccoFinancialYearSettings, SaccoPerformanceTargetSettings, StaffAccessUser, StatementRow, Tenant } from "../types/api";
 import { MotionCard, MotionListItem, MotionSection } from "../ui/motion";
 import {
     DEFAULT_SACCO_FINANCIAL_YEAR_SETTINGS,
@@ -67,6 +71,12 @@ import {
     normalizeSaccoFinancialYearSettings,
     resolveFinancialYearPeriod
 } from "../utils/financialYear";
+import {
+    calculateMemberPerformanceTarget,
+    DEFAULT_SACCO_PERFORMANCE_TARGET_SETTINGS,
+    normalizeSaccoPerformanceTargetSettings,
+    type PerformanceTargetLevelColor
+} from "../utils/performanceTarget";
 import { formatCurrency, formatDate, formatRole } from "../utils/format";
 
 interface DashboardState {
@@ -78,6 +88,9 @@ interface DashboardState {
     loanApplications: LoanApplication[];
     memberApplications: MemberApplication[];
     staffUsers: StaffAccessUser[];
+    revenueSummary: ChargeRevenueSummary | null;
+    manualDividendBatches: ManualDividendBatch[];
+    dailyCashSummary: DailyCashSummary[];
 }
 
 interface PlatformState {
@@ -130,8 +143,6 @@ interface StaffPerformanceRow {
     applicationsProcessed: number;
 }
 
-type PerformanceLevelColor = "success" | "info" | "warning" | "error" | "default";
-
 interface MemberPerformanceRow {
     memberId: string;
     memberName: string;
@@ -145,7 +156,7 @@ interface MemberPerformanceRow {
     reachPercent: number;
     remainingPercent: number;
     level: string;
-    levelColor: PerformanceLevelColor;
+    levelColor: PerformanceTargetLevelColor;
 }
 
 interface MemberPerformanceSummary {
@@ -161,14 +172,7 @@ interface MemberPerformanceSummary {
     averageReachPercent: number;
 }
 
-const DEFAULT_PERFORMANCE_ANNUAL_TARGET_AMOUNT = 50_000_000;
-const DEFAULT_PERFORMANCE_REQUIRED_AMOUNT = 3_200_000;
 const DASHBOARD_ACCOUNTS_PAGE_LIMIT = 100;
-
-function parseMoneyInput(value: string) {
-    const parsed = Number(value.replace(/[^\d.]/g, ""));
-    return Number.isFinite(parsed) ? parsed : 0;
-}
 
 function formatSignedCurrency(value: number) {
     if (value < 0) {
@@ -180,53 +184,6 @@ function formatSignedCurrency(value: number) {
 
 function formatSignedPercent(value: number) {
     return `${Math.round(value)}%`;
-}
-
-function parsePerformanceTargetFromNotes(notes?: string | null) {
-    if (!notes) {
-        return 0;
-    }
-
-    const match = notes.match(/(?:annual_target|performance_target|target)\s*[:=]\s*([0-9,.]+)/i);
-    if (!match?.[1]) {
-        return 0;
-    }
-
-    return parseMoneyInput(match[1]);
-}
-
-function resolveMemberAnnualTarget(member: Member, fallbackAnnualTarget: number) {
-    const notesTarget = parsePerformanceTargetFromNotes(member.notes);
-    if (notesTarget > 0) {
-        return notesTarget;
-    }
-
-    const memberCommitment = Number(member.monthly_savings_commitment || 0);
-    if (memberCommitment > 0) {
-        return memberCommitment;
-    }
-
-    return fallbackAnnualTarget;
-}
-
-function resolvePerformanceLevel(reachPercent: number, actualAmount: number): { label: string; color: PerformanceLevelColor } {
-    if (reachPercent >= 100) {
-        return { label: "Target met", color: "success" };
-    }
-
-    if (reachPercent >= 60) {
-        return { label: "On track", color: "info" };
-    }
-
-    if (reachPercent >= 40) {
-        return { label: "Building", color: "warning" };
-    }
-
-    if (actualAmount > 0) {
-        return { label: "Needs top-up", color: "error" };
-    }
-
-    return { label: "No activity", color: "default" };
 }
 
 async function loadDashboardMemberAccounts(tenantId: string) {
@@ -484,6 +441,7 @@ function BranchManagerTopCard({
             inView
             sx={{
                 height: "100%",
+                minHeight: 172,
                 borderColor: alpha(toneMap.main, featured ? 0.28 : 0.18),
                 background: featured
                     ? `linear-gradient(135deg, ${alpha(toneMap.main, 0.08)}, ${theme.palette.background.paper})`
@@ -491,21 +449,16 @@ function BranchManagerTopCard({
                 boxShadow: featured ? `0 16px 34px ${alpha(toneMap.main, 0.08)}` : "none"
             }}
         >
-            <CardContent sx={{ height: "100%", p: featured ? 3 : 2.5 }}>
-                <Stack spacing={featured ? 2.25 : 1.75} sx={{ height: "100%" }}>
-                    <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
-                        <Stack spacing={0.75}>
-                            <Typography variant="overline" color="text.secondary">
-                                {label}
-                            </Typography>
-                            <Typography variant={featured ? "h4" : "h5"} sx={{ lineHeight: 1 }}>
-                                {value}
-                            </Typography>
-                        </Stack>
+            <CardContent sx={{ height: "100%", p: 2, display: "flex", flexDirection: "column" }}>
+                <Stack spacing={1.1} sx={{ height: "100%", minWidth: 0 }}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
+                        <Typography variant="overline" color="text.secondary" sx={{ lineHeight: 1.25 }}>
+                            {label}
+                        </Typography>
                         <Box
                             sx={{
-                                width: featured ? 46 : 40,
-                                height: featured ? 46 : 40,
+                                width: 36,
+                                height: 36,
                                 borderRadius: 2,
                                 bgcolor: toneMap.soft,
                                 color: toneMap.main,
@@ -519,11 +472,34 @@ function BranchManagerTopCard({
                         </Box>
                     </Stack>
 
-                    <Typography variant="body2" color="text.secondary" sx={{ minHeight: featured ? 44 : 40 }}>
+                    <Typography
+                        variant="h5"
+                        sx={{
+                            lineHeight: 1.1,
+                            fontSize: featured ? "1.75rem" : "1.6rem",
+                            overflowWrap: "anywhere",
+                            wordBreak: "normal"
+                        }}
+                    >
+                        {value}
+                    </Typography>
+
+                    <Typography
+                        variant="body2"
+                        color="text.secondary"
+                        sx={{
+                            flexGrow: 1,
+                            minHeight: 38,
+                            display: "-webkit-box",
+                            WebkitBoxOrient: "vertical",
+                            WebkitLineClamp: 2,
+                            overflow: "hidden"
+                        }}
+                    >
                         {helper}
                     </Typography>
 
-                    <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1.5}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1.5} sx={{ mt: "auto" }}>
                         <Chip
                             label={status}
                             size="small"
@@ -997,9 +973,13 @@ export function DashboardPage() {
         schedules: [],
         loanApplications: [],
         memberApplications: [],
-        staffUsers: []
+        staffUsers: [],
+        revenueSummary: null,
+        manualDividendBatches: [],
+        dailyCashSummary: []
     });
     const [financialYearSettings, setFinancialYearSettings] = useState<SaccoFinancialYearSettings>(DEFAULT_SACCO_FINANCIAL_YEAR_SETTINGS);
+    const [performanceTargetSettings, setPerformanceTargetSettings] = useState<SaccoPerformanceTargetSettings>(DEFAULT_SACCO_PERFORMANCE_TARGET_SETTINGS);
     const [platformState, setPlatformState] = useState<PlatformState>({
         tenants: [],
         branches: [],
@@ -1012,18 +992,22 @@ export function DashboardPage() {
     const [loading, setLoading] = useState(true);
     const [supplementalLoading, setSupplementalLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const branchScopeKey = branchIds.join("|");
 
     useEffect(() => {
         let isActive = true;
 
-        const loadSupplementalData = async (role: string, tenantId: string) => {
+        const loadSupplementalData = async (role: string, tenantId: string, period: FinancialYearPeriod) => {
             if (!["branch_manager", "loan_officer"].includes(role)) {
                 if (isActive) {
                     setState((current) => ({
                         ...current,
                         loanApplications: [],
                         memberApplications: [],
-                        staffUsers: []
+                        staffUsers: [],
+                        revenueSummary: null,
+                        manualDividendBatches: [],
+                        dailyCashSummary: []
                     }));
                 }
                 return;
@@ -1034,6 +1018,9 @@ export function DashboardPage() {
             }
 
             try {
+                const today = new Date().toISOString().slice(0, 10);
+                const singleBranchId = branchIds.length === 1 ? branchIds[0] : undefined;
+
                 if (role === "loan_officer") {
                     const [loanApplicationsResponse] = await Promise.all([
                         api.get<LoanApplicationsResponse>(endpoints.loanApplications.list(), {
@@ -1046,7 +1033,10 @@ export function DashboardPage() {
                             ...current,
                             loanApplications: loanApplicationsResponse.data.data || [],
                             memberApplications: [],
-                            staffUsers: []
+                            staffUsers: [],
+                            revenueSummary: null,
+                            manualDividendBatches: [],
+                            dailyCashSummary: []
                         }));
                     }
                     return;
@@ -1061,6 +1051,23 @@ export function DashboardPage() {
                     }),
                     api.get<UsersListResponse>(endpoints.users.list(), {
                         params: { tenant_id: tenantId, page: 1, limit: 50 }
+                    }),
+                    api.get<ChargeRevenueSummaryResponse>(endpoints.reports.chargeRevenueSummary(), {
+                        params: {
+                            tenant_id: tenantId,
+                            branch_id: singleBranchId,
+                            from_date: period.startIso,
+                            to_date: period.endIso
+                        }
+                    }),
+                    api.get<ManualDividendBatchesResponse>(endpoints.dividends.manualBatches(), {
+                        params: { tenant_id: tenantId, page: 1, limit: 20 }
+                    }),
+                    api.get<DailyCashSummaryResponse>(endpoints.cashControl.dailySummary(), {
+                        params: {
+                            date: today,
+                            branch_id: singleBranchId
+                        }
                     })
                 ]);
 
@@ -1072,7 +1079,10 @@ export function DashboardPage() {
                     ...current,
                     loanApplications: supplemental[0].status === "fulfilled" ? supplemental[0].value.data.data || [] : [],
                     memberApplications: supplemental[1].status === "fulfilled" ? supplemental[1].value.data.data || [] : [],
-                    staffUsers: supplemental[2].status === "fulfilled" ? supplemental[2].value.data.data.users || [] : []
+                    staffUsers: supplemental[2].status === "fulfilled" ? supplemental[2].value.data.data.users || [] : [],
+                    revenueSummary: supplemental[3].status === "fulfilled" ? supplemental[3].value.data.data : null,
+                    manualDividendBatches: supplemental[4].status === "fulfilled" ? supplemental[4].value.data.data || [] : [],
+                    dailyCashSummary: supplemental[5].status === "fulfilled" ? supplemental[5].value.data.data || [] : []
                 }));
             } finally {
                 if (isActive) {
@@ -1087,15 +1097,47 @@ export function DashboardPage() {
                     params: { tenant_id: tenantId }
                 });
 
+                const normalized = normalizeSaccoFinancialYearSettings(data.data);
+
                 if (!isActive) {
-                    return;
+                    return normalized;
                 }
 
-                setFinancialYearSettings(normalizeSaccoFinancialYearSettings(data.data));
+                setFinancialYearSettings(normalized);
+                return normalized;
             } catch {
+                const fallback = normalizeSaccoFinancialYearSettings({ tenant_id: tenantId });
+
                 if (isActive) {
-                    setFinancialYearSettings(normalizeSaccoFinancialYearSettings({ tenant_id: tenantId }));
+                    setFinancialYearSettings(fallback);
                 }
+
+                return fallback;
+            }
+        };
+
+        const loadPerformanceTargetSettings = async (tenantId: string) => {
+            try {
+                const { data } = await api.get<SaccoPerformanceTargetSettingsResponse>(endpoints.saccoSettings.performanceTarget(), {
+                    params: { tenant_id: tenantId }
+                });
+
+                const normalized = normalizeSaccoPerformanceTargetSettings(data.data);
+
+                if (!isActive) {
+                    return normalized;
+                }
+
+                setPerformanceTargetSettings(normalized);
+                return normalized;
+            } catch {
+                const fallback = normalizeSaccoPerformanceTargetSettings({ tenant_id: tenantId });
+
+                if (isActive) {
+                    setPerformanceTargetSettings(fallback);
+                }
+
+                return fallback;
             }
         };
 
@@ -1176,7 +1218,10 @@ export function DashboardPage() {
                         schedules: [],
                         loanApplications: [],
                         memberApplications: [],
-                        staffUsers: []
+                        staffUsers: [],
+                        revenueSummary: null,
+                        manualDividendBatches: [],
+                        dailyCashSummary: []
                     });
                     setLoading(false);
                     setSupplementalLoading(false);
@@ -1223,11 +1268,17 @@ export function DashboardPage() {
                     schedules: (schedulesResponse.data || []).filter((schedule) => ["pending", "partial", "overdue"].includes(schedule.status)),
                     loanApplications: [],
                     memberApplications: [],
-                    staffUsers: []
+                    staffUsers: [],
+                    revenueSummary: null,
+                    manualDividendBatches: [],
+                    dailyCashSummary: []
                 });
 
-                void loadFinancialYearSettings(selectedTenantId);
-                void loadSupplementalData(profile?.role || "", selectedTenantId);
+                const [normalizedFinancialYearSettings] = await Promise.all([
+                    loadFinancialYearSettings(selectedTenantId),
+                    loadPerformanceTargetSettings(selectedTenantId)
+                ]);
+                void loadSupplementalData(profile?.role || "", selectedTenantId, resolveFinancialYearPeriod(normalizedFinancialYearSettings));
             } catch (loadError) {
                 if (isActive) {
                     setError(getApiErrorMessage(loadError));
@@ -1244,7 +1295,7 @@ export function DashboardPage() {
         return () => {
             isActive = false;
         };
-    }, [isInternalOps, profile?.role, selectedTenantId]);
+    }, [branchScopeKey, isInternalOps, profile?.role, selectedTenantId]);
 
     const financialYearPeriod = useMemo(() => resolveFinancialYearPeriod(financialYearSettings), [financialYearSettings]);
 
@@ -1258,9 +1309,9 @@ export function DashboardPage() {
                 .filter((member) => member.status === "active")
                 .map((member) => member.id)
         );
-        const branchSavingsBalance = state.memberAccounts
+        const activeBranchAccounts = state.memberAccounts
             .filter((account) => {
-                if (account.status === "closed" || account.product_type !== "savings") {
+                if (account.status === "closed") {
                     return false;
                 }
 
@@ -1269,7 +1320,12 @@ export function DashboardPage() {
                 }
 
                 return !branchIds.length || branchIds.includes(account.branch_id);
-            })
+            });
+        const branchSavingsBalance = activeBranchAccounts
+            .filter((account) => account.product_type === "savings")
+            .reduce((sum, account) => sum + Number(account.available_balance || 0) + Number(account.locked_balance || 0), 0);
+        const branchSharesBalance = activeBranchAccounts
+            .filter((account) => account.product_type === "shares")
             .reduce((sum, account) => sum + Number(account.available_balance || 0) + Number(account.locked_balance || 0), 0);
         const totalDeposits = state.statements
             .filter((entry) => entry.direction === "in")
@@ -1311,6 +1367,19 @@ export function DashboardPage() {
             .reduce((sum, entry) => sum + entry.amount, 0);
         const branchNetToday = branchInflowsToday - branchOutflowsToday;
         const branchOpeningBalance = (branchDepositIntake - branchWithdrawalOutflow) - branchNetToday;
+        const todayCashRows = state.dailyCashSummary.filter((row) => !branchIds.length || branchIds.includes(row.branch_id));
+        const branchCashControlInflowToday = todayCashRows.reduce((sum, row) => sum + Number(row.inflow_total ?? row.deposits_total ?? 0), 0);
+        const branchCashControlOutflowToday = todayCashRows.reduce((sum, row) => sum + Number(row.outflow_total ?? row.withdrawals_total ?? 0), 0);
+        const branchCashControlVarianceToday = todayCashRows.reduce((sum, row) => sum + Number(row.variance_total || 0), 0);
+        const branchCashControlReceiptsToday = todayCashRows.reduce((sum, row) => sum + Number(row.receipt_count || 0), 0);
+        const branchCashControlOpenSessions = todayCashRows.reduce((sum, row) => sum + (row.has_open_session ? 1 : 0), 0);
+        const postedDividendTotal = state.manualDividendBatches
+            .filter((batch) => batch.status === "posted")
+            .reduce((sum, batch) => sum + Number(batch.total_amount || 0), 0);
+        const pendingDividendTotal = state.manualDividendBatches
+            .filter((batch) => ["draft", "submitted"].includes(batch.status))
+            .reduce((sum, batch) => sum + Number(batch.total_amount || 0), 0);
+        const revenueTotals = state.revenueSummary?.totals || null;
 
         return {
             totalMembers: state.members.length,
@@ -1325,6 +1394,8 @@ export function DashboardPage() {
             branchMembers: branchMembers.length,
             branchActiveMembers: branchMembers.filter((member) => member.status === "active").length,
             branchSavings: branchSavingsBalance,
+            branchShares: branchSharesBalance,
+            branchMemberCapital: branchSavingsBalance + branchSharesBalance,
             branchDepositIntake,
             branchWithdrawalOutflow,
             branchContributionTotal,
@@ -1337,14 +1408,26 @@ export function DashboardPage() {
             branchOutflowsToday,
             branchNetToday,
             branchOpeningBalance,
+            branchCashControlInflowToday,
+            branchCashControlOutflowToday,
+            branchCashControlNetToday: branchCashControlInflowToday - branchCashControlOutflowToday,
+            branchCashControlVarianceToday,
+            branchCashControlReceiptsToday,
+            branchCashControlOpenSessions,
+            branchCashControlRows: todayCashRows.length,
+            branchGrossRevenue: Number(revenueTotals?.total_revenue || 0),
+            branchChargeRevenue: Number(revenueTotals?.charge_revenue || 0),
+            branchLoanRevenue: Number(revenueTotals?.loan_revenue || 0),
+            branchMixedRevenue: Number(revenueTotals?.mixed_revenue || 0),
+            branchRevenuePostedLines: Number(revenueTotals?.posted_lines || 0),
+            branchDividendsPosted: postedDividendTotal,
+            branchDividendsPending: pendingDividendTotal,
+            branchDividendBatchCount: state.manualDividendBatches.length,
             branchStatements: branchYearStatements,
             branchLoans,
             branchSchedules
         };
     }, [branchIds, financialYearPeriod.endIso, financialYearPeriod.startIso, state]);
-
-    const performanceAnnualTargetAmount = DEFAULT_PERFORMANCE_ANNUAL_TARGET_AMOUNT;
-    const performanceRequiredAmount = DEFAULT_PERFORMANCE_REQUIRED_AMOUNT;
 
     const memberPerformanceRows = useMemo<MemberPerformanceRow[]>(() => {
         const branchMembers = branchIds.length
@@ -1352,7 +1435,7 @@ export function DashboardPage() {
             : state.members;
         const activeMembers = branchMembers.filter((member) => member.status === "active");
         const activeMemberIds = new Set(activeMembers.map((member) => member.id));
-        const accountBalances = new Map<string, { savingsBalance: number; sharesBalance: number }>();
+        const accountsByMember = new Map<string, MemberAccount[]>();
 
         state.memberAccounts.forEach((account) => {
             if (!activeMemberIds.has(account.member_id) || account.status === "closed") {
@@ -1363,53 +1446,40 @@ export function DashboardPage() {
                 return;
             }
 
-            const currentBalance = accountBalances.get(account.member_id) || { savingsBalance: 0, sharesBalance: 0 };
-            const balance = Number(account.available_balance || 0) + Number(account.locked_balance || 0);
-
-            if (account.product_type === "savings") {
-                currentBalance.savingsBalance += balance;
-            }
-
-            if (account.product_type === "shares") {
-                currentBalance.sharesBalance += balance;
-            }
-
-            accountBalances.set(account.member_id, currentBalance);
+            const memberAccounts = accountsByMember.get(account.member_id) || [];
+            memberAccounts.push(account);
+            accountsByMember.set(account.member_id, memberAccounts);
         });
 
         return activeMembers
             .map((member) => {
-                const balances = accountBalances.get(member.id) || { savingsBalance: 0, sharesBalance: 0 };
-                const actualDetailAmount = balances.savingsBalance;
-                const actualFormAmount = balances.savingsBalance;
-                const annualTargetAmount = resolveMemberAnnualTarget(member, performanceAnnualTargetAmount);
-                const remainingAmount = actualDetailAmount - annualTargetAmount;
-                const reachPercent = annualTargetAmount > 0 ? (actualFormAmount / annualTargetAmount) * 100 : 0;
-                const remainingPercent = reachPercent - 100;
-                const matchesDetail = Math.abs(actualDetailAmount - actualFormAmount) <= 0.005;
-                const level = resolvePerformanceLevel(reachPercent, actualFormAmount);
+                const targetPosition = calculateMemberPerformanceTarget(
+                    member,
+                    accountsByMember.get(member.id) || [],
+                    performanceTargetSettings
+                );
 
                 return {
                     memberId: member.id,
                     memberName: member.full_name,
                     memberNo: member.member_no || member.id.slice(0, 8),
-                    actualDetailAmount,
-                    actualFormAmount,
-                    matchesDetail,
-                    requiredAmount: performanceRequiredAmount,
-                    annualTargetAmount,
-                    remainingAmount,
-                    reachPercent,
-                    remainingPercent,
-                    level: level.label,
-                    levelColor: level.color
+                    actualDetailAmount: targetPosition.actualDetailAmount,
+                    actualFormAmount: targetPosition.actualFormAmount,
+                    matchesDetail: targetPosition.matchesDetail,
+                    requiredAmount: targetPosition.requiredAmount,
+                    annualTargetAmount: targetPosition.annualTargetAmount,
+                    remainingAmount: targetPosition.remainingAmount,
+                    reachPercent: targetPosition.reachPercent,
+                    remainingPercent: targetPosition.remainingPercent,
+                    level: targetPosition.levelLabel,
+                    levelColor: targetPosition.levelColor
                 };
             })
             .sort((left, right) =>
                 left.memberNo.localeCompare(right.memberNo, undefined, { numeric: true, sensitivity: "base" })
                 || left.memberName.localeCompare(right.memberName)
             );
-    }, [branchIds, performanceAnnualTargetAmount, performanceRequiredAmount, state.memberAccounts, state.members]);
+    }, [branchIds, performanceTargetSettings, state.memberAccounts, state.members]);
 
     const memberPerformanceSummary = useMemo<MemberPerformanceSummary>(() => {
         const totalActualDetail = memberPerformanceRows.reduce((sum, row) => sum + row.actualDetailAmount, 0);
@@ -1468,6 +1538,24 @@ export function DashboardPage() {
     const branchAlerts = useMemo(() => {
         const alerts: BranchAlertItem[] = [];
 
+        if (memberPerformanceSummary.behindMembers > 0) {
+            alerts.push({
+                id: "branch-target-gap",
+                severity: memberPerformanceSummary.averageReachPercent >= 60 ? "info" : "warning",
+                title: "Annual target follow-up needed",
+                description: `${memberPerformanceSummary.behindMembers} active member(s) are still below their annual contribution target.`
+            });
+        }
+
+        if (metrics.branchCashControlVarianceToday !== 0) {
+            alerts.push({
+                id: "branch-cash-variance",
+                severity: "error",
+                title: "Cash control variance detected",
+                description: `Today's cash-control variance is ${formatSignedCurrency(metrics.branchCashControlVarianceToday)} and needs reconciliation.`
+            });
+        }
+
         if (metrics.branchOverdueLoans > 0) {
             alerts.push({
                 id: "branch-overdue",
@@ -1495,6 +1583,15 @@ export function DashboardPage() {
             });
         }
 
+        if (metrics.branchMixedRevenue > 0) {
+            alerts.push({
+                id: "branch-mixed-revenue",
+                severity: "warning",
+                title: "Revenue needs account cleanup",
+                description: `${formatCurrency(metrics.branchMixedRevenue)} is posted in mixed income accounts, which weakens source-level reporting.`
+            });
+        }
+
         if (!alerts.length) {
             alerts.push({
                 id: "branch-stable",
@@ -1508,7 +1605,11 @@ export function DashboardPage() {
     }, [
         branchContributionAverage,
         branchWithdrawalAverage,
+        memberPerformanceSummary.averageReachPercent,
+        memberPerformanceSummary.behindMembers,
+        metrics.branchCashControlVarianceToday,
         metrics.branchContributionTotal,
+        metrics.branchMixedRevenue,
         metrics.branchOverdueLoans,
         metrics.branchOverdueSchedules,
         metrics.branchWithdrawalOutflow
@@ -1731,7 +1832,7 @@ export function DashboardPage() {
             label: "High Ticket Review",
             count: tellerHighTicketCount,
             helper: "Transactions above TSh 250,000 to validate before end-of-day sign-off.",
-            route: "/cash-control",
+            route: "/cash",
             tone: tellerHighTicketCount > 0 ? "warning" : "success"
         },
         {
@@ -1739,7 +1840,7 @@ export function DashboardPage() {
             label: "Operational Alerts",
             count: tellerAlertCount,
             helper: "Risk and movement alerts generated from today's visible activity.",
-            route: "/cash-control",
+            route: "/cash",
             tone: tellerAlertCount > 0 ? "error" : "success"
         },
         {
@@ -1755,10 +1856,91 @@ export function DashboardPage() {
             label: "Close Readiness Checks",
             count: tellerCloseChecks,
             helper: "Outstanding checks from cash movement, high-ticket items, and alert flags.",
-            route: "/cash-control",
+            route: "/cash",
             tone: tellerCloseChecks > 0 ? "warning" : "success"
         }
     ];
+    const branchTargetReachPercent = memberPerformanceSummary.averageReachPercent;
+    const branchTargetProgressValue = Math.min(Math.max(branchTargetReachPercent, 0), 100);
+    const memberTargetWatchRows = memberPerformanceRows
+        .filter((row) => row.reachPercent < 60)
+        .sort((left, right) => left.reachPercent - right.reachPercent || right.remainingAmount - left.remainingAmount)
+        .slice(0, 8);
+    const memberTargetWatchColumns: Column<MemberPerformanceRow>[] = [
+        {
+            key: "member",
+            header: "Member",
+            render: (row) => (
+                <Stack spacing={0.25}>
+                    <Typography variant="body2" fontWeight={800}>{row.memberNo}</Typography>
+                    <Typography variant="caption" color="text.secondary">{row.memberName}</Typography>
+                </Stack>
+            )
+        },
+        {
+            key: "actual",
+            header: "Actual",
+            render: (row) => formatCurrency(row.actualFormAmount)
+        },
+        {
+            key: "target",
+            header: "Annual Target",
+            render: (row) => formatCurrency(row.annualTargetAmount)
+        },
+        {
+            key: "remaining",
+            header: "Remaining",
+            render: (row) => (
+                <Typography variant="body2" color="warning.main" fontWeight={700}>
+                    {formatSignedCurrency(row.remainingAmount)}
+                </Typography>
+            )
+        },
+        {
+            key: "reach",
+            header: `% Reach By ${financialYearPeriod.endLabel}`,
+            render: (row) => (
+                <Stack spacing={0.65} sx={{ minWidth: 130 }}>
+                    <Typography variant="caption" color="text.secondary">{row.reachPercent.toFixed(0)}%</Typography>
+                    <LinearProgress variant="determinate" value={Math.min(Math.max(row.reachPercent, 0), 100)} sx={{ height: 7, borderRadius: 999 }} />
+                </Stack>
+            )
+        }
+    ];
+    const branchCapitalMixTotal = metrics.branchSavings + metrics.branchShares;
+    const branchRevenueMixTotal = metrics.branchGrossRevenue;
+    const branchCapitalMixData = {
+        labels: branchCapitalMixTotal > 0 ? ["Savings", "Shares"] : ["No member capital posted"],
+        datasets: [{
+            data: branchCapitalMixTotal > 0 ? [metrics.branchSavings, metrics.branchShares] : [1],
+            backgroundColor: branchCapitalMixTotal > 0
+                ? [
+                    alpha(theme.palette.primary.main, 0.76),
+                    alpha(theme.palette.success.main, 0.76)
+                ]
+                : [alpha(theme.palette.text.secondary, 0.18)],
+            borderWidth: 0
+        }]
+    };
+    const branchRevenueMixData = {
+        labels: branchRevenueMixTotal > 0 ? ["Charges", "Loan income", "Other/mixed"] : ["No revenue posted"],
+        datasets: [{
+            data: branchRevenueMixTotal > 0
+                ? [
+                    metrics.branchChargeRevenue,
+                    metrics.branchLoanRevenue,
+                    Math.max(metrics.branchGrossRevenue - metrics.branchChargeRevenue - metrics.branchLoanRevenue, 0)
+                ]
+                : [1],
+            backgroundColor: branchRevenueMixTotal > 0
+                ? [
+                    alpha(theme.palette.primary.main, 0.72),
+                    alpha(theme.palette.warning.main, 0.72),
+                    alpha(theme.palette.secondary.main, 0.72)
+                ]
+                : [alpha(theme.palette.text.secondary, 0.18)]
+        }]
+    };
 
     const commonLineOptions = {
         responsive: true,
@@ -1916,6 +2098,9 @@ export function DashboardPage() {
                         { label: "Loan Portfolio", value: formatCurrency(metrics.outstandingLoans) },
                         { label: "PAR Signals", value: `${metrics.overdueLoans} overdue loans` }
                     ];
+    const branchDashboardCashInToday = metrics.branchCashControlRows ? metrics.branchCashControlInflowToday : metrics.branchInflowsToday;
+    const branchDashboardCashOutToday = metrics.branchCashControlRows ? metrics.branchCashControlOutflowToday : metrics.branchOutflowsToday;
+    const branchDashboardCashNetToday = metrics.branchCashControlRows ? metrics.branchCashControlNetToday : metrics.branchNetToday;
 
     if (loading) {
         return <DashboardLoadingState />;
@@ -2202,14 +2387,6 @@ export function DashboardPage() {
                                     </Button>
                                     <Button
                                         variant="outlined"
-                                        onClick={() => navigate("/cash-control")}
-                                        startIcon={<ReceiptLongRoundedIcon />}
-                                        sx={theme.palette.mode === "dark" ? { borderColor: alpha(dashboardAccent, 0.44), color: dashboardAccent, "&:hover": { borderColor: alpha(dashboardAccent, 0.78), bgcolor: alpha(dashboardAccent, 0.1) } } : undefined}
-                                    >
-                                        Cash Controls
-                                    </Button>
-                                    <Button
-                                        variant="outlined"
                                         onClick={() => navigate("/members")}
                                         startIcon={<BadgeRoundedIcon />}
                                         sx={theme.palette.mode === "dark" ? { borderColor: alpha(dashboardAccent, 0.44), color: dashboardAccent, "&:hover": { borderColor: alpha(dashboardAccent, 0.78), bgcolor: alpha(dashboardAccent, 0.1) } } : undefined}
@@ -2429,77 +2606,118 @@ export function DashboardPage() {
                         }}
                     >
                         <CardContent sx={{ p: { xs: 2.25, md: 2.75 } }}>
-                            <Stack spacing={2}>
-                                <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={1.5}>
-                                    <Box>
-                                        <Typography variant="overline" color="text.secondary">
-                                            Branch command center
-                                        </Typography>
-                                        <Typography variant="h5" sx={{ mt: 0.5 }}>
-                                            Daily branch control, approvals, and risk visibility
-                                        </Typography>
-                                        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75, maxWidth: 760 }}>
-                                            Monitor branch portfolio quality, supervise approval queues, and act quickly on cash, loan, and member workflow exceptions.
-                                        </Typography>
-                                    </Box>
-                                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="flex-start">
-                                        <Chip
-                                            label={`PAR ${par30Percent.toFixed(1)}%`}
-                                            color={par30Percent >= 15 ? "error" : par30Percent >= 8 ? "warning" : "success"}
-                                            variant="outlined"
-                                        />
-                                        <Chip
-                                            label={hasCashImbalance ? "Cash check required" : "Cash status healthy"}
-                                            color={hasCashImbalance ? "error" : "success"}
-                                            variant="outlined"
-                                        />
-                                        <Chip
-                                            label={`SACCO year ${financialYearPeriod.startLabel} - ${financialYearPeriod.endLabel}`}
-                                            color="primary"
-                                            variant="outlined"
-                                        />
+                            <Stack spacing={2.5}>
+                                <Stack direction={{ xs: "column", lg: "row" }} spacing={2.5} justifyContent="space-between">
+                                    <Stack spacing={1.5} sx={{ flex: 1, minWidth: 0 }}>
+                                        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                                            <Chip label={`SACCO year ${financialYearPeriod.startLabel} - ${financialYearPeriod.endLabel}`} color="primary" variant="outlined" />
+                                            <Chip label={`${metrics.branchActiveMembers} active of ${metrics.branchMembers} member(s)`} variant="outlined" />
+                                            <Chip
+                                                label={par30Percent >= 8 ? `PAR ${par30Percent.toFixed(1)}% watch` : `PAR ${par30Percent.toFixed(1)}% healthy`}
+                                                color={par30Percent >= 15 ? "error" : par30Percent >= 8 ? "warning" : "success"}
+                                                variant="outlined"
+                                            />
+                                        </Stack>
+                                        <Box>
+                                            <Typography variant="overline" color="text.secondary">
+                                                Branch manager snapshot
+                                            </Typography>
+                                            <Typography variant="h5" sx={{ mt: 0.5 }}>
+                                                {selectedTenantName || "SACCO"} operating pulse
+                                            </Typography>
+                                        </Box>
+                                        <Box>
+                                            <Stack direction="row" justifyContent="space-between" alignItems="baseline" spacing={1.5}>
+                                                <Typography variant="subtitle2">Annual contribution target</Typography>
+                                                <Typography variant="h6">{branchTargetReachPercent.toFixed(0)}%</Typography>
+                                            </Stack>
+                                            <LinearProgress
+                                                variant="determinate"
+                                                value={branchTargetProgressValue}
+                                                sx={{
+                                                    mt: 1,
+                                                    height: 10,
+                                                    borderRadius: 999,
+                                                    bgcolor: alpha(theme.palette.text.primary, 0.1),
+                                                    "& .MuiLinearProgress-bar": {
+                                                        bgcolor: branchTargetReachPercent >= 100
+                                                            ? theme.palette.success.main
+                                                            : branchTargetReachPercent >= 60
+                                                                ? theme.palette.info.main
+                                                                : theme.palette.warning.main
+                                                    }
+                                                }}
+                                            />
+                                            <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ mt: 1.25 }}>
+                                                <Chip label={`Actual ${formatCurrency(memberPerformanceSummary.totalActualForm)}`} color="success" variant="outlined" />
+                                                <Chip label={`Target ${formatCurrency(memberPerformanceSummary.totalAnnualTarget)}`} variant="outlined" />
+                                                <Chip
+                                                    label={`Remaining ${formatSignedCurrency(memberPerformanceSummary.totalRemainingAmount)}`}
+                                                    color={memberPerformanceSummary.totalRemainingAmount < 0 ? "warning" : "success"}
+                                                    variant="outlined"
+                                                />
+                                            </Stack>
+                                        </Box>
                                     </Stack>
+
+                                    <Box
+                                        sx={{
+                                            flex: { xs: "1 1 auto", lg: "0 0 360px" },
+                                            border: "1px solid",
+                                            borderColor: "divider",
+                                            borderRadius: 1.5,
+                                            p: 1.75,
+                                            bgcolor: alpha(theme.palette.background.paper, 0.72)
+                                        }}
+                                    >
+                                        <Stack spacing={1.15}>
+                                            <Stack direction="row" justifyContent="space-between" alignItems="center">
+                                                <Typography variant="subtitle2">Cash control today</Typography>
+                                                <Chip
+                                                    size="small"
+                                                    label={metrics.branchCashControlVarianceToday ? "Variance" : "Balanced"}
+                                                    color={metrics.branchCashControlVarianceToday ? "error" : "success"}
+                                                    variant="outlined"
+                                                />
+                                            </Stack>
+                                            <Stack direction="row" justifyContent="space-between">
+                                                <Typography variant="body2" color="text.secondary">Cash in</Typography>
+                                                <Typography variant="body2" fontWeight={700}>{formatCurrency(branchDashboardCashInToday)}</Typography>
+                                            </Stack>
+                                            <Stack direction="row" justifyContent="space-between">
+                                                <Typography variant="body2" color="text.secondary">Cash out</Typography>
+                                                <Typography variant="body2" fontWeight={700}>{formatCurrency(branchDashboardCashOutToday)}</Typography>
+                                            </Stack>
+                                            <Stack direction="row" justifyContent="space-between">
+                                                <Typography variant="body2" color="text.secondary">Net</Typography>
+                                                <Typography variant="body2" fontWeight={800} color={branchDashboardCashNetToday >= 0 ? "success.main" : "error.main"}>
+                                                    {formatCurrency(branchDashboardCashNetToday)}
+                                                </Typography>
+                                            </Stack>
+                                            <Divider />
+                                            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                                                <Chip size="small" label={`${metrics.branchCashControlReceiptsToday} receipt(s)`} variant="outlined" />
+                                                <Chip size="small" label={`${metrics.branchCashControlOpenSessions} open session(s)`} color={metrics.branchCashControlOpenSessions ? "warning" : "default"} variant="outlined" />
+                                            </Stack>
+                                        </Stack>
+                                    </Box>
                                 </Stack>
+
                                 <Stack direction={{ xs: "column", sm: "row" }} spacing={1} useFlexGap flexWrap="wrap">
-                                    <Button
-                                        variant="contained"
-                                        onClick={() => navigate("/loans")}
-                                        startIcon={<RequestQuoteRoundedIcon />}
-                                        sx={theme.palette.mode === "dark" ? { bgcolor: dashboardAccent, color: "#1a1a1a", "&:hover": { bgcolor: dashboardAccentStrong } } : undefined}
-                                    >
-                                        Review Loan Queue
+                                    <Button variant="contained" onClick={() => navigate("/cash-control")} startIcon={<ReceiptLongRoundedIcon />}>
+                                        Cash Control
                                     </Button>
-                                    <Button
-                                        variant="outlined"
-                                        onClick={() => navigate("/member-applications")}
-                                        startIcon={<BadgeRoundedIcon />}
-                                        sx={theme.palette.mode === "dark" ? { borderColor: alpha(dashboardAccent, 0.44), color: dashboardAccent, "&:hover": { borderColor: alpha(dashboardAccent, 0.78), bgcolor: alpha(dashboardAccent, 0.1) } } : undefined}
-                                    >
-                                        Member Approvals
+                                    <Button variant="outlined" onClick={() => navigate("/contributions")} startIcon={<PieChartRoundedIcon />}>
+                                        Contributions
                                     </Button>
-                                    <Button
-                                        variant="outlined"
-                                        onClick={() => navigate("/follow-ups")}
-                                        startIcon={<AssignmentTurnedInRoundedIcon />}
-                                        sx={theme.palette.mode === "dark" ? { borderColor: alpha(dashboardAccent, 0.44), color: dashboardAccent, "&:hover": { borderColor: alpha(dashboardAccent, 0.78), bgcolor: alpha(dashboardAccent, 0.1) } } : undefined}
-                                    >
-                                        Follow-up Tasks
+                                    <Button variant="outlined" onClick={() => navigate("/revenue")} startIcon={<PaymentsRoundedIcon />}>
+                                        Revenue
                                     </Button>
-                                    <Button
-                                        variant="outlined"
-                                        onClick={() => navigate("/cash-control")}
-                                        startIcon={<ReceiptLongRoundedIcon />}
-                                        sx={theme.palette.mode === "dark" ? { borderColor: alpha(dashboardAccent, 0.44), color: dashboardAccent, "&:hover": { borderColor: alpha(dashboardAccent, 0.78), bgcolor: alpha(dashboardAccent, 0.1) } } : undefined}
-                                    >
-                                        Cash Controls
+                                    <Button variant="outlined" onClick={() => navigate("/loans")} startIcon={<RequestQuoteRoundedIcon />}>
+                                        Loans
                                     </Button>
-                                    <Button
-                                        variant="outlined"
-                                        onClick={() => navigate("/revenue")}
-                                        startIcon={<PaymentsRoundedIcon />}
-                                        sx={theme.palette.mode === "dark" ? { borderColor: alpha(dashboardAccent, 0.44), color: dashboardAccent, "&:hover": { borderColor: alpha(dashboardAccent, 0.78), bgcolor: alpha(dashboardAccent, 0.1) } } : undefined}
-                                    >
-                                        Gross Revenue
+                                    <Button variant="outlined" onClick={() => navigate("/dividends")} startIcon={<AccountBalanceWalletRoundedIcon />}>
+                                        Dividends
                                     </Button>
                                 </Stack>
                             </Stack>
@@ -2507,42 +2725,62 @@ export function DashboardPage() {
                     </MotionCard>
 
                     <Grid container spacing={2}>
-                        <Grid size={{ xs: 12, sm: 6, xl: 3 }}>
+                        <Grid size={{ xs: 12, sm: 6, lg: 4 }}>
                             <BranchManagerTopCard
-                                label="Branch Savings"
+                                label="Savings"
                                 value={formatCurrency(metrics.branchSavings)}
-                                helper="Visible savings balances across active branch members."
-                                status="Live balance"
+                                helper="Member savings only. Shares are shown separately."
+                                status="Savings book"
                                 tone="positive"
                                 icon={<AccountBalanceWalletRoundedIcon fontSize="small" />}
                                 featured
                             />
                         </Grid>
-                        <Grid size={{ xs: 12, sm: 6, xl: 3 }}>
+                        <Grid size={{ xs: 12, sm: 6, lg: 4 }}>
                             <BranchManagerTopCard
-                                label="Loan Portfolio"
+                                label="Shares"
+                                value={formatCurrency(metrics.branchShares)}
+                                helper="Member share capital currently visible in active share accounts."
+                                status={`${formatCurrency(metrics.branchContributionTotal)} YTD`}
+                                tone="positive"
+                                icon={<PieChartRoundedIcon fontSize="small" />}
+                            />
+                        </Grid>
+                        <Grid size={{ xs: 12, sm: 6, lg: 4 }}>
+                            <BranchManagerTopCard
+                                label="Gross Revenue"
+                                value={formatCurrency(metrics.branchGrossRevenue)}
+                                helper="Posted income ledger revenue for the SACCO year."
+                                status={`${metrics.branchRevenuePostedLines} posted line(s)`}
+                                tone={metrics.branchGrossRevenue > 0 ? "positive" : "neutral"}
+                                icon={<PaymentsRoundedIcon fontSize="small" />}
+                            />
+                        </Grid>
+                        <Grid size={{ xs: 12, sm: 6, lg: 4 }}>
+                            <BranchManagerTopCard
+                                label="Loan Book"
                                 value={formatCurrency(metrics.branchOutstanding)}
-                                helper="Outstanding principal and accrued interest under branch supervision."
+                                helper="Outstanding principal under branch supervision."
                                 status={`${metrics.branchOverdueLoans} overdue loan(s)`}
                                 tone={metrics.branchOverdueLoans > 0 ? "negative" : "neutral"}
                                 icon={<RequestQuoteRoundedIcon fontSize="small" />}
                             />
                         </Grid>
-                        <Grid size={{ xs: 12, sm: 6, xl: 3 }}>
+                        <Grid size={{ xs: 12, sm: 6, lg: 4 }}>
                             <BranchManagerTopCard
-                                label="Member Operations"
-                                value={String(metrics.branchActiveMembers)}
-                                helper="Active branch members currently available for operations."
-                                status={`${pendingMemberApprovals} pending member approval(s)`}
-                                tone={pendingMemberApprovals > 0 ? "neutral" : "positive"}
-                                icon={<BadgeRoundedIcon fontSize="small" />}
+                                label="Dividends"
+                                value={formatCurrency(metrics.branchDividendsPosted)}
+                                helper="Manual Excel-style dividend batches already posted."
+                                status={`${formatCurrency(metrics.branchDividendsPending)} pending`}
+                                tone={metrics.branchDividendsPending > 0 ? "neutral" : "positive"}
+                                icon={<ReceiptLongRoundedIcon fontSize="small" />}
                             />
                         </Grid>
-                        <Grid size={{ xs: 12, sm: 6, xl: 3 }}>
+                        <Grid size={{ xs: 12, sm: 6, lg: 4 }}>
                             <BranchManagerTopCard
-                                label="Branch Sign-off Tasks"
+                                label="Action Items"
                                 value={String(signOffTasks)}
-                                helper="Combined approvals and control exceptions needing branch manager sign-off."
+                                helper="Approvals, overdue schedules, and cash exceptions that need action."
                                 status={signOffTasks > 0 ? "Action required" : "No blockers"}
                                 tone={signOffTasks > 0 ? "negative" : "positive"}
                                 icon={<RuleRoundedIcon fontSize="small" />}
@@ -2595,8 +2833,8 @@ export function DashboardPage() {
                                                     Priority checks and operational tasks to clear before close.
                                                 </Typography>
                                             </Box>
-                                            <Button size="small" variant="outlined" onClick={() => navigate("/cash-control")}>
-                                                Open controls
+                                            <Button size="small" variant="outlined" onClick={() => navigate("/cash")}>
+                                                Open cash desk
                                             </Button>
                                         </Stack>
                                         <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
@@ -2752,158 +2990,133 @@ export function DashboardPage() {
                     </>
                 ) : role === "branch_manager" ? (
                     <>
+                        <Grid size={{ xs: 12, lg: 4 }}>
+                            <ChartPanel
+                                title="Member Capital Mix"
+                                subtitle="Savings and shares are separated so balances stay financially clear."
+                                type="doughnut"
+                                data={branchCapitalMixData}
+                                height={240}
+                                options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } }}
+                            />
+                        </Grid>
+                        <Grid size={{ xs: 12, lg: 4 }}>
+                            <ChartPanel
+                                title="Revenue Mix"
+                                subtitle="Gross revenue posted to income accounts during the SACCO year."
+                                type="doughnut"
+                                data={branchRevenueMixData}
+                                height={240}
+                                options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } }}
+                            />
+                        </Grid>
+                        <Grid size={{ xs: 12, lg: 4 }}>
+                            <ChartPanel
+                                title="Loan Aging"
+                                subtitle="Overdue schedule pressure and current PAR visibility."
+                                data={{
+                                    labels: ["Current", "1-30", "31-60", "60+"],
+                                    datasets: [
+                                        {
+                                            label: "Schedules",
+                                            data: [
+                                                branchLoanAging.current,
+                                                branchLoanAging.d1_30,
+                                                branchLoanAging.d31_60,
+                                                branchLoanAging.d60Plus
+                                            ],
+                                            backgroundColor: [
+                                                alpha(theme.palette.success.main, 0.74),
+                                                alpha(theme.palette.warning.main, 0.74),
+                                                alpha(theme.palette.warning.main, 0.58),
+                                                alpha(theme.palette.error.main, 0.74)
+                                            ]
+                                        }
+                                    ]
+                                }}
+                                type="bar"
+                                height={240}
+                                options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }}
+                            />
+                        </Grid>
+                        <Grid size={{ xs: 12, lg: 7 }}>
+                            <MotionCard variant="outlined" inView sx={{ height: "100%" }}>
+                                <CardContent sx={{ height: "100%" }}>
+                                    <Stack spacing={2.25} sx={{ height: "100%" }}>
+                                        <Stack direction="row" justifyContent="space-between" alignItems="center">
+                                            <Box>
+                                                <Typography variant="h6">Action Queue</Typography>
+                                                <Typography variant="body2" color="text.secondary">
+                                                    Work that needs branch-manager movement today.
+                                                </Typography>
+                                            </Box>
+                                            <Button size="small" variant="outlined" onClick={() => navigate("/approvals")}>
+                                                Open approvals
+                                            </Button>
+                                        </Stack>
+                                        <Grid container spacing={1.25}>
+                                            {operationalQueue.map((item) => (
+                                                <Grid key={item.id} size={{ xs: 12, sm: 6 }}>
+                                                    <OperationalQueueCard item={item} onOpen={(route) => navigate(route)} />
+                                                </Grid>
+                                            ))}
+                                        </Grid>
+                                    </Stack>
+                                </CardContent>
+                            </MotionCard>
+                        </Grid>
+                        <Grid size={{ xs: 12, lg: 5 }}>
+                            <MotionCard variant="outlined" inView sx={{ height: "100%" }}>
+                                <CardContent sx={{ height: "100%" }}>
+                                    <Stack spacing={1.5} sx={{ height: "100%" }}>
+                                        <Box>
+                                            <Typography variant="h6">Risk & Exceptions</Typography>
+                                            <Typography variant="body2" color="text.secondary">
+                                                The few things that can distort the SACCO picture if ignored.
+                                            </Typography>
+                                        </Box>
+                                        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                                            <Chip
+                                                color={par30Percent >= 15 ? "error" : par30Percent >= 8 ? "warning" : "success"}
+                                                variant="outlined"
+                                                label={`PAR ${par30Percent.toFixed(1)}%`}
+                                                icon={<RuleRoundedIcon />}
+                                            />
+                                            <Chip
+                                                color={metrics.branchMixedRevenue > 0 ? "warning" : "success"}
+                                                variant="outlined"
+                                                label={`${formatCurrency(metrics.branchMixedRevenue)} mixed revenue`}
+                                            />
+                                        </Stack>
+                                        {branchAlerts.map((alert) => (
+                                            <Alert key={alert.id} severity={alert.severity} variant="outlined">
+                                                <Typography variant="subtitle2">{alert.title}</Typography>
+                                                <Typography variant="body2">{alert.description}</Typography>
+                                            </Alert>
+                                        ))}
+                                    </Stack>
+                                </CardContent>
+                            </MotionCard>
+                        </Grid>
                         <Grid size={{ xs: 12 }}>
-                            <Stack spacing={2}>
-                                <MemberPerformanceTargetPanel
-                                    rows={memberPerformanceRows}
-                                    summary={memberPerformanceSummary}
-                                    financialYearPeriod={financialYearPeriod}
+                            <Stack spacing={1}>
+                                <Box>
+                                    <Typography variant="h6">Target Watchlist</Typography>
+                                    <Typography variant="body2" color="text.secondary">
+                                        Members below 60% of their annual target by {financialYearPeriod.endLabel}.
+                                    </Typography>
+                                </Box>
+                                <DataTable
+                                    rows={memberTargetWatchRows}
+                                    columns={memberTargetWatchColumns}
+                                    emptyMessage="No member is below the watch threshold."
+                                    maxHeight={360}
+                                    stickyHeader
                                 />
-
-                                <Box
-                                    sx={{
-                                        display: "flex",
-                                        flexDirection: { xs: "column", lg: "row" },
-                                        gap: 2,
-                                        alignItems: "stretch"
-                                    }}
-                                >
-                                    <Box sx={{ flex: { xs: "1 1 100%", lg: "1.6 1 0" }, minWidth: 0 }}>
-                                        <ChartPanel
-                                            title="Loan Aging Summary"
-                                            subtitle="Current portfolio quality by overdue days and PAR percentage."
-                                            data={{
-                                                labels: ["Current", "1-30 days", "31-60 days", "60+ days"],
-                                                datasets: [
-                                                    {
-                                                        label: "Schedules",
-                                                        data: [
-                                                            branchLoanAging.current,
-                                                            branchLoanAging.d1_30,
-                                                            branchLoanAging.d31_60,
-                                                            branchLoanAging.d60Plus
-                                                        ],
-                                                        backgroundColor: [
-                                                            alpha(theme.palette.success.main, 0.74),
-                                                            alpha(theme.palette.warning.main, 0.74),
-                                                            alpha(theme.palette.warning.main, 0.58),
-                                                            alpha(theme.palette.error.main, 0.74)
-                                                        ]
-                                                    }
-                                                ]
-                                            }}
-                                            type="bar"
-                                            options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }}
-                                        />
-                                    </Box>
-                                    <Box sx={{ flex: { xs: "1 1 100%", lg: "1 1 0" }, minWidth: 0 }}>
-                                        <MotionCard variant="outlined" inView sx={{ height: "100%" }}>
-                                            <CardContent sx={{ height: "100%" }}>
-                                                <Stack spacing={2} sx={{ height: "100%" }}>
-                                                    <Box>
-                                                        <Typography variant="h6">Cash Position</Typography>
-                                                        <Typography variant="body2" color="text.secondary">
-                                                            Opening balance, today inflows/outflows, and current net cash direction.
-                                                        </Typography>
-                                                    </Box>
-                                                    <Stack spacing={1.25}>
-                                                        <Stack direction="row" justifyContent="space-between">
-                                                            <Typography variant="body2" color="text.secondary">Opening balance</Typography>
-                                                            <Typography variant="subtitle2">{formatCurrency(metrics.branchOpeningBalance)}</Typography>
-                                                        </Stack>
-                                                        <Stack direction="row" justifyContent="space-between">
-                                                            <Typography variant="body2" color="text.secondary">Inflows today</Typography>
-                                                            <Typography variant="subtitle2" color="success.main">{formatCurrency(metrics.branchInflowsToday)}</Typography>
-                                                        </Stack>
-                                                        <Stack direction="row" justifyContent="space-between">
-                                                            <Typography variant="body2" color="text.secondary">Outflows today</Typography>
-                                                            <Typography variant="subtitle2" color="error.main">{formatCurrency(metrics.branchOutflowsToday)}</Typography>
-                                                        </Stack>
-                                                        <Divider />
-                                                        <Stack direction="row" justifyContent="space-between">
-                                                            <Typography variant="subtitle2">Net change</Typography>
-                                                            <Typography variant="subtitle2" color={metrics.branchNetToday >= 0 ? "success.main" : "error.main"}>
-                                                                {formatCurrency(metrics.branchNetToday)}
-                                                            </Typography>
-                                                        </Stack>
-                                                        <Chip
-                                                            icon={<WarningAmberRoundedIcon />}
-                                                            label={metrics.branchNetToday < 0 ? "Cash imbalance requires review" : "Cash movement within tolerance"}
-                                                            color={metrics.branchNetToday < 0 ? "error" : "success"}
-                                                            variant="outlined"
-                                                        />
-                                                    </Stack>
-                                                </Stack>
-                                            </CardContent>
-                                        </MotionCard>
-                                    </Box>
-                                </Box>
-
-                                <Box
-                                    sx={{
-                                        display: "flex",
-                                        flexDirection: { xs: "column", lg: "row" },
-                                        gap: 2,
-                                        alignItems: "stretch"
-                                    }}
-                                >
-                                    <Box sx={{ flex: { xs: "1 1 100%", lg: "1.6 1 0" }, minWidth: 0 }}>
-                                        <MotionCard variant="outlined" inView sx={{ height: "100%" }}>
-                                            <CardContent sx={{ height: "100%" }}>
-                                                <Stack spacing={2.25} sx={{ height: "100%" }}>
-                                                    <Stack direction="row" justifyContent="space-between" alignItems="center">
-                                                        <Box>
-                                                            <Typography variant="h6">Operational Queue</Typography>
-                                                            <Typography variant="body2" color="text.secondary">
-                                                                Work items requiring immediate branch action.
-                                                            </Typography>
-                                                        </Box>
-                                                        <Button size="small" variant="outlined" onClick={() => navigate("/follow-ups")}>
-                                                            View all
-                                                        </Button>
-                                                    </Stack>
-                                                    <Grid container spacing={1.25}>
-                                                        {operationalQueue.map((item) => (
-                                                            <Grid key={item.id} size={{ xs: 12, sm: 6 }}>
-                                                                <OperationalQueueCard item={item} onOpen={(route) => navigate(route)} />
-                                                            </Grid>
-                                                        ))}
-                                                    </Grid>
-                                                </Stack>
-                                            </CardContent>
-                                        </MotionCard>
-                                    </Box>
-                                    <Box sx={{ flex: { xs: "1 1 100%", lg: "1 1 0" }, minWidth: 0 }}>
-                                        <MotionCard variant="outlined" inView sx={{ height: "100%" }}>
-                                            <CardContent sx={{ height: "100%" }}>
-                                                <Stack spacing={1.5} sx={{ height: "100%" }}>
-                                                    <Box>
-                                                        <Typography variant="h6">Branch Risk & Governance</Typography>
-                                                        <Typography variant="body2" color="text.secondary">
-                                                            Exception view for overdue assets, approval pressure, and operational controls.
-                                                        </Typography>
-                                                    </Box>
-                                                    <Chip
-                                                        color={par30Percent >= 15 ? "error" : par30Percent >= 8 ? "warning" : "success"}
-                                                        variant="outlined"
-                                                        label={`PAR ${par30Percent.toFixed(1)}%`}
-                                                        icon={<RuleRoundedIcon />}
-                                                        sx={{ width: "fit-content" }}
-                                                    />
-                                                    {branchAlerts.map((alert) => (
-                                                        <Alert key={alert.id} severity={alert.severity} variant="outlined">
-                                                            <Typography variant="subtitle2">{alert.title}</Typography>
-                                                            <Typography variant="body2">{alert.description}</Typography>
-                                                        </Alert>
-                                                    ))}
-                                                </Stack>
-                                            </CardContent>
-                                        </MotionCard>
-                                    </Box>
-                                </Box>
-
-                                <StaffPerformancePanel rows={staffPerformance} />
                             </Stack>
+                        </Grid>
+                        <Grid size={{ xs: 12 }}>
+                            <StaffPerformancePanel rows={staffPerformance} />
                         </Grid>
                     </>
                 ) : role === "auditor" ? (

@@ -2,11 +2,23 @@ import { MotionCard } from "../ui/motion";
 import {
     Alert,
     Box,
+    Button,
     CardContent,
     Chip,
+    FormControl,
     Grid,
-    Paper,
+    InputLabel,
+    MenuItem,
+    Select,
     Stack,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TablePagination,
+    TableRow,
+    TextField,
     Typography
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
@@ -16,17 +28,73 @@ import { useAuth } from "../auth/AuthContext";
 import { AppLoader } from "../components/AppLoader";
 import { ChartPanel } from "../components/ChartPanel";
 import { api, getApiErrorMessage } from "../lib/api";
-import {
-    endpoints,
-    type MemberAccountsResponse,
-    type MembersResponse,
-    type StatementsResponse
-} from "../lib/endpoints";
+import { endpoints } from "../lib/endpoints";
 import type { Member, MemberAccount, StatementRow } from "../types/api";
 import { formatCurrency, formatDate } from "../utils/format";
 
+const PAGE_LOAD_LIMIT = 100;
+const MAX_PAGE_LOADS = 100;
+const accountPageSizeOptions = [10, 25, 50, 100];
+const activityPageSizeOptions = [10, 25, 50, 100];
+
+type AccountStatusFilter = "all" | MemberAccount["status"];
+type ActivityTypeFilter = "all" | "deposit" | "withdrawal";
+
+interface PagedApiEnvelope<T> {
+    data: T[];
+    pagination?: {
+        page: number;
+        limit: number;
+        total: number;
+    } | null;
+}
+
 function monthKey(value: string) {
     return value.slice(0, 7);
+}
+
+function normalizeSearch(value: string) {
+    return value.trim().toLowerCase();
+}
+
+function savingsBalance(account: MemberAccount) {
+    return Number(account.available_balance || 0) + Number(account.locked_balance || 0);
+}
+
+function activityDate(value: StatementRow) {
+    return value.transaction_date?.slice(0, 10) || "";
+}
+
+function isWithdrawal(row: StatementRow) {
+    return row.transaction_type === "withdrawal" || row.transaction_type === "withdraw";
+}
+
+function isSavingsActivity(row: StatementRow) {
+    return row.transaction_type === "deposit" || isWithdrawal(row);
+}
+
+async function loadAllPages<T>(url: string, params: Record<string, string | number | undefined>) {
+    const rows: T[] = [];
+
+    for (let page = 1; page <= MAX_PAGE_LOADS; page += 1) {
+        const { data: response } = await api.get<PagedApiEnvelope<T>>(url, {
+            params: {
+                ...params,
+                page,
+                limit: PAGE_LOAD_LIMIT
+            }
+        });
+
+        const pageRows = response.data || [];
+        rows.push(...pageRows);
+
+        const total = Number(response.pagination?.total || 0);
+        if (!response.pagination || pageRows.length === 0 || (total > 0 && rows.length >= total)) {
+            break;
+        }
+    }
+
+    return rows;
 }
 
 export function SavingsPage() {
@@ -37,6 +105,16 @@ export function SavingsPage() {
     const [transactions, setTransactions] = useState<StatementRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [accountSearch, setAccountSearch] = useState("");
+    const [accountStatus, setAccountStatus] = useState<AccountStatusFilter>("all");
+    const [accountPage, setAccountPage] = useState(0);
+    const [accountRowsPerPage, setAccountRowsPerPage] = useState(25);
+    const [activitySearch, setActivitySearch] = useState("");
+    const [activityType, setActivityType] = useState<ActivityTypeFilter>("all");
+    const [activityFromDate, setActivityFromDate] = useState("");
+    const [activityToDate, setActivityToDate] = useState("");
+    const [activityPage, setActivityPage] = useState(0);
+    const [activityRowsPerPage, setActivityRowsPerPage] = useState(25);
 
     useEffect(() => {
         const loadData = async () => {
@@ -49,36 +127,41 @@ export function SavingsPage() {
             setError(null);
 
             try {
-                const [{ data: membersResponse }, statementsResponse, { data: accountsResponse }] = await Promise.all([
-                    api.get<MembersResponse>(endpoints.members.list(), {
-                        params: { tenant_id: selectedTenantId, page: 1, limit: 100 }
+                const [visibleMembers, visibleAccounts, statementRows] = await Promise.all([
+                    loadAllPages<Member>(endpoints.members.list(), {
+                        tenant_id: selectedTenantId
                     }),
-                    api.get<StatementsResponse>(endpoints.finance.statements(), {
-                        params: { tenant_id: selectedTenantId, page: 1, limit: 100 }
+                    loadAllPages<MemberAccount>(endpoints.members.accounts(), {
+                        tenant_id: selectedTenantId,
+                        product_type: "savings"
                     }),
-                    api.get<MemberAccountsResponse>(endpoints.members.accounts(), {
-                        params: {
-                            tenant_id: selectedTenantId,
-                            product_type: "savings",
-                            page: 1,
-                            limit: 100
-                        }
+                    loadAllPages<StatementRow>(endpoints.finance.statements(), {
+                        tenant_id: selectedTenantId
                     })
                 ]);
 
-                const visibleMembers = membersResponse.data || [];
                 const visibleMemberIds = new Set(visibleMembers.map((member) => member.id));
-                const visibleAccounts = (accountsResponse.data || []).filter((account) => visibleMemberIds.has(account.member_id));
-                const visibleAccountIds = new Set(visibleAccounts.map((account) => account.id));
-                const savingsRows = (statementsResponse.data.data || []).filter(
-                    (entry) =>
+                const accountRows = visibleAccounts
+                    .filter((account) => account.product_type === "savings" && visibleMemberIds.has(account.member_id))
+                    .sort((left, right) => {
+                        const leftMember = visibleMembers.find((member) => member.id === left.member_id)?.member_no || "";
+                        const rightMember = visibleMembers.find((member) => member.id === right.member_id)?.member_no || "";
+                        return leftMember.localeCompare(rightMember) || left.account_number.localeCompare(right.account_number);
+                    });
+                const visibleAccountIds = new Set(accountRows.map((account) => account.id));
+                const savingsRows = statementRows
+                    .filter((entry) =>
                         visibleMemberIds.has(entry.member_id) &&
                         visibleAccountIds.has(entry.account_id) &&
-                        ["deposit", "withdrawal"].includes(entry.transaction_type)
-                );
+                        isSavingsActivity(entry)
+                    )
+                    .sort((left, right) =>
+                        activityDate(right).localeCompare(activityDate(left)) ||
+                        (right.created_at || "").localeCompare(left.created_at || "")
+                    );
 
                 setMembers(visibleMembers);
-                setSavingsAccounts(visibleAccounts);
+                setSavingsAccounts(accountRows);
                 setTransactions(savingsRows);
             } catch (loadError) {
                 setError(getApiErrorMessage(loadError));
@@ -90,9 +173,57 @@ export function SavingsPage() {
         void loadData();
     }, [selectedTenantId]);
 
+    useEffect(() => {
+        setAccountPage(0);
+    }, [accountSearch, accountStatus, accountRowsPerPage]);
+
+    useEffect(() => {
+        setActivityPage(0);
+    }, [activitySearch, activityType, activityFromDate, activityToDate, activityRowsPerPage]);
+
+    const memberById = useMemo(
+        () => new Map(members.map((member) => [member.id, member])),
+        [members]
+    );
+
+    const activityStatsByAccountId = useMemo(() => {
+        const stats = new Map<string, {
+            deposits: number;
+            withdrawals: number;
+            count: number;
+            lastDate: string | null;
+        }>();
+
+        transactions.forEach((entry) => {
+            const current = stats.get(entry.account_id) || {
+                deposits: 0,
+                withdrawals: 0,
+                count: 0,
+                lastDate: null
+            };
+
+            if (entry.transaction_type === "deposit") {
+                current.deposits += Number(entry.amount || 0);
+            }
+
+            if (isWithdrawal(entry)) {
+                current.withdrawals += Number(entry.amount || 0);
+            }
+
+            current.count += 1;
+            if (!current.lastDate || activityDate(entry) > current.lastDate) {
+                current.lastDate = activityDate(entry);
+            }
+
+            stats.set(entry.account_id, current);
+        });
+
+        return stats;
+    }, [transactions]);
+
     const metrics = useMemo(() => {
         const depositRows = transactions.filter((entry) => entry.transaction_type === "deposit");
-        const withdrawalRows = transactions.filter((entry) => entry.transaction_type === "withdrawal");
+        const withdrawalRows = transactions.filter(isWithdrawal);
         const activeSaverIds = new Set(depositRows.map((entry) => entry.member_id));
         const monthSeries = new Map<string, { deposits: number; withdrawals: number }>();
 
@@ -101,9 +232,11 @@ export function SavingsPage() {
             const point = monthSeries.get(key) || { deposits: 0, withdrawals: 0 };
 
             if (entry.transaction_type === "deposit") {
-                point.deposits += entry.amount;
-            } else {
-                point.withdrawals += entry.amount;
+                point.deposits += Number(entry.amount || 0);
+            }
+
+            if (isWithdrawal(entry)) {
+                point.withdrawals += Number(entry.amount || 0);
             }
 
             monthSeries.set(key, point);
@@ -114,7 +247,9 @@ export function SavingsPage() {
             .slice(-6);
 
         return {
-            totalSavingsBalance: savingsAccounts.reduce((sum, account) => sum + Number(account.available_balance || 0), 0),
+            totalSavingsBalance: savingsAccounts.reduce((sum, account) => sum + savingsBalance(account), 0),
+            totalAvailable: savingsAccounts.reduce((sum, account) => sum + Number(account.available_balance || 0), 0),
+            totalLocked: savingsAccounts.reduce((sum, account) => sum + Number(account.locked_balance || 0), 0),
             totalDeposits: depositRows.reduce((sum, entry) => sum + Number(entry.amount || 0), 0),
             totalWithdrawals: withdrawalRows.reduce((sum, entry) => sum + Number(entry.amount || 0), 0),
             activeSavers: activeSaverIds.size,
@@ -122,26 +257,80 @@ export function SavingsPage() {
         };
     }, [savingsAccounts, transactions]);
 
-    const memberNameById = useMemo(
-        () => new Map(members.map((member) => [member.id, member.full_name || "Unknown member"])),
-        [members]
+    const filteredAccounts = useMemo(() => {
+        const search = normalizeSearch(accountSearch);
+
+        return savingsAccounts.filter((account) => {
+            const member = memberById.get(account.member_id);
+            const searchable = [
+                account.account_number,
+                account.account_name,
+                member?.member_no,
+                member?.full_name,
+                member?.phone
+            ].filter(Boolean).join(" ").toLowerCase();
+            const matchesSearch = !search || searchable.includes(search);
+            const matchesStatus = accountStatus === "all" || account.status === accountStatus;
+
+            return matchesSearch && matchesStatus;
+        });
+    }, [accountSearch, accountStatus, memberById, savingsAccounts]);
+
+    const paginatedAccounts = useMemo(
+        () => filteredAccounts.slice(accountPage * accountRowsPerPage, accountPage * accountRowsPerPage + accountRowsPerPage),
+        [accountPage, accountRowsPerPage, filteredAccounts]
     );
 
-    const alternateRowSx = (index: number) => ({
-        p: 1.6,
-        borderRadius: 2,
-        border: `1px solid ${alpha(theme.palette.divider, 0.9)}`,
-        bgcolor:
-            index % 2 === 0
-                ? alpha(theme.palette.primary.main, theme.palette.mode === "dark" ? 0.12 : 0.05)
-                : alpha(theme.palette.background.paper, theme.palette.mode === "dark" ? 0.86 : 0.92)
-    });
-    const listHeaderSx = {
-        px: 1.6,
-        py: 1.1,
-        borderRadius: 2,
-        border: `1px solid ${alpha(theme.palette.divider, 0.9)}`,
-        bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === "dark" ? 0.2 : 0.09)
+    const filteredTransactions = useMemo(() => {
+        const search = normalizeSearch(activitySearch);
+
+        return transactions.filter((entry) => {
+            const member = memberById.get(entry.member_id);
+            const date = activityDate(entry);
+            const searchable = [
+                entry.member_name,
+                member?.member_no,
+                entry.account_number,
+                entry.reference,
+                entry.transaction_type
+            ].filter(Boolean).join(" ").toLowerCase();
+            const matchesSearch = !search || searchable.includes(search);
+            const matchesType = activityType === "all" || (activityType === "withdrawal" ? isWithdrawal(entry) : entry.transaction_type === activityType);
+            const matchesFromDate = !activityFromDate || date >= activityFromDate;
+            const matchesToDate = !activityToDate || date <= activityToDate;
+
+            return matchesSearch && matchesType && matchesFromDate && matchesToDate;
+        });
+    }, [activityFromDate, activitySearch, activityToDate, activityType, memberById, transactions]);
+
+    const paginatedTransactions = useMemo(
+        () => filteredTransactions.slice(activityPage * activityRowsPerPage, activityPage * activityRowsPerPage + activityRowsPerPage),
+        [activityPage, activityRowsPerPage, filteredTransactions]
+    );
+
+    const filteredActivityAmount = useMemo(
+        () => filteredTransactions.reduce((sum, entry) => sum + Number(entry.amount || 0), 0),
+        [filteredTransactions]
+    );
+
+    const tableHeaderSx = {
+        textTransform: "uppercase",
+        letterSpacing: "0.08em",
+        fontSize: 11,
+        color: theme.palette.primary.main,
+        bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === "dark" ? 0.14 : 0.08)
+    };
+
+    const clearAccountFilters = () => {
+        setAccountSearch("");
+        setAccountStatus("all");
+    };
+
+    const clearActivityFilters = () => {
+        setActivitySearch("");
+        setActivityType("all");
+        setActivityFromDate("");
+        setActivityToDate("");
     };
 
     return (
@@ -153,7 +342,7 @@ export function SavingsPage() {
                             <Typography variant="overline" color="text.secondary">Savings Balance</Typography>
                             <Typography variant="h4" sx={{ mt: 1 }}>{formatCurrency(metrics.totalSavingsBalance)}</Typography>
                             <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                                Available balances across savings accounts visible to {profile?.role === "branch_manager" ? "this branch" : "this workspace"}.
+                                Available plus locked balances across savings accounts visible to {profile?.role === "branch_manager" ? "this branch" : "this workspace"}.
                             </Typography>
                         </CardContent>
                     </MotionCard>
@@ -164,7 +353,7 @@ export function SavingsPage() {
                             <Typography variant="overline" color="text.secondary">Deposits Posted</Typography>
                             <Typography variant="h4" sx={{ mt: 1 }}>{formatCurrency(metrics.totalDeposits)}</Typography>
                             <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                                Member cash deposited into savings accounts during the visible period.
+                                Member cash deposited into savings accounts in the loaded ledger history.
                             </Typography>
                         </CardContent>
                     </MotionCard>
@@ -175,7 +364,7 @@ export function SavingsPage() {
                             <Typography variant="overline" color="text.secondary">Withdrawals Paid</Typography>
                             <Typography variant="h4" sx={{ mt: 1 }}>{formatCurrency(metrics.totalWithdrawals)}</Typography>
                             <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                                Cash released from savings accounts during the visible period.
+                                Cash released from savings accounts in the loaded ledger history.
                             </Typography>
                         </CardContent>
                     </MotionCard>
@@ -186,7 +375,7 @@ export function SavingsPage() {
                             <Typography variant="overline" color="text.secondary">Active Savers</Typography>
                             <Typography variant="h4" sx={{ mt: 1 }}>{metrics.activeSavers}</Typography>
                             <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                                Members with savings deposits on record.
+                                Members with savings deposits in the visible history.
                             </Typography>
                         </CardContent>
                     </MotionCard>
@@ -228,13 +417,13 @@ export function SavingsPage() {
                             <Typography variant="h6" gutterBottom>Savings Oversight</Typography>
                             <Stack spacing={1.5}>
                                 <Alert severity="info" variant="outlined">
-                                    Branch managers can monitor savings deposits and withdrawals per branch without teller posting rights.
+                                    This page is read-only and loads all visible account and statement pages before calculating totals.
                                 </Alert>
                                 <Alert severity="success" variant="outlined">
-                                    Available balances stay aligned with ledger controls; use this page to verify member cash flows before posting.
+                                    Savings balances include locked amounts so totals match the dashboard and member portal.
                                 </Alert>
                                 <Alert severity="warning" variant="outlined">
-                                    This view is read-only; teller and finance teams continue to post savings movements through cash control workflows.
+                                    Teller and finance teams still post deposits and withdrawals through cash-control workflows.
                                 </Alert>
                             </Stack>
                         </CardContent>
@@ -242,178 +431,303 @@ export function SavingsPage() {
                 </Grid>
             </Grid>
 
-            <Grid container spacing={2}>
-                <Grid size={{ xs: 12 }}>
-                    <MotionCard variant="outlined" sx={{ height: "100%" }}>
-                        <CardContent sx={{ display: "grid", gap: 2 }}>
-                            <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
-                                <Typography variant="h6">Savings Accounts</Typography>
-                                <Chip label={`${savingsAccounts.length} accounts`} size="small" color="primary" variant="outlined" />
-                            </Stack>
-                            {loading ? (
-                                <AppLoader fullscreen={false} minHeight={240} message="Loading savings accounts..." />
-                            ) : !savingsAccounts.length ? (
-                                <Alert severity="info" variant="outlined">
-                                    No savings accounts available.
-                                </Alert>
-                            ) : (
-                                <Box sx={{ maxHeight: 560, overflowY: "auto", pr: 0.5 }}>
-                                    <Stack spacing={1.2}>
-                                        <Paper elevation={0} sx={listHeaderSx}>
-                                            <Grid container spacing={1.5} alignItems="center">
-                                                <Grid size={{ xs: 12, md: 3 }}>
-                                                    <Typography variant="caption" sx={{ fontWeight: 800, color: theme.palette.primary.main, letterSpacing: 0.5 }}>
-                                                        SAVINGS ACCOUNT
-                                                    </Typography>
-                                                </Grid>
-                                                <Grid size={{ xs: 12, md: 4 }}>
-                                                    <Typography variant="caption" sx={{ fontWeight: 800, color: theme.palette.primary.main, letterSpacing: 0.5 }}>
-                                                        MEMBER
-                                                    </Typography>
-                                                </Grid>
-                                                <Grid size={{ xs: 6, md: 2 }}>
-                                                    <Typography variant="caption" sx={{ fontWeight: 800, color: theme.palette.primary.main, letterSpacing: 0.5 }}>
-                                                        STATUS
-                                                    </Typography>
-                                                </Grid>
-                                                <Grid size={{ xs: 6, md: 3 }}>
-                                                    <Typography variant="caption" sx={{ fontWeight: 800, color: theme.palette.primary.main, letterSpacing: 0.5 }}>
-                                                        AVAILABLE BALANCE
-                                                    </Typography>
-                                                </Grid>
-                                            </Grid>
-                                        </Paper>
-                                        {savingsAccounts.map((account, index) => (
-                                            <Paper key={account.id} elevation={0} sx={alternateRowSx(index)}>
-                                                <Grid container spacing={1.5} alignItems="center">
-                                                    <Grid size={{ xs: 12, md: 3 }}>
-                                                        <Typography variant="subtitle1" sx={{ fontWeight: 800 }} noWrap>
-                                                            {account.account_number}
-                                                        </Typography>
-                                                    </Grid>
-                                                    <Grid size={{ xs: 12, md: 4 }}>
-                                                        <Typography variant="body1" sx={{ fontWeight: 700 }} noWrap>
-                                                            {memberNameById.get(account.member_id) || "Unknown member"}
-                                                        </Typography>
-                                                    </Grid>
-                                                    <Grid size={{ xs: 6, md: 2 }}>
+            <MotionCard variant="outlined">
+                <CardContent sx={{ display: "grid", gap: 2 }}>
+                    <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" alignItems={{ xs: "stretch", md: "center" }} spacing={1.5}>
+                        <Box>
+                            <Typography variant="h6">Savings Accounts</Typography>
+                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+                                Numbered member savings accounts with available, locked, and total balances.
+                            </Typography>
+                        </Box>
+                        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                            <Chip label={`${filteredAccounts.length} of ${savingsAccounts.length} accounts`} size="small" color="primary" variant="outlined" />
+                            <Chip label={`Total ${formatCurrency(filteredAccounts.reduce((sum, account) => sum + savingsBalance(account), 0))}`} size="small" variant="outlined" />
+                            <Chip label={`Locked ${formatCurrency(metrics.totalLocked)}`} size="small" variant="outlined" />
+                        </Stack>
+                    </Stack>
+
+                    <Grid container spacing={1.5} alignItems="center">
+                        <Grid size={{ xs: 12, md: 7 }}>
+                            <TextField
+                                label="Search savings accounts"
+                                placeholder="Member name, member number, phone, or account number"
+                                value={accountSearch}
+                                onChange={(event) => setAccountSearch(event.target.value)}
+                                fullWidth
+                            />
+                        </Grid>
+                        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                            <FormControl fullWidth>
+                                <InputLabel>Status</InputLabel>
+                                <Select
+                                    label="Status"
+                                    value={accountStatus}
+                                    onChange={(event) => setAccountStatus(event.target.value as AccountStatusFilter)}
+                                >
+                                    <MenuItem value="all">All statuses</MenuItem>
+                                    <MenuItem value="active">Active</MenuItem>
+                                    <MenuItem value="dormant">Dormant</MenuItem>
+                                    <MenuItem value="closed">Closed</MenuItem>
+                                </Select>
+                            </FormControl>
+                        </Grid>
+                        <Grid size={{ xs: 12, sm: 6, md: 2 }}>
+                            <Button variant="outlined" fullWidth onClick={clearAccountFilters}>
+                                Clear
+                            </Button>
+                        </Grid>
+                    </Grid>
+
+                    {loading ? (
+                        <AppLoader fullscreen={false} minHeight={240} message="Loading savings accounts..." />
+                    ) : !filteredAccounts.length ? (
+                        <Alert severity="info" variant="outlined">
+                            No savings accounts match the current filters.
+                        </Alert>
+                    ) : (
+                        <Box>
+                            <TableContainer sx={{ maxHeight: 560, overflowX: "auto" }}>
+                                <Table size="small" stickyHeader sx={{ minWidth: 1160 }}>
+                                    <TableHead>
+                                        <TableRow>
+                                            <TableCell sx={tableHeaderSx}>No.</TableCell>
+                                            <TableCell sx={tableHeaderSx}>Member</TableCell>
+                                            <TableCell sx={tableHeaderSx}>Account</TableCell>
+                                            <TableCell sx={tableHeaderSx}>Status</TableCell>
+                                            <TableCell sx={tableHeaderSx} align="right">Savings Balance</TableCell>
+                                            <TableCell sx={tableHeaderSx} align="right">Available</TableCell>
+                                            <TableCell sx={tableHeaderSx} align="right">Locked</TableCell>
+                                            <TableCell sx={tableHeaderSx} align="right">Deposits</TableCell>
+                                            <TableCell sx={tableHeaderSx} align="right">Withdrawals</TableCell>
+                                            <TableCell sx={tableHeaderSx}>Last Activity</TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {paginatedAccounts.map((account, index) => {
+                                            const member = memberById.get(account.member_id);
+                                            const stats = activityStatsByAccountId.get(account.id);
+                                            const rowNumber = accountPage * accountRowsPerPage + index + 1;
+
+                                            return (
+                                                <TableRow key={account.id} hover>
+                                                    <TableCell>{rowNumber}</TableCell>
+                                                    <TableCell>
+                                                        <Stack spacing={0.25}>
+                                                            <Typography variant="body2" fontWeight={700}>
+                                                                {member?.full_name || "Unknown member"}
+                                                            </Typography>
+                                                            <Typography variant="caption" color="text.secondary">
+                                                                {member?.member_no || "No member number"}
+                                                            </Typography>
+                                                        </Stack>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Stack spacing={0.25}>
+                                                            <Typography variant="body2" fontWeight={700}>
+                                                                {account.account_number}
+                                                            </Typography>
+                                                            <Typography variant="caption" color="text.secondary">
+                                                                {account.account_name || "Savings"}
+                                                            </Typography>
+                                                        </Stack>
+                                                    </TableCell>
+                                                    <TableCell>
                                                         <Chip
                                                             size="small"
                                                             label={account.status}
                                                             color={account.status === "active" ? "success" : "default"}
                                                             variant="outlined"
                                                         />
-                                                    </Grid>
-                                                    <Grid size={{ xs: 6, md: 3 }}>
-                                                        <Typography variant="subtitle1" sx={{ fontWeight: 900, color: theme.palette.primary.main }}>
-                                                            {formatCurrency(account.available_balance)}
+                                                    </TableCell>
+                                                    <TableCell align="right">
+                                                        <Typography variant="body2" fontWeight={800}>
+                                                            {formatCurrency(savingsBalance(account))}
                                                         </Typography>
-                                                    </Grid>
-                                                </Grid>
-                                            </Paper>
-                                        ))}
-                                    </Stack>
-                                </Box>
-                            )}
-                        </CardContent>
-                    </MotionCard>
-                </Grid>
-                <Grid size={{ xs: 12 }}>
-                    <MotionCard variant="outlined" sx={{ height: "100%" }}>
-                        <CardContent sx={{ display: "grid", gap: 2 }}>
-                            <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
-                                <Typography variant="h6">Savings Activity</Typography>
-                                <Chip label={`${transactions.length} entries`} size="small" color="primary" variant="outlined" />
-                            </Stack>
-                            {loading ? (
-                                <AppLoader fullscreen={false} minHeight={240} message="Loading savings activity..." />
-                            ) : !transactions.length ? (
-                                <Alert severity="info" variant="outlined">
-                                    No savings activity available.
-                                </Alert>
-                            ) : (
-                                <Box sx={{ maxHeight: 560, overflowY: "auto", pr: 0.5 }}>
-                                    <Stack spacing={1.2}>
-                                        <Paper elevation={0} sx={listHeaderSx}>
-                                            <Grid container spacing={1.5} alignItems="center">
-                                                <Grid size={{ xs: 12, md: 2 }}>
-                                                    <Typography variant="caption" sx={{ fontWeight: 800, color: theme.palette.primary.main, letterSpacing: 0.5 }}>
-                                                        DATE
-                                                    </Typography>
-                                                </Grid>
-                                                <Grid size={{ xs: 12, md: 3 }}>
-                                                    <Typography variant="caption" sx={{ fontWeight: 800, color: theme.palette.primary.main, letterSpacing: 0.5 }}>
-                                                        MEMBER
-                                                    </Typography>
-                                                </Grid>
-                                                <Grid size={{ xs: 6, md: 2 }}>
-                                                    <Typography variant="caption" sx={{ fontWeight: 800, color: theme.palette.primary.main, letterSpacing: 0.5 }}>
-                                                        TYPE
-                                                    </Typography>
-                                                </Grid>
-                                                <Grid size={{ xs: 6, md: 2 }}>
-                                                    <Typography variant="caption" sx={{ fontWeight: 800, color: theme.palette.primary.main, letterSpacing: 0.5 }}>
-                                                        AMOUNT
-                                                    </Typography>
-                                                </Grid>
-                                                <Grid size={{ xs: 12, md: 2 }}>
-                                                    <Typography variant="caption" sx={{ fontWeight: 800, color: theme.palette.primary.main, letterSpacing: 0.5 }}>
-                                                        BALANCE
-                                                    </Typography>
-                                                </Grid>
-                                                <Grid size={{ xs: 12, md: 1 }}>
-                                                    <Typography variant="caption" sx={{ fontWeight: 800, color: theme.palette.primary.main, letterSpacing: 0.5 }}>
-                                                        REF
-                                                    </Typography>
-                                                </Grid>
-                                            </Grid>
-                                        </Paper>
-                                        {transactions.map((row, index) => (
-                                            <Paper key={`${row.transaction_id}-${index}`} elevation={0} sx={alternateRowSx(index)}>
-                                                <Grid container spacing={1.5} alignItems="center">
-                                                    <Grid size={{ xs: 12, md: 2 }}>
-                                                        <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                                                    </TableCell>
+                                                    <TableCell align="right">{formatCurrency(account.available_balance)}</TableCell>
+                                                    <TableCell align="right">{formatCurrency(account.locked_balance)}</TableCell>
+                                                    <TableCell align="right">{formatCurrency(stats?.deposits || 0)}</TableCell>
+                                                    <TableCell align="right">{formatCurrency(stats?.withdrawals || 0)}</TableCell>
+                                                    <TableCell>{stats?.lastDate ? formatDate(stats.lastDate) : "N/A"}</TableCell>
+                                                </TableRow>
+                                            );
+                                        })}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+                            <TablePagination
+                                component="div"
+                                count={filteredAccounts.length}
+                                page={accountPage}
+                                rowsPerPage={accountRowsPerPage}
+                                rowsPerPageOptions={accountPageSizeOptions}
+                                onPageChange={(_, nextPage) => setAccountPage(nextPage)}
+                                onRowsPerPageChange={(event) => {
+                                    setAccountRowsPerPage(Number(event.target.value));
+                                    setAccountPage(0);
+                                }}
+                            />
+                        </Box>
+                    )}
+                </CardContent>
+            </MotionCard>
+
+            <MotionCard variant="outlined">
+                <CardContent sx={{ display: "grid", gap: 2 }}>
+                    <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" alignItems={{ xs: "stretch", md: "center" }} spacing={1.5}>
+                        <Box>
+                            <Typography variant="h6">Savings Activity</Typography>
+                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+                                Filtered savings-ledger entries for deposits and withdrawals.
+                            </Typography>
+                        </Box>
+                        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                            <Chip label={`${filteredTransactions.length} of ${transactions.length} entries`} size="small" color="primary" variant="outlined" />
+                            <Chip label={formatCurrency(filteredActivityAmount)} size="small" variant="outlined" />
+                            <Chip label={`Available ${formatCurrency(metrics.totalAvailable)}`} size="small" variant="outlined" />
+                        </Stack>
+                    </Stack>
+
+                    <Grid container spacing={1.5} alignItems="center">
+                        <Grid size={{ xs: 12, md: 4 }}>
+                            <TextField
+                                label="Search activity"
+                                placeholder="Member, member number, account, reference"
+                                value={activitySearch}
+                                onChange={(event) => setActivitySearch(event.target.value)}
+                                fullWidth
+                            />
+                        </Grid>
+                        <Grid size={{ xs: 12, sm: 6, md: 2 }}>
+                            <FormControl fullWidth>
+                                <InputLabel>Type</InputLabel>
+                                <Select
+                                    label="Type"
+                                    value={activityType}
+                                    onChange={(event) => setActivityType(event.target.value as ActivityTypeFilter)}
+                                >
+                                    <MenuItem value="all">All activity</MenuItem>
+                                    <MenuItem value="deposit">Deposits</MenuItem>
+                                    <MenuItem value="withdrawal">Withdrawals</MenuItem>
+                                </Select>
+                            </FormControl>
+                        </Grid>
+                        <Grid size={{ xs: 12, sm: 6, md: 2 }}>
+                            <TextField
+                                label="From"
+                                type="date"
+                                value={activityFromDate}
+                                onChange={(event) => setActivityFromDate(event.target.value)}
+                                fullWidth
+                                InputLabelProps={{ shrink: true }}
+                            />
+                        </Grid>
+                        <Grid size={{ xs: 12, sm: 6, md: 2 }}>
+                            <TextField
+                                label="To"
+                                type="date"
+                                value={activityToDate}
+                                onChange={(event) => setActivityToDate(event.target.value)}
+                                fullWidth
+                                InputLabelProps={{ shrink: true }}
+                            />
+                        </Grid>
+                        <Grid size={{ xs: 12, sm: 6, md: 2 }}>
+                            <Button variant="outlined" fullWidth onClick={clearActivityFilters}>
+                                Clear
+                            </Button>
+                        </Grid>
+                    </Grid>
+
+                    {loading ? (
+                        <AppLoader fullscreen={false} minHeight={240} message="Loading savings activity..." />
+                    ) : !filteredTransactions.length ? (
+                        <Alert severity="info" variant="outlined">
+                            No savings activity matches the current filters.
+                        </Alert>
+                    ) : (
+                        <Box>
+                            <TableContainer sx={{ maxHeight: 600, overflowX: "auto" }}>
+                                <Table size="small" stickyHeader sx={{ minWidth: 1120 }}>
+                                    <TableHead>
+                                        <TableRow>
+                                            <TableCell sx={tableHeaderSx}>No.</TableCell>
+                                            <TableCell sx={tableHeaderSx}>Date</TableCell>
+                                            <TableCell sx={tableHeaderSx}>Member</TableCell>
+                                            <TableCell sx={tableHeaderSx}>Account</TableCell>
+                                            <TableCell sx={tableHeaderSx}>Type</TableCell>
+                                            <TableCell sx={tableHeaderSx} align="right">Amount</TableCell>
+                                            <TableCell sx={tableHeaderSx} align="right">Running Balance</TableCell>
+                                            <TableCell sx={tableHeaderSx}>Reference</TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {paginatedTransactions.map((row, index) => {
+                                            const member = memberById.get(row.member_id);
+                                            const rowNumber = activityPage * activityRowsPerPage + index + 1;
+                                            const withdrawal = isWithdrawal(row);
+
+                                            return (
+                                                <TableRow key={`${row.transaction_id}-${index}`} hover>
+                                                    <TableCell>{rowNumber}</TableCell>
+                                                    <TableCell>
+                                                        <Typography variant="body2" fontWeight={700}>
                                                             {formatDate(row.transaction_date)}
                                                         </Typography>
-                                                    </Grid>
-                                                    <Grid size={{ xs: 12, md: 3 }}>
-                                                        <Typography variant="body1" sx={{ fontWeight: 700 }} noWrap>
-                                                            {row.member_name}
-                                                        </Typography>
-                                                    </Grid>
-                                                    <Grid size={{ xs: 6, md: 2 }}>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Stack spacing={0.25}>
+                                                            <Typography variant="body2" fontWeight={700}>
+                                                                {row.member_name}
+                                                            </Typography>
+                                                            <Typography variant="caption" color="text.secondary">
+                                                                {member?.member_no || "No member number"}
+                                                            </Typography>
+                                                        </Stack>
+                                                    </TableCell>
+                                                    <TableCell>{row.account_number}</TableCell>
+                                                    <TableCell>
                                                         <Chip
                                                             size="small"
-                                                            label={row.transaction_type === "deposit" ? "Deposit" : "Withdrawal"}
-                                                            color={row.transaction_type === "deposit" ? "success" : "error"}
+                                                            label={withdrawal ? "Withdrawal" : "Deposit"}
+                                                            color={withdrawal ? "error" : "success"}
                                                             variant="outlined"
                                                         />
-                                                    </Grid>
-                                                    <Grid size={{ xs: 6, md: 2 }}>
-                                                        <Typography variant="subtitle1" sx={{ fontWeight: 900, color: theme.palette.primary.main }}>
+                                                    </TableCell>
+                                                    <TableCell align="right">
+                                                        <Typography variant="body2" fontWeight={800}>
                                                             {formatCurrency(row.amount)}
                                                         </Typography>
-                                                    </Grid>
-                                                    <Grid size={{ xs: 12, md: 2 }}>
-                                                        <Typography variant="body1" sx={{ fontWeight: 700 }}>
-                                                            {formatCurrency(row.running_balance)}
-                                                        </Typography>
-                                                    </Grid>
-                                                    <Grid size={{ xs: 12, md: 1 }}>
+                                                    </TableCell>
+                                                    <TableCell align="right">{formatCurrency(row.running_balance)}</TableCell>
+                                                    <TableCell>
                                                         <Typography variant="body2" color="text.secondary" noWrap>
                                                             {row.reference || "N/A"}
                                                         </Typography>
-                                                    </Grid>
-                                                </Grid>
-                                            </Paper>
-                                        ))}
-                                    </Stack>
-                                </Box>
-                            )}
-                        </CardContent>
-                    </MotionCard>
-                </Grid>
-            </Grid>
+                                                    </TableCell>
+                                                </TableRow>
+                                            );
+                                        })}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+                            <TablePagination
+                                component="div"
+                                count={filteredTransactions.length}
+                                page={activityPage}
+                                rowsPerPage={activityRowsPerPage}
+                                rowsPerPageOptions={activityPageSizeOptions}
+                                onPageChange={(_, nextPage) => setActivityPage(nextPage)}
+                                onRowsPerPageChange={(event) => {
+                                    setActivityRowsPerPage(Number(event.target.value));
+                                    setActivityPage(0);
+                                }}
+                            />
+                        </Box>
+                    )}
+                </CardContent>
+            </MotionCard>
         </Stack>
     );
 }

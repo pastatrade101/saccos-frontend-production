@@ -118,6 +118,14 @@ export function ReportsPage() {
     const yearStartIso = financialYearPeriod.startIso;
     const reportsAccent = theme.palette.mode === "dark" ? "#D9B273" : theme.palette.primary.main;
     const reportsAccentStrong = theme.palette.mode === "dark" ? "#C89B52" : theme.palette.primary.dark;
+    const asOfReportParams = useMemo(
+        () => ({
+            tenant_id: selectedTenantId || undefined,
+            as_of_date: todayIso,
+            format: "pdf"
+        }),
+        [selectedTenantId, todayIso]
+    );
 
     const form = useForm<StatementExportValues>({
         resolver: zodResolver(statementSchema),
@@ -398,9 +406,9 @@ export function ReportsPage() {
                 helper: "Trial Balance + PAR + Loan Aging in one click.",
                 icon: <InsightsRoundedIcon fontSize="small" />,
                 jobs: [
-                    { fileKey: "trial-balance", url: endpoints.reports.trialBalance(), params: { tenant_id: selectedTenantId || undefined, format: "pdf" } },
-                    { fileKey: "par", url: endpoints.reports.par(), params: { tenant_id: selectedTenantId || undefined, format: "pdf" } },
-                    { fileKey: "loan-aging", url: endpoints.reports.loanAging(), params: { tenant_id: selectedTenantId || undefined, format: "pdf" } }
+                    { fileKey: "trial-balance", url: endpoints.reports.trialBalance(), params: asOfReportParams },
+                    { fileKey: "par", url: endpoints.reports.par(), params: asOfReportParams },
+                    { fileKey: "loan-aging", url: endpoints.reports.loanAging(), params: asOfReportParams }
                 ]
             },
             {
@@ -409,8 +417,8 @@ export function ReportsPage() {
                 helper: "PAR + Loan Aging for portfolio delinquency review.",
                 icon: <AutoGraphRoundedIcon fontSize="small" />,
                 jobs: [
-                    { fileKey: "par", url: endpoints.reports.par(), params: { tenant_id: selectedTenantId || undefined, format: "pdf" } },
-                    { fileKey: "loan-aging", url: endpoints.reports.loanAging(), params: { tenant_id: selectedTenantId || undefined, format: "pdf" } }
+                    { fileKey: "par", url: endpoints.reports.par(), params: asOfReportParams },
+                    { fileKey: "loan-aging", url: endpoints.reports.loanAging(), params: asOfReportParams }
                 ]
             },
             {
@@ -419,7 +427,7 @@ export function ReportsPage() {
                 helper: "Trial Balance + Member Statements export package.",
                 icon: <FactCheckRoundedIcon fontSize="small" />,
                 jobs: [
-                    { fileKey: "trial-balance", url: endpoints.reports.trialBalance(), params: { tenant_id: selectedTenantId || undefined, format: "pdf" } },
+                    { fileKey: "trial-balance", url: endpoints.reports.trialBalance(), params: asOfReportParams },
                     { fileKey: "member-statements", url: endpoints.reports.memberStatements(), params: { tenant_id: selectedTenantId || undefined, from_date: yearStartIso, to_date: todayIso, format: "pdf" } }
                 ]
             },
@@ -442,7 +450,7 @@ export function ReportsPage() {
                 ]
             }
         ],
-        [selectedTenantId, todayIso, yearStartIso]
+        [asOfReportParams, selectedTenantId, todayIso, yearStartIso]
     );
 
     const metricCards = [
@@ -671,6 +679,7 @@ export function ReportsPage() {
                                         onClick={() =>
                                             void runDownload("trial-balance", endpoints.reports.trialBalance(), {
                                                 tenant_id: selectedTenantId || undefined,
+                                                as_of_date: todayIso,
                                                 format: "pdf"
                                             })
                                         }
@@ -685,6 +694,7 @@ export function ReportsPage() {
                                         onClick={() =>
                                             void runDownload("loan-aging", endpoints.reports.loanAging(), {
                                                 tenant_id: selectedTenantId || undefined,
+                                                as_of_date: todayIso,
                                                 format: "pdf"
                                             })
                                         }
@@ -699,6 +709,7 @@ export function ReportsPage() {
                                         onClick={() =>
                                             void runDownload("par", endpoints.reports.par(), {
                                                 tenant_id: selectedTenantId || undefined,
+                                                as_of_date: todayIso,
                                                 format: "pdf"
                                             })
                                         }

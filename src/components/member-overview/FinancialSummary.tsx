@@ -4,13 +4,13 @@ import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 import PaidRoundedIcon from "@mui/icons-material/PaidRounded";
 import SavingsRoundedIcon from "@mui/icons-material/SavingsRounded";
 import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
-import { Box, Button, CardContent, Chip, Stack, Typography } from "@mui/material";
+import { Box, Button, CardContent, Chip, LinearProgress, Stack, Typography } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 
 import { brandColors } from "../../theme/colors";
-import { formatCurrency } from "../../utils/format";
+import { formatCurrency, formatDate } from "../../utils/format";
 import { MotionCard } from "../../ui/motion";
-import type { FinancialStanding, FinancialSummaryData } from "./types";
+import type { FinancialStanding, FinancialStandingTone, FinancialSummaryData } from "./types";
 
 interface FinancialSummaryProps {
     summary: FinancialSummaryData;
@@ -20,7 +20,7 @@ interface FinancialSummaryProps {
     onDownloadStatement: () => void;
 }
 
-function getStandingStyles(tone: FinancialStanding["tone"], accent: string) {
+function getToneStyles(tone: FinancialStandingTone, accent: string) {
     if (tone === "danger") {
         return {
             color: brandColors.danger,
@@ -52,6 +52,14 @@ function getStandingStyles(tone: FinancialStanding["tone"], accent: string) {
     };
 }
 
+function formatRemaining(amount: number) {
+    if (amount <= 0) {
+        return "Target met";
+    }
+
+    return formatCurrency(amount);
+}
+
 export function FinancialSummary({
     summary,
     standing,
@@ -62,50 +70,52 @@ export function FinancialSummary({
     const theme = useTheme();
     const isDarkMode = theme.palette.mode === "dark";
     const accent = isDarkMode ? "#D9B273" : brandColors.info;
-    const accentStrong = isDarkMode ? "#C89B52" : brandColors.primary[900];
-    const standingStyles = getStandingStyles(standing.tone, accent);
-    const summaryCards = [
+    const progress = Math.min(Math.max(summary.targetProgressPercent, 0), 100);
+    const targetStyles = getToneStyles(summary.targetStatusTone, accent);
+    const standingStyles = getToneStyles(standing.tone, accent);
+    const primaryMetrics = [
         {
-            label: "Total Savings",
+            label: "Savings",
             value: formatCurrency(summary.totalSavings),
+            helper: "Current posted savings balance",
             icon: SavingsRoundedIcon,
-            iconColor: brandColors.success,
-            iconBg: alpha(brandColors.success, 0.12),
-            valueColor: "text.primary"
+            color: brandColors.success,
+            bg: alpha(brandColors.success, 0.12)
         },
         {
-            label: "Share Capital",
+            label: "Shares",
             value: formatCurrency(summary.totalShareCapital),
+            helper: "Paid share capital",
             icon: AccountBalanceWalletRoundedIcon,
-            iconColor: "#B45309",
-            iconBg: alpha(brandColors.warning, 0.16),
-            valueColor: "text.primary"
+            color: "#B45309",
+            bg: alpha(brandColors.warning, 0.16)
         },
         {
-            label: "Outstanding Loan",
-            value: formatCurrency(summary.outstandingLoan),
-            icon: CreditScoreRoundedIcon,
-            iconColor: brandColors.danger,
-            iconBg: alpha(brandColors.danger, 0.12),
-            valueColor: "text.primary"
-        },
-        {
-            label: "Available to Withdraw",
-            value: formatCurrency(summary.availableToWithdraw),
-            icon: PaidRoundedIcon,
-            iconColor: accent,
-            iconBg: alpha(accent, 0.12),
-            valueColor: "text.primary"
-        },
-        {
-            label: "Net Position",
-            value: formatCurrency(summary.netPosition),
+            label: "Dividends",
+            value: formatCurrency(summary.totalDividends),
+            helper: "Posted dividend allocations",
             icon: TrendingUpRoundedIcon,
-            iconColor: summary.netPosition < 0 ? brandColors.danger : accent,
-            iconBg: summary.netPosition < 0 ? alpha(brandColors.danger, 0.12) : alpha(accent, 0.12),
-            valueColor: summary.netPosition < 0 ? brandColors.danger : accentStrong
+            color: accent,
+            bg: alpha(accent, 0.12)
+        },
+        {
+            label: "Loan",
+            value: formatCurrency(summary.outstandingLoan),
+            helper: standing.label,
+            icon: CreditScoreRoundedIcon,
+            color: summary.outstandingLoan > 0 ? brandColors.danger : brandColors.success,
+            bg: summary.outstandingLoan > 0 ? alpha(brandColors.danger, 0.12) : alpha(brandColors.success, 0.12)
         }
     ];
+    const targetFacts = [
+        { label: "% reached", value: `${Math.round(summary.targetProgressPercent)}%` },
+        { label: "Annual target", value: formatCurrency(summary.annualSavingsTarget) },
+        { label: "Remaining", value: formatRemaining(summary.targetRemainingAmount) },
+        { label: "Needed now", value: summary.nextRequiredAmount > 0 ? formatCurrency(summary.nextRequiredAmount) : "Clear" }
+    ];
+    const nextLoanText = summary.nextInstallmentDueDate
+        ? `${formatDate(summary.nextInstallmentDueDate)} · ${formatCurrency(summary.nextInstallmentAmount)}`
+        : "No due installment";
 
     return (
         <MotionCard
@@ -121,36 +131,48 @@ export function FinancialSummary({
                 boxShadow: "0 6px 18px rgba(15, 23, 42, 0.05)"
             }}
         >
-            <CardContent sx={{ p: { xs: 2.25, md: 3 } }}>
-                <Stack spacing={2.25}>
-                    <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={1.5}>
-                        <Box sx={{ minWidth: 0 }}>
-                            <Typography variant="overline" color="text.secondary">
-                                Financial Position
-                            </Typography>
+            <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
+                <Stack spacing={2}>
+                    <Stack direction={{ xs: "column", lg: "row" }} spacing={2} justifyContent="space-between">
+                        <Box sx={{ minWidth: 0, flex: 1 }}>
+                            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                                <Typography variant="overline" color="text.secondary">
+                                    Current Financial Level
+                                </Typography>
+                                <Chip
+                                    label={summary.targetStatusLabel}
+                                    size="small"
+                                    sx={{
+                                        borderRadius: 1.3,
+                                        color: targetStyles.color,
+                                        bgcolor: targetStyles.bg,
+                                        border: `1px solid ${targetStyles.border}`,
+                                        fontWeight: 800
+                                    }}
+                                />
+                            </Stack>
                             <Typography
                                 variant="h4"
                                 sx={{
+                                    mt: 0.75,
                                     fontWeight: 800,
-                                    lineHeight: 1.1,
-                                    fontSize: { xs: "2rem", sm: undefined },
+                                    lineHeight: 1.08,
+                                    fontSize: { xs: "1.9rem", sm: "2.15rem", md: "2.35rem" },
                                     overflowWrap: "anywhere"
                                 }}
                             >
-                                Your Financial Position
+                                {formatCurrency(summary.totalSavings)} saved
                             </Typography>
-                            {standing.details ? (
-                                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, overflowWrap: "anywhere" }}>
-                                    {standing.details}
-                                </Typography>
-                            ) : null}
+                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.6, overflowWrap: "anywhere" }}>
+                                Against {formatCurrency(summary.annualSavingsTarget)} annual performance target. Net position is {formatCurrency(summary.netPosition)} after visible loans.
+                            </Typography>
                         </Box>
-                        <Stack spacing={1} sx={{ width: { xs: "100%", md: "auto" }, alignItems: { xs: "stretch", md: "flex-end" } }}>
+                        <Stack spacing={1} sx={{ width: { xs: "100%", lg: 390 }, minWidth: 0 }}>
                             {standing.showChip !== false ? (
                                 <Chip
                                     label={standing.label}
                                     sx={{
-                                        alignSelf: { xs: "flex-start", md: "flex-end" },
+                                        alignSelf: { xs: "flex-start", lg: "flex-end" },
                                         borderRadius: 1.5,
                                         color: standingStyles.color,
                                         bgcolor: standingStyles.bg,
@@ -159,88 +181,86 @@ export function FinancialSummary({
                                     }}
                                 />
                             ) : null}
-                            <Stack
-                                direction={{ xs: "column", sm: "row" }}
-                                spacing={1}
-                                useFlexGap
-                                flexWrap="wrap"
+                            <Box
                                 sx={{
-                                    width: { xs: "100%", md: "auto" },
-                                    justifyContent: { xs: "flex-start", md: "flex-end" }
+                                    p: 1.35,
+                                    borderRadius: 1.5,
+                                    border: "1px solid",
+                                    borderColor: "divider",
+                                    bgcolor: (theme) => alpha(theme.palette.background.paper, 0.72)
                                 }}
                             >
-                                <Button
-                                    variant="contained"
-                                    onClick={onApplyLoan}
-                                    startIcon={<PaidRoundedIcon />}
+                                <Stack direction="row" justifyContent="space-between" spacing={1}>
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
+                                        Target progress
+                                    </Typography>
+                                    <Typography variant="caption" sx={{ fontWeight: 800 }}>
+                                        {Math.round(summary.targetProgressPercent)}%
+                                    </Typography>
+                                </Stack>
+                                <LinearProgress
+                                    variant="determinate"
+                                    value={progress}
                                     sx={{
-                                        borderRadius: 1.5,
-                                        fontWeight: 700,
-                                        width: { xs: "100%", sm: "auto" },
-                                        ...(isDarkMode
-                                            ? { bgcolor: accent, color: "#1a1a1a", "&:hover": { bgcolor: "#E6C88A" } }
-                                            : {})
+                                        mt: 0.9,
+                                        height: 8,
+                                        borderRadius: 999,
+                                        bgcolor: alpha(targetStyles.color, 0.14),
+                                        "& .MuiLinearProgress-bar": {
+                                            borderRadius: 999,
+                                            bgcolor: targetStyles.color
+                                        }
                                     }}
-                                >
-                                    Apply for Loan
-                                </Button>
-                                <Button
-                                    variant="outlined"
-                                    onClick={onMakeContribution}
-                                    startIcon={<SavingsRoundedIcon />}
-                                    sx={{
-                                        borderRadius: 1.5,
-                                        fontWeight: 700,
-                                        width: { xs: "100%", sm: "auto" },
-                                        ...(isDarkMode
-                                            ? {
-                                                borderColor: alpha(accent, 0.4),
-                                                color: accent,
-                                                "&:hover": { borderColor: alpha(accent, 0.72), bgcolor: alpha(accent, 0.08) }
-                                            }
-                                            : {})
-                                    }}
-                                >
-                                    Make Contribution
-                                </Button>
-                                <Button
-                                    variant="outlined"
-                                    onClick={onDownloadStatement}
-                                    startIcon={<DownloadRoundedIcon />}
-                                    sx={{
-                                        borderRadius: 1.5,
-                                        fontWeight: 700,
-                                        width: { xs: "100%", sm: "auto" },
-                                        ...(isDarkMode
-                                            ? {
-                                                borderColor: alpha(accent, 0.4),
-                                                color: accent,
-                                                "&:hover": { borderColor: alpha(accent, 0.72), bgcolor: alpha(accent, 0.08) }
-                                            }
-                                            : {})
-                                    }}
-                                >
-                                    Download Statement
-                                </Button>
-                            </Stack>
+                                />
+                            </Box>
                         </Stack>
                     </Stack>
 
                     <Box
                         sx={{
-                            width: "100%",
-                            minWidth: 0,
                             display: "grid",
-                            gap: 2,
+                            gap: 1.2,
                             gridTemplateColumns: {
                                 xs: "minmax(0, 1fr)",
                                 sm: "repeat(2, minmax(0, 1fr))",
-                                md: "repeat(3, minmax(0, 1fr))",
-                                xl: "repeat(5, minmax(0, 1fr))"
+                                lg: "repeat(4, minmax(0, 1fr))"
                             }
                         }}
                     >
-                        {summaryCards.map((item) => {
+                        {targetFacts.map((item) => (
+                            <Box
+                                key={item.label}
+                                sx={{
+                                    minWidth: 0,
+                                    p: 1.25,
+                                    borderRadius: 1.5,
+                                    border: "1px solid",
+                                    borderColor: "divider",
+                                    bgcolor: (theme) => alpha(theme.palette.background.paper, 0.72)
+                                }}
+                            >
+                                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
+                                    {item.label}
+                                </Typography>
+                                <Typography variant="subtitle1" sx={{ mt: 0.35, fontWeight: 800, overflowWrap: "anywhere" }}>
+                                    {item.value}
+                                </Typography>
+                            </Box>
+                        ))}
+                    </Box>
+
+                    <Box
+                        sx={{
+                            display: "grid",
+                            gap: 1.4,
+                            gridTemplateColumns: {
+                                xs: "minmax(0, 1fr)",
+                                md: "repeat(2, minmax(0, 1fr))",
+                                xl: "repeat(4, minmax(0, 1fr))"
+                            }
+                        }}
+                    >
+                        {primaryMetrics.map((item) => {
                             const Icon = item.icon;
 
                             return (
@@ -248,42 +268,118 @@ export function FinancialSummary({
                                     key={item.label}
                                     sx={{
                                         minWidth: 0,
-                                        p: 1.5,
+                                        p: 1.35,
                                         borderRadius: 1.5,
                                         border: "1px solid",
                                         borderColor: "divider",
-                                        bgcolor: (theme) => alpha(theme.palette.background.paper, 0.72),
-                                        minHeight: 114,
-                                        display: "flex",
-                                        flexDirection: "column",
-                                        justifyContent: "space-between"
+                                        bgcolor: (theme) => alpha(theme.palette.background.paper, 0.72)
                                     }}
                                 >
-                                    <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
-                                        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, minWidth: 0, overflowWrap: "anywhere" }}>
-                                            {item.label}
-                                        </Typography>
+                                    <Stack direction="row" spacing={1} alignItems="flex-start" justifyContent="space-between">
+                                        <Box sx={{ minWidth: 0 }}>
+                                            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
+                                                {item.label}
+                                            </Typography>
+                                            <Typography variant="h6" sx={{ mt: 0.4, fontWeight: 800, lineHeight: 1.2, overflowWrap: "anywhere" }}>
+                                                {item.value}
+                                            </Typography>
+                                            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.4, overflowWrap: "anywhere" }}>
+                                                {item.helper}
+                                            </Typography>
+                                        </Box>
                                         <Box
                                             sx={{
-                                                width: 28,
-                                                height: 28,
+                                                width: 30,
+                                                height: 30,
+                                                flexShrink: 0,
                                                 borderRadius: 1.25,
                                                 display: "grid",
                                                 placeItems: "center",
-                                                bgcolor: item.iconBg,
-                                                color: item.iconColor
+                                                bgcolor: item.bg,
+                                                color: item.color
                                             }}
                                         >
-                                            <Icon sx={{ fontSize: 16 }} />
+                                            <Icon sx={{ fontSize: 17 }} />
                                         </Box>
                                     </Stack>
-                                    <Typography variant="h6" sx={{ mt: 1.25, fontWeight: 800, color: item.valueColor as string, overflowWrap: "anywhere" }}>
-                                        {item.value}
-                                    </Typography>
                                 </Box>
                             );
                         })}
                     </Box>
+
+                    <Stack
+                        direction={{ xs: "column", md: "row" }}
+                        spacing={1.2}
+                        justifyContent="space-between"
+                        alignItems={{ xs: "stretch", md: "center" }}
+                    >
+                        <Stack spacing={0.25} sx={{ minWidth: 0 }}>
+                            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
+                                Next loan installment
+                            </Typography>
+                            <Typography variant="body2" sx={{ fontWeight: 800, overflowWrap: "anywhere" }}>
+                                {nextLoanText}
+                            </Typography>
+                        </Stack>
+                        <Stack
+                            direction={{ xs: "column", sm: "row" }}
+                            spacing={1}
+                            useFlexGap
+                            flexWrap="wrap"
+                            sx={{ "& > *": { width: { xs: "100%", sm: "auto" } } }}
+                        >
+                            <Button
+                                variant="contained"
+                                onClick={onMakeContribution}
+                                startIcon={<SavingsRoundedIcon />}
+                                sx={{
+                                    borderRadius: 1.5,
+                                    fontWeight: 700,
+                                    ...(isDarkMode
+                                        ? { bgcolor: accent, color: "#1a1a1a", "&:hover": { bgcolor: "#E6C88A" } }
+                                        : {})
+                                }}
+                            >
+                                Make Contribution
+                            </Button>
+                            <Button
+                                variant="outlined"
+                                onClick={onApplyLoan}
+                                startIcon={<PaidRoundedIcon />}
+                                sx={{
+                                    borderRadius: 1.5,
+                                    fontWeight: 700,
+                                    ...(isDarkMode
+                                        ? {
+                                            borderColor: alpha(accent, 0.4),
+                                            color: accent,
+                                            "&:hover": { borderColor: alpha(accent, 0.72), bgcolor: alpha(accent, 0.08) }
+                                        }
+                                        : {})
+                                }}
+                            >
+                                Apply for Loan
+                            </Button>
+                            <Button
+                                variant="outlined"
+                                onClick={onDownloadStatement}
+                                startIcon={<DownloadRoundedIcon />}
+                                sx={{
+                                    borderRadius: 1.5,
+                                    fontWeight: 700,
+                                    ...(isDarkMode
+                                        ? {
+                                            borderColor: alpha(accent, 0.4),
+                                            color: accent,
+                                            "&:hover": { borderColor: alpha(accent, 0.72), bgcolor: alpha(accent, 0.08) }
+                                        }
+                                        : {})
+                                }}
+                            >
+                                Statement
+                            </Button>
+                        </Stack>
+                    </Stack>
                 </Stack>
             </CardContent>
         </MotionCard>

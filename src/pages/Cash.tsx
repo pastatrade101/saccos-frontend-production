@@ -2,6 +2,8 @@ import { MotionCard, MotionModal } from "../ui/motion";
 import AccountBalanceWalletRoundedIcon from "@mui/icons-material/AccountBalanceWalletRounded";
 import CallMadeRoundedIcon from "@mui/icons-material/CallMadeRounded";
 import CallReceivedRoundedIcon from "@mui/icons-material/CallReceivedRounded";
+import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
+import FileUploadRoundedIcon from "@mui/icons-material/FileUploadRounded";
 import SavingsRoundedIcon from "@mui/icons-material/SavingsRounded";
 import WalletRoundedIcon from "@mui/icons-material/WalletRounded";
 import {
@@ -45,6 +47,10 @@ import {
     type MemberAccountsResponse,
     type MembersResponse,
     type OpenTellerSessionRequest,
+    type OperationalBatchRequest,
+    type OperationalBatchResponse,
+    type OperationalBatchResult,
+    type OperationalBatchRowRequest,
     type ReceiptInitResponse,
     type ReceiptPolicyResponse,
     type ShareContributionResponse,
@@ -81,6 +87,117 @@ function generateCashReference(type: ActionType) {
     const stamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
     const suffix = Math.random().toString(36).slice(2, 8).toUpperCase();
     return `${prefix}-${stamp}-${suffix}`;
+}
+
+const operationalBatchTemplate = [
+    "operation,member_no,email,account_id,loan_number,loan_id,fee_rule_code,amount,reference,receipt_ids,description",
+    "savings_deposit,ILS24-F00001,,,,,,100000,,,Monthly savings contribution",
+    "share_contribution,ILS24-F00001,,,,,,1000000,,,Share capital contribution",
+    "fee_revenue,ILS24-F00001,,,,,LOAN_PROCESSING_FEE,15000,,,Loan application fee",
+    "loan_repayment,ILS24-F00001,,,LN-20260603-ABC12345,,,500000,,,Loan repayment"
+].join("\n");
+
+function parseCsvRows(text: string) {
+    const rows: string[][] = [];
+    let current = "";
+    let row: string[] = [];
+    let quoted = false;
+
+    for (let index = 0; index < text.length; index += 1) {
+        const char = text[index];
+        const next = text[index + 1];
+
+        if (char === "\"") {
+            if (quoted && next === "\"") {
+                current += "\"";
+                index += 1;
+            } else {
+                quoted = !quoted;
+            }
+            continue;
+        }
+
+        if (char === "," && !quoted) {
+            row.push(current);
+            current = "";
+            continue;
+        }
+
+        if ((char === "\n" || char === "\r") && !quoted) {
+            if (char === "\r" && next === "\n") {
+                index += 1;
+            }
+            row.push(current);
+            if (row.some((cell) => cell.trim())) {
+                rows.push(row);
+            }
+            row = [];
+            current = "";
+            continue;
+        }
+
+        current += char;
+    }
+
+    row.push(current);
+    if (row.some((cell) => cell.trim())) {
+        rows.push(row);
+    }
+
+    return rows;
+}
+
+function parseOperationalBatchCsv(text: string): OperationalBatchRowRequest[] {
+    const rows = parseCsvRows(text);
+    if (rows.length < 2) {
+        return [];
+    }
+
+    const headers = rows[0].map((header) => header.trim().toLowerCase());
+    const allowedOperations = new Set(["savings_deposit", "share_contribution", "loan_repayment", "fee_revenue"]);
+
+    return rows.slice(1).map((cells) => {
+        const record: Record<string, string> = {};
+        headers.forEach((header, index) => {
+            record[header] = (cells[index] || "").trim();
+        });
+
+        const operation = record.operation as OperationalBatchRowRequest["operation"];
+        const amountText = record.amount?.replace(/[,\s]/g, "") || "";
+        const amount = amountText ? Number(amountText) : undefined;
+        if (!allowedOperations.has(operation)) {
+            throw new Error(`Unsupported operation "${record.operation}".`);
+        }
+        if (amountText && Number.isNaN(amount)) {
+            throw new Error(`Invalid amount "${record.amount}".`);
+        }
+
+        return {
+            operation,
+            member_no: record.member_no || undefined,
+            email: record.email || undefined,
+            account_id: record.account_id || undefined,
+            loan_number: record.loan_number || undefined,
+            loan_id: record.loan_id || undefined,
+            fee_rule_code: record.fee_rule_code || undefined,
+            amount,
+            reference: record.reference || undefined,
+            receipt_ids: record.receipt_ids
+                ? record.receipt_ids.split(/[|;]/).map((entry) => entry.trim()).filter(Boolean)
+                : undefined,
+            description: record.description || undefined
+        };
+    });
+}
+
+function downloadOperationalBatchTemplate() {
+    const blob = new Blob([operationalBatchTemplate], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "cash-operational-batch-template.csv";
+    anchor.click();
+    URL.revokeObjectURL(url);
 }
 
 function MetricCard({
@@ -170,6 +287,12 @@ export function CashPage() {
     const [closingCashInput, setClosingCashInput] = useState("");
     const [openSessionDialog, setOpenSessionDialog] = useState(false);
     const [closeSessionDialog, setCloseSessionDialog] = useState(false);
+    const [batchDialogOpen, setBatchDialogOpen] = useState(false);
+    const [batchPosting, setBatchPosting] = useState(false);
+    const [batchFileName, setBatchFileName] = useState("");
+    const [batchRows, setBatchRows] = useState<OperationalBatchRowRequest[]>([]);
+    const [batchResult, setBatchResult] = useState<OperationalBatchResult | null>(null);
+    const [batchParseError, setBatchParseError] = useState<string | null>(null);
     const [pendingApprovalNotice, setPendingApprovalNotice] = useState<{
         requestId: string;
         payload: CashRequest;
@@ -401,6 +524,25 @@ export function CashPage() {
         { key: "balance", header: "Balance", render: (row) => formatCurrency(row.running_balance) },
         { key: "reference", header: "Reference", render: (row) => row.reference || "N/A" }
     ];
+    const batchResultColumns: Column<OperationalBatchResult["rows"][number]>[] = [
+        { key: "row", header: "Row", render: (row) => row.row_number },
+        { key: "operation", header: "Operation", render: (row) => row.operation?.replace(/_/g, " ") || "N/A" },
+        {
+            key: "status",
+            header: "Status",
+            render: (row) => (
+                <Chip
+                    label={row.status}
+                    color={row.status === "posted" ? "success" : "error"}
+                    size="small"
+                    variant="outlined"
+                />
+            )
+        },
+        { key: "amount", header: "Amount", render: (row) => formatCurrency(row.amount) },
+        { key: "reference", header: "Reference", render: (row) => row.reference || "N/A" },
+        { key: "message", header: "Message", render: (row) => row.message }
+    ];
 
     const totalPages = Math.max(1, Math.ceil(transactions.length / pageSize));
     const paginatedTransactions = useMemo(
@@ -602,6 +744,59 @@ export function CashPage() {
             });
         } finally {
             setProcessing(false);
+        }
+    };
+
+    const loadOperationalBatchFile = async (file: File | null) => {
+        setBatchResult(null);
+        setBatchRows([]);
+        setBatchFileName(file?.name || "");
+        setBatchParseError(null);
+
+        if (!file) {
+            return;
+        }
+
+        try {
+            const text = await file.text();
+            const parsedRows = parseOperationalBatchCsv(text);
+            if (!parsedRows.length) {
+                throw new Error("CSV has no posting rows.");
+            }
+            setBatchRows(parsedRows);
+        } catch (error) {
+            setBatchParseError(error instanceof Error ? error.message : "Unable to read CSV.");
+        }
+    };
+
+    const postOperationalBatch = async () => {
+        if (!batchRows.length || !selectedTenantId) {
+            return;
+        }
+
+        setBatchPosting(true);
+        try {
+            const payload: OperationalBatchRequest = {
+                tenant_id: selectedTenantId,
+                branch_id: selectedBranchId || undefined,
+                rows: batchRows
+            };
+            const { data } = await api.post<OperationalBatchResponse>(endpoints.finance.operationalBatch(), payload);
+            setBatchResult(data.data);
+            pushToast({
+                type: data.data.failed_rows ? "warning" : "success",
+                title: "Batch posting complete",
+                message: `${data.data.posted_rows} posted, ${data.data.failed_rows} failed.`
+            });
+            await loadCashData();
+        } catch (error) {
+            pushToast({
+                type: "error",
+                title: "Batch posting failed",
+                message: getApiErrorMessage(error)
+            });
+        } finally {
+            setBatchPosting(false);
         }
     };
 
@@ -946,7 +1141,7 @@ export function CashPage() {
                                 </Box>
 
                                 <Grid container spacing={2}>
-                                    <Grid size={{ xs: 12, md: 4 }}>
+                                    <Grid size={{ xs: 12, md: 3 }}>
                                         <MotionCard variant="outlined" sx={{ borderRadius: 2, height: "100%" }}>
                                             <CardContent>
                                                 <Stack spacing={2}>
@@ -973,7 +1168,7 @@ export function CashPage() {
                                             </CardContent>
                                         </MotionCard>
                                     </Grid>
-                                    <Grid size={{ xs: 12, md: 4 }}>
+                                    <Grid size={{ xs: 12, md: 3 }}>
                                         <MotionCard variant="outlined" sx={{ borderRadius: 2, height: "100%" }}>
                                             <CardContent>
                                                 <Stack spacing={2}>
@@ -1000,7 +1195,7 @@ export function CashPage() {
                                             </CardContent>
                                         </MotionCard>
                                     </Grid>
-                                    <Grid size={{ xs: 12, md: 4 }}>
+                                    <Grid size={{ xs: 12, md: 3 }}>
                                         <MotionCard variant="outlined" sx={{ borderRadius: 2, height: "100%" }}>
                                             <CardContent>
                                                 <Stack spacing={2}>
@@ -1022,6 +1217,33 @@ export function CashPage() {
                                                         sx={theme.palette.mode === "dark" ? { borderColor: alpha(cashDeskAccent, 0.44), color: cashDeskAccent, "&:hover": { borderColor: alpha(cashDeskAccent, 0.78), bgcolor: alpha(cashDeskAccent, 0.1) } } : undefined}
                                                     >
                                                         Start Contribution
+                                                    </Button>
+                                                </Stack>
+                                            </CardContent>
+                                        </MotionCard>
+                                    </Grid>
+                                    <Grid size={{ xs: 12, md: 3 }}>
+                                        <MotionCard variant="outlined" sx={{ borderRadius: 2, height: "100%" }}>
+                                            <CardContent>
+                                                <Stack spacing={2}>
+                                                    <Box>
+                                                        <Typography variant="subtitle1">Batch Posting</Typography>
+                                                        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                                                            Upload contributions, repayments, or fee revenue rows.
+                                                        </Typography>
+                                                    </Box>
+                                                    <Button
+                                                        variant="outlined"
+                                                        startIcon={<FileUploadRoundedIcon />}
+                                                        onClick={() => {
+                                                            setBatchDialogOpen(true);
+                                                            setBatchResult(null);
+                                                            setBatchParseError(null);
+                                                        }}
+                                                        disabled={tellerSessionRequired}
+                                                        fullWidth
+                                                    >
+                                                        Upload CSV
                                                     </Button>
                                                 </Stack>
                                             </CardContent>
@@ -1126,6 +1348,93 @@ export function CashPage() {
                     )}
                 </CardContent>
             </MotionCard>
+
+            <MotionModal
+                open={batchDialogOpen}
+                onClose={batchPosting ? undefined : () => setBatchDialogOpen(false)}
+                maxWidth="lg"
+                fullWidth
+            >
+                <DialogTitle>Operational Batch Posting</DialogTitle>
+                <DialogContent dividers>
+                    <Stack spacing={2.5} sx={{ pt: 0.5 }}>
+                        <Alert severity="info" variant="outlined">
+                            Rows post through the normal teller procedures, so savings, shares, loan repayments, and fee revenue create journals and teller-session entries.
+                        </Alert>
+                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                            <Button
+                                startIcon={<DownloadRoundedIcon />}
+                                variant="outlined"
+                                onClick={downloadOperationalBatchTemplate}
+                            >
+                                Download Template
+                            </Button>
+                            <TextField
+                                type="file"
+                                fullWidth
+                                inputProps={{ accept: ".csv,text/csv" }}
+                                onChange={(event) => {
+                                    const file = (event.target as HTMLInputElement).files?.[0] || null;
+                                    void loadOperationalBatchFile(file);
+                                }}
+                                helperText={batchFileName ? `${batchFileName} selected` : "CSV only"}
+                            />
+                        </Stack>
+                        {batchParseError ? (
+                            <Alert severity="error" variant="outlined">
+                                {batchParseError}
+                            </Alert>
+                        ) : null}
+                        {batchRows.length ? (
+                            <Grid container spacing={1.5}>
+                                <Grid size={{ xs: 12, sm: 4 }}>
+                                    <Box sx={{ p: 1.5, border: `1px solid ${theme.palette.divider}`, borderRadius: 2 }}>
+                                        <Typography variant="caption" color="text.secondary">Rows Ready</Typography>
+                                        <Typography variant="body1" sx={{ mt: 0.5, fontWeight: 700 }}>{batchRows.length}</Typography>
+                                    </Box>
+                                </Grid>
+                                <Grid size={{ xs: 12, sm: 4 }}>
+                                    <Box sx={{ p: 1.5, border: `1px solid ${theme.palette.divider}`, borderRadius: 2 }}>
+                                        <Typography variant="caption" color="text.secondary">Branch</Typography>
+                                        <Typography variant="body1" sx={{ mt: 0.5, fontWeight: 700 }}>{selectedBranchName || "Resolved by member"}</Typography>
+                                    </Box>
+                                </Grid>
+                                <Grid size={{ xs: 12, sm: 4 }}>
+                                    <Box sx={{ p: 1.5, border: `1px solid ${theme.palette.divider}`, borderRadius: 2 }}>
+                                        <Typography variant="caption" color="text.secondary">Tenant</Typography>
+                                        <Typography variant="body1" sx={{ mt: 0.5, fontWeight: 700 }}>{selectedTenantName || "Current SACCO"}</Typography>
+                                    </Box>
+                                </Grid>
+                            </Grid>
+                        ) : null}
+                        {batchResult ? (
+                            <Stack spacing={1.5}>
+                                <Alert severity={batchResult.failed_rows ? "warning" : "success"} variant="outlined">
+                                    {batchResult.posted_rows} posted and {batchResult.failed_rows} failed from {batchResult.total_rows} row(s).
+                                </Alert>
+                                <DataTable
+                                    rows={batchResult.rows}
+                                    columns={batchResultColumns}
+                                    emptyMessage="No batch results yet."
+                                />
+                            </Stack>
+                        ) : null}
+                    </Stack>
+                </DialogContent>
+                <DialogActions sx={{ px: 3, py: 2 }}>
+                    <Button onClick={() => setBatchDialogOpen(false)} disabled={batchPosting} color="inherit">
+                        Close
+                    </Button>
+                    <Button
+                        variant="contained"
+                        startIcon={<FileUploadRoundedIcon />}
+                        onClick={() => void postOperationalBatch()}
+                        disabled={!batchRows.length || Boolean(batchParseError) || batchPosting}
+                    >
+                        Post Batch
+                    </Button>
+                </DialogActions>
+            </MotionModal>
 
             <MotionModal
                 open={Boolean(actionDialog)}

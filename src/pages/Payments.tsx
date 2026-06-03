@@ -1,9 +1,9 @@
 import ReceiptLongRoundedIcon from "@mui/icons-material/ReceiptLongRounded";
-import TaskAltRoundedIcon from "@mui/icons-material/TaskAltRounded";
 import HourglassTopRoundedIcon from "@mui/icons-material/HourglassTopRounded";
 import HighlightOffRoundedIcon from "@mui/icons-material/HighlightOffRounded";
 import WalletRoundedIcon from "@mui/icons-material/WalletRounded";
 import PrintRoundedIcon from "@mui/icons-material/PrintRounded";
+import PointOfSaleRoundedIcon from "@mui/icons-material/PointOfSaleRounded";
 import {
     Alert,
     Box,
@@ -25,21 +25,83 @@ import {
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import { useEffect, useMemo, useState } from "react";
-import { Navigate } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext";
 import { AppLoader } from "../components/AppLoader";
 import { DataTable, type Column } from "../components/DataTable";
 import { useToast } from "../components/Toast";
 import { api, getApiErrorMessage } from "../lib/api";
-import { endpoints, type PaymentOrdersResponse, type ReconcilePaymentOrderResponse } from "../lib/endpoints";
-import type { PaymentOrder } from "../types/api";
+import { endpoints, type ReconcilePaymentOrderResponse } from "../lib/endpoints";
+import type { ApiEnvelope, PaginatedResult, PaymentOrder, PaymentOrderStatus, TellerPaymentTransaction } from "../types/api";
 import { brandColors } from "../theme/colors";
 import { MotionCard } from "../ui/motion";
 import { formatCurrency, formatDate } from "../utils/format";
 
-function formatPaymentPurpose(purpose: string) {
-    return purpose === "savings_deposit" ? "Savings deposit" : purpose === "share_contribution" ? "Share contribution" : purpose.replace(/_/g, " ");
+const PAGE_LOAD_LIMIT = 100;
+const MAX_PAGE_LOADS = 100;
+
+type PaymentSource = "gateway" | "teller";
+type PaymentChannel = "mobile_money" | "cash_desk";
+type PaymentDirection = "in" | "out";
+type PaymentOperation =
+    | "savings_deposit"
+    | "savings_withdrawal"
+    | "share_contribution"
+    | "loan_repayment"
+    | "loan_disbursement"
+    | "membership_fee"
+    | "fee_revenue";
+
+interface FlatPagedEnvelope<T> {
+    data: T[];
+    pagination?: {
+        page: number;
+        limit: number;
+        total: number;
+    } | null;
+}
+
+interface PaymentLogRow {
+    id: string;
+    row_number?: number;
+    source: PaymentSource;
+    channel: PaymentChannel;
+    channel_label: string;
+    provider: string;
+    operation: PaymentOperation;
+    status: PaymentOrderStatus | "posted";
+    direction: PaymentDirection;
+    amount: number;
+    currency: string;
+    member_name: string | null;
+    member_no: string | null;
+    account_label: string | null;
+    loan_number: string | null;
+    branch_name: string | null;
+    teller_name: string | null;
+    reference: string | null;
+    description: string | null;
+    journal_id: string | null;
+    date: string;
+    posted_at?: string | null;
+    paid_at?: string | null;
+    error_message?: string | null;
+    receipt_count?: number;
+    raw_order?: PaymentOrder;
+}
+
+function formatPaymentOperation(operation: string) {
+    const labels: Record<string, string> = {
+        savings_deposit: "Savings deposit",
+        savings_withdrawal: "Savings withdrawal",
+        share_contribution: "Share contribution",
+        loan_repayment: "Loan repayment",
+        loan_disbursement: "Loan disbursement",
+        membership_fee: "Membership fee",
+        fee_revenue: "Fee / revenue"
+    };
+
+    return labels[operation] || operation.replace(/_/g, " ");
 }
 
 function formatPaymentStatus(status: string) {
@@ -55,6 +117,151 @@ function normalizePaymentOrder(order: PaymentOrder) {
     }
 
     return order;
+}
+
+function normalizeOrderOperation(purpose: string): PaymentOperation {
+    if (purpose === "loan_repayment") {
+        return "loan_repayment";
+    }
+
+    if (purpose === "membership_fee") {
+        return "membership_fee";
+    }
+
+    if (purpose === "share_contribution") {
+        return "share_contribution";
+    }
+
+    return "savings_deposit";
+}
+
+function normalizeTellerOperation(transactionType: TellerPaymentTransaction["transaction_type"]): PaymentOperation {
+    if (transactionType === "withdraw") {
+        return "savings_withdrawal";
+    }
+
+    if (transactionType === "share_contribution") {
+        return "share_contribution";
+    }
+
+    if (transactionType === "loan_repay") {
+        return "loan_repayment";
+    }
+
+    if (transactionType === "loan_disburse") {
+        return "loan_disbursement";
+    }
+
+    if (transactionType === "fee_revenue") {
+        return "fee_revenue";
+    }
+
+    return "savings_deposit";
+}
+
+function orderToLogRow(order: PaymentOrder): PaymentLogRow {
+    const normalized = normalizePaymentOrder(order);
+    const provider = normalized.provider || "mobile_money";
+
+    return {
+        id: `gateway:${normalized.id}`,
+        source: "gateway",
+        channel: "mobile_money",
+        channel_label: provider.toUpperCase(),
+        provider,
+        operation: normalizeOrderOperation(normalized.purpose),
+        status: normalized.status,
+        direction: "in",
+        amount: Number(normalized.amount || 0),
+        currency: normalized.currency || "TZS",
+        member_name: normalized.member_name || null,
+        member_no: normalized.member_no || null,
+        account_label: normalized.account_name || normalized.account_number || normalized.loan_number || normalized.account_id || normalized.loan_id || null,
+        loan_number: normalized.loan_number || null,
+        branch_name: null,
+        teller_name: null,
+        reference: normalized.provider_ref || normalized.external_id || null,
+        description: normalized.description || normalized.error_message || null,
+        journal_id: normalized.journal_id || null,
+        date: normalized.created_at,
+        paid_at: normalized.paid_at || null,
+        posted_at: normalized.posted_at || null,
+        error_message: normalized.error_message || null,
+        raw_order: normalized
+    };
+}
+
+function tellerToLogRow(transaction: TellerPaymentTransaction): PaymentLogRow {
+    return {
+        id: `teller:${transaction.id}`,
+        source: "teller",
+        channel: "cash_desk",
+        channel_label: "Cash desk",
+        provider: transaction.payment_method || "cash",
+        operation: normalizeTellerOperation(transaction.transaction_type),
+        status: "posted",
+        direction: transaction.direction,
+        amount: Number(transaction.amount || 0),
+        currency: "TZS",
+        member_name: transaction.member_name || null,
+        member_no: transaction.member_no || null,
+        account_label: transaction.account_name || transaction.account_number || transaction.loan_number || null,
+        loan_number: transaction.loan_number || null,
+        branch_name: transaction.branch_name || transaction.branch_code || null,
+        teller_name: transaction.teller_name || null,
+        reference: transaction.reference || null,
+        description: transaction.description || null,
+        journal_id: transaction.journal_id || null,
+        date: transaction.created_at,
+        posted_at: transaction.recorded_at,
+        receipt_count: transaction.receipt_count
+    };
+}
+
+async function loadFlatPages<T>(url: string, params: Record<string, string | number | undefined>) {
+    const rows: T[] = [];
+
+    for (let page = 1; page <= MAX_PAGE_LOADS; page += 1) {
+        const { data: response } = await api.get<FlatPagedEnvelope<T>>(url, {
+            params: {
+                ...params,
+                page,
+                limit: PAGE_LOAD_LIMIT
+            }
+        });
+        const pageRows = response.data || [];
+        rows.push(...pageRows);
+
+        const total = Number(response.pagination?.total || 0);
+        if (!response.pagination || pageRows.length === 0 || (total > 0 && rows.length >= total)) {
+            break;
+        }
+    }
+
+    return rows;
+}
+
+async function loadNestedPages<T>(url: string, params: Record<string, string | number | undefined>) {
+    const rows: T[] = [];
+
+    for (let page = 1; page <= MAX_PAGE_LOADS; page += 1) {
+        const { data: response } = await api.get<ApiEnvelope<PaginatedResult<T>>>(url, {
+            params: {
+                ...params,
+                page,
+                limit: PAGE_LOAD_LIMIT
+            }
+        });
+        const pageRows = response.data?.data || [];
+        rows.push(...pageRows);
+
+        const total = Number(response.data?.pagination?.total || 0);
+        if (!response.data?.pagination || pageRows.length === 0 || (total > 0 && rows.length >= total)) {
+            break;
+        }
+    }
+
+    return rows;
 }
 
 interface MetricCardProps {
@@ -113,46 +320,53 @@ export function PaymentsPage() {
     const { pushToast } = useToast();
     const { selectedTenantId, selectedBranchId, selectedBranchName } = useAuth();
     const [orders, setOrders] = useState<PaymentOrder[]>([]);
+    const [tellerTransactions, setTellerTransactions] = useState<TellerPaymentTransaction[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [statusFilter, setStatusFilter] = useState<string>("all");
     const [purposeFilter, setPurposeFilter] = useState<string>("all");
+    const [channelFilter, setChannelFilter] = useState<string>("all");
+    const [sourceFilter, setSourceFilter] = useState<string>("all");
     const [search, setSearch] = useState("");
     const [page, setPage] = useState(0);
-    const [rowsPerPage, setRowsPerPage] = useState(10);
-    const [selectedReceipt, setSelectedReceipt] = useState<PaymentOrder | null>(null);
+    const [rowsPerPage, setRowsPerPage] = useState(25);
+    const [selectedReceipt, setSelectedReceipt] = useState<PaymentLogRow | null>(null);
     const [reconcilingOrderId, setReconcilingOrderId] = useState<string | null>(null);
 
+    const loadPaymentOperations = async () => {
+        if (!selectedTenantId) {
+            setOrders([]);
+            setTellerTransactions([]);
+            setLoading(false);
+            return;
+        }
+
+        setLoading(true);
+        setError(null);
+
+        try {
+            const [paymentOrders, tellerRows] = await Promise.all([
+                loadNestedPages<PaymentOrder>(endpoints.memberPayments.listOrders(), {
+                    tenant_id: selectedTenantId,
+                    branch_id: selectedBranchId || undefined
+                }),
+                loadFlatPages<TellerPaymentTransaction>(endpoints.cashControl.transactions(), {
+                    branch_id: selectedBranchId || undefined
+                })
+            ]);
+            setOrders(paymentOrders.map((order) => normalizePaymentOrder(order)));
+            setTellerTransactions(tellerRows);
+        } catch (loadError) {
+            setError(getApiErrorMessage(loadError));
+            setOrders([]);
+            setTellerTransactions([]);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     useEffect(() => {
-        const loadOrders = async () => {
-            if (!selectedTenantId) {
-                setOrders([]);
-                setLoading(false);
-                return;
-            }
-
-            setLoading(true);
-            setError(null);
-
-            try {
-                const { data } = await api.get<PaymentOrdersResponse>(endpoints.memberPayments.listOrders(), {
-                    params: {
-                        tenant_id: selectedTenantId,
-                        branch_id: selectedBranchId || undefined,
-                        page: 1,
-                        limit: 100
-                    }
-                });
-                setOrders((data.data?.data || []).map((order) => normalizePaymentOrder(order)));
-            } catch (loadError) {
-                setError(getApiErrorMessage(loadError));
-                setOrders([]);
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        void loadOrders();
+        void loadPaymentOperations();
     }, [selectedBranchId, selectedTenantId]);
 
     const mergeOrder = (nextOrder: PaymentOrder) => {
@@ -162,31 +376,52 @@ export function PaymentsPage() {
             next.sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime());
             return next;
         });
-        setSelectedReceipt((current) => (current?.id === normalized.id ? normalized : current));
         return normalized;
     };
 
-    const filteredOrders = useMemo(
+    const allRows = useMemo(() => {
+        const rows = [
+            ...orders.map(orderToLogRow),
+            ...tellerTransactions.map(tellerToLogRow)
+        ];
+
+        rows.sort((left, right) => new Date(right.date).getTime() - new Date(left.date).getTime());
+        return rows;
+    }, [orders, tellerTransactions]);
+
+    const filteredRows = useMemo(
         () =>
-            orders.filter((order) => {
-                if (statusFilter !== "all" && order.status !== statusFilter) {
+            allRows.filter((row) => {
+                if (statusFilter !== "all" && row.status !== statusFilter) {
                     return false;
                 }
 
-                if (purposeFilter !== "all" && order.purpose !== purposeFilter) {
+                if (purposeFilter !== "all" && row.operation !== purposeFilter) {
+                    return false;
+                }
+
+                if (channelFilter !== "all" && row.channel !== channelFilter) {
+                    return false;
+                }
+
+                if (sourceFilter !== "all" && row.source !== sourceFilter) {
                     return false;
                 }
 
                 if (search.trim()) {
                     const needle = search.trim().toLowerCase();
                     const haystack = [
-                        order.member_name,
-                        order.member_no,
-                        order.account_name,
-                        order.account_number,
-                        order.provider_ref,
-                        order.external_id,
-                        order.error_message
+                        row.member_name,
+                        row.member_no,
+                        row.account_label,
+                        row.loan_number,
+                        row.branch_name,
+                        row.teller_name,
+                        row.reference,
+                        row.description,
+                        row.journal_id,
+                        row.channel_label,
+                        row.provider
                     ]
                         .filter(Boolean)
                         .join(" ")
@@ -199,31 +434,53 @@ export function PaymentsPage() {
 
                 return true;
             }),
-        [orders, purposeFilter, search, statusFilter]
+        [allRows, channelFilter, purposeFilter, search, sourceFilter, statusFilter]
     );
 
-    const paginatedOrders = useMemo(
-        () => filteredOrders.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage),
-        [filteredOrders, page, rowsPerPage]
+    const paginatedRows = useMemo(
+        () => filteredRows
+            .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+            .map((row, index) => ({
+                ...row,
+                row_number: page * rowsPerPage + index + 1
+            })),
+        [filteredRows, page, rowsPerPage]
     );
 
-    const metrics = useMemo(() => ({
-        total: orders.length,
-        posted: orders.filter((order) => order.status === "posted").length,
-        pending: orders.filter((order) => ["pending", "paid"].includes(order.status)).length,
-        failed: orders.filter((order) => ["failed", "expired"].includes(order.status)).length,
-        amount: orders.reduce((sum, order) => sum + order.amount, 0)
-    }), [orders]);
+    const metrics = useMemo(() => {
+        const posted = allRows.filter((row) => row.status === "posted").length;
+        const inProgress = allRows.filter((row) => ["created", "pending", "paid"].includes(row.status)).length;
+        const failed = allRows.filter((row) => ["failed", "expired"].includes(row.status)).length;
+        const inflow = allRows.filter((row) => row.direction === "in").reduce((sum, row) => sum + row.amount, 0);
+        const outflow = allRows.filter((row) => row.direction === "out").reduce((sum, row) => sum + row.amount, 0);
+
+        return {
+            total: allRows.length,
+            teller: allRows.filter((row) => row.source === "teller").length,
+            gateway: allRows.filter((row) => row.source === "gateway").length,
+            posted,
+            inProgress,
+            failed,
+            inflow,
+            outflow
+        };
+    }, [allRows]);
 
     useEffect(() => {
         setPage(0);
-    }, [purposeFilter, search, statusFilter]);
+    }, [channelFilter, purposeFilter, rowsPerPage, search, sourceFilter, statusFilter]);
 
-    const handleReconcile = async (order: PaymentOrder) => {
+    const handleReconcile = async (row: PaymentLogRow) => {
+        const order = row.raw_order;
+        if (!order) {
+            return;
+        }
+
         setReconcilingOrderId(order.id);
         try {
             const { data } = await api.post<ReconcilePaymentOrderResponse>(endpoints.memberPayments.reconcile(order.id));
             const nextOrder = mergeOrder(data.data.order);
+            setSelectedReceipt(order.id === selectedReceipt?.raw_order?.id ? orderToLogRow(nextOrder) : selectedReceipt);
             if (data.data.reconciled && nextOrder.status === "posted") {
                 pushToast({
                     title: "Payment posted",
@@ -248,7 +505,12 @@ export function PaymentsPage() {
         }
     };
 
-    const columns: Column<PaymentOrder>[] = [
+    const columns: Column<PaymentLogRow>[] = [
+        {
+            key: "no",
+            header: "No.",
+            render: (row) => row.row_number
+        },
         {
             key: "member",
             header: "Member",
@@ -258,21 +520,38 @@ export function PaymentsPage() {
                         {row.member_name || "Unknown member"}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                        {row.member_no || row.member_id}
+                        {row.member_no || "No member number"}
                     </Typography>
                 </Stack>
             )
         },
         {
-            key: "payment",
-            header: "Payment",
+            key: "operation",
+            header: "Operation",
             render: (row) => (
                 <Stack spacing={0.35}>
                     <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                        {formatPaymentPurpose(row.purpose)}
+                        {formatPaymentOperation(row.operation)}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                        {row.account_name || row.account_number || row.account_id}
+                        {row.account_label || row.loan_number || row.journal_id || "No account detail"}
+                    </Typography>
+                </Stack>
+            )
+        },
+        {
+            key: "channel",
+            header: "Channel",
+            render: (row) => (
+                <Stack spacing={0.35}>
+                    <Chip
+                        size="small"
+                        label={row.channel_label}
+                        color={row.channel === "cash_desk" ? "primary" : "success"}
+                        variant="outlined"
+                    />
+                    <Typography variant="caption" color="text.secondary">
+                        {row.source === "teller" ? row.teller_name || "Teller" : "Member portal"}
                     </Typography>
                 </Stack>
             )
@@ -280,7 +559,16 @@ export function PaymentsPage() {
         {
             key: "amount",
             header: "Amount",
-            render: (row) => formatCurrency(row.amount)
+            render: (row) => (
+                <Stack spacing={0.25} alignItems="flex-start">
+                    <Typography variant="body2" sx={{ fontWeight: 800 }}>
+                        {formatCurrency(row.amount)}
+                    </Typography>
+                    <Typography variant="caption" color={row.direction === "out" ? "error.main" : "success.main"}>
+                        {row.direction === "out" ? "Outflow" : "Inflow"}
+                    </Typography>
+                </Stack>
+            )
         },
         {
             key: "status",
@@ -297,12 +585,21 @@ export function PaymentsPage() {
         {
             key: "reference",
             header: "Reference",
-            render: (row) => row.provider_ref || row.external_id
+            render: (row) => (
+                <Stack spacing={0.25}>
+                    <Typography variant="body2" noWrap>
+                        {row.reference || "N/A"}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" noWrap>
+                        {row.journal_id ? `Journal ${row.journal_id.slice(0, 8)}...` : "No journal"}
+                    </Typography>
+                </Stack>
+            )
         },
         {
             key: "date",
             header: "Date",
-            render: (row) => formatDate(row.created_at)
+            render: (row) => formatDate(row.date)
         },
         {
             key: "actions",
@@ -310,16 +607,16 @@ export function PaymentsPage() {
             render: (row) => (
                 <Stack direction="row" spacing={1}>
                     <Button size="small" variant="outlined" onClick={() => setSelectedReceipt(row)}>
-                        Receipt
+                        Detail
                     </Button>
-                    {row.status === "paid" && !row.posted_at ? (
+                    {row.raw_order?.status === "paid" && !row.raw_order.posted_at ? (
                         <Button
                             size="small"
                             variant="contained"
                             onClick={() => void handleReconcile(row)}
-                            disabled={reconcilingOrderId === row.id}
+                            disabled={reconcilingOrderId === row.raw_order.id}
                         >
-                            {reconcilingOrderId === row.id ? "Reconciling..." : "Reconcile"}
+                            {reconcilingOrderId === row.raw_order.id ? "Reconciling..." : "Reconcile"}
                         </Button>
                     ) : null}
                 </Stack>
@@ -349,29 +646,40 @@ export function PaymentsPage() {
                             Branch payment operations
                         </Typography>
                         <Typography variant="h4" sx={{ fontWeight: 800, lineHeight: 1.08 }}>
-                            Follow every member mobile-money action for {selectedBranchName || "the selected branch"}.
+                            Track teller cash-desk postings and automated payment orders for {selectedBranchName || "the selected branch"}.
                         </Typography>
-                        <Typography variant="body2" sx={{ color: alpha("#fff", 0.84), maxWidth: 860 }}>
-                            Review pending approvals, failed attempts, expired requests, and posted journals in one operational ledger so the branch can follow up quickly when something goes wrong.
+                        <Typography variant="body2" sx={{ color: alpha("#fff", 0.84), maxWidth: 920 }}>
+                            Manual teller activity is the current operating channel, while member-portal mobile money remains visible for future automation. Both feeds are shown with their posting channel, reference, journal, and status.
                         </Typography>
                     </Stack>
                 </CardContent>
             </MotionCard>
 
-            {error ? <Alert severity="error">{error}</Alert> : null}
+            {error ? (
+                <Alert
+                    severity="error"
+                    action={
+                        <Button color="inherit" size="small" onClick={() => void loadPaymentOperations()}>
+                            Retry
+                        </Button>
+                    }
+                >
+                    {error}
+                </Alert>
+            ) : null}
 
             <Grid container spacing={2}>
                 <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-                    <MetricCard icon={ReceiptLongRoundedIcon} label="Total Requests" value={metrics.total} helper="All mobile money actions in visible branch scope." tone="primary" />
+                    <MetricCard icon={ReceiptLongRoundedIcon} label="Total Actions" value={metrics.total} helper={`Inflow ${formatCurrency(metrics.inflow)} · outflow ${formatCurrency(metrics.outflow)}.`} tone="primary" />
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-                    <MetricCard icon={TaskAltRoundedIcon} label="Posted" value={metrics.posted} helper="Fully posted into the ledger." tone="success" />
+                    <MetricCard icon={PointOfSaleRoundedIcon} label="Teller Posted" value={metrics.teller} helper="Cash-desk transactions posted by tellers." tone="success" />
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-                    <MetricCard icon={HourglassTopRoundedIcon} label="In Progress" value={metrics.pending} helper="Still waiting for callback or posting." tone="warning" />
+                    <MetricCard icon={HourglassTopRoundedIcon} label="Gateway Orders" value={metrics.gateway} helper={`${metrics.inProgress} pending or paid orders need follow-up.`} tone="warning" />
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-                    <MetricCard icon={HighlightOffRoundedIcon} label="Failed / Expired" value={metrics.failed} helper={`Tracked amount ${formatCurrency(metrics.amount)}.`} tone="danger" />
+                    <MetricCard icon={HighlightOffRoundedIcon} label="Exceptions" value={metrics.failed} helper={`${metrics.posted} actions are posted into ledger.`} tone="danger" />
                 </Grid>
             </Grid>
 
@@ -384,25 +692,41 @@ export function PaymentsPage() {
                                     Payment Action Log
                                 </Typography>
                                 <Typography variant="body2" color="text.secondary">
-                                    Use this to follow up on member-reported issues and payment exceptions.
+                                    Use this as the branch operational payment register across teller cash, mobile money, and posted journals.
                                 </Typography>
                             </Box>
-                            <Stack direction={{ xs: "column", md: "row" }} spacing={1.25}>
+                            <Stack direction={{ xs: "column", md: "row" }} spacing={1.25} flexWrap="wrap" useFlexGap>
                                 <TextField
                                     label="Search"
                                     value={search}
                                     onChange={(event) => setSearch(event.target.value)}
-                                    placeholder="Member, account, reference..."
-                                    sx={{ minWidth: 220 }}
+                                    placeholder="Member, account, reference, teller..."
+                                    sx={{ minWidth: 240 }}
                                 />
-                                <TextField select label="Purpose" value={purposeFilter} onChange={(event) => setPurposeFilter(event.target.value)} sx={{ minWidth: 180 }}>
-                                    <MenuItem value="all">All payments</MenuItem>
-                                    <MenuItem value="share_contribution">Share contributions</MenuItem>
+                                <TextField select label="Operation" value={purposeFilter} onChange={(event) => setPurposeFilter(event.target.value)} sx={{ minWidth: 190 }}>
+                                    <MenuItem value="all">All operations</MenuItem>
                                     <MenuItem value="savings_deposit">Savings deposits</MenuItem>
+                                    <MenuItem value="savings_withdrawal">Savings withdrawals</MenuItem>
+                                    <MenuItem value="share_contribution">Share contributions</MenuItem>
+                                    <MenuItem value="loan_repayment">Loan repayments</MenuItem>
+                                    <MenuItem value="loan_disbursement">Loan disbursements</MenuItem>
+                                    <MenuItem value="membership_fee">Membership fees</MenuItem>
+                                    <MenuItem value="fee_revenue">Fee / revenue</MenuItem>
                                 </TextField>
-                                <TextField select label="Status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} sx={{ minWidth: 180 }}>
+                                <TextField select label="Channel" value={channelFilter} onChange={(event) => setChannelFilter(event.target.value)} sx={{ minWidth: 160 }}>
+                                    <MenuItem value="all">All channels</MenuItem>
+                                    <MenuItem value="cash_desk">Cash desk</MenuItem>
+                                    <MenuItem value="mobile_money">Mobile money</MenuItem>
+                                </TextField>
+                                <TextField select label="Source" value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)} sx={{ minWidth: 150 }}>
+                                    <MenuItem value="all">All sources</MenuItem>
+                                    <MenuItem value="teller">Teller</MenuItem>
+                                    <MenuItem value="gateway">Gateway</MenuItem>
+                                </TextField>
+                                <TextField select label="Status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} sx={{ minWidth: 160 }}>
                                     <MenuItem value="all">All statuses</MenuItem>
                                     <MenuItem value="posted">Posted</MenuItem>
+                                    <MenuItem value="created">Created</MenuItem>
                                     <MenuItem value="pending">Pending</MenuItem>
                                     <MenuItem value="paid">Paid</MenuItem>
                                     <MenuItem value="failed">Failed</MenuItem>
@@ -411,10 +735,10 @@ export function PaymentsPage() {
                             </Stack>
                         </Stack>
 
-                        <DataTable rows={paginatedOrders} columns={columns} emptyMessage="No payment actions match the current filters." />
+                        <DataTable rows={paginatedRows} columns={columns} emptyMessage="No payment actions match the current filters." maxHeight={620} stickyHeader />
                         <TablePagination
                             component="div"
-                            count={filteredOrders.length}
+                            count={filteredRows.length}
                             page={page}
                             onPageChange={(_, nextPage) => setPage(nextPage)}
                             rowsPerPage={rowsPerPage}
@@ -422,14 +746,14 @@ export function PaymentsPage() {
                                 setRowsPerPage(Number(event.target.value));
                                 setPage(0);
                             }}
-                            rowsPerPageOptions={[10, 25, 50]}
+                            rowsPerPageOptions={[10, 25, 50, 100]}
                         />
                     </Stack>
                 </CardContent>
             </MotionCard>
 
             <Dialog open={Boolean(selectedReceipt)} onClose={() => setSelectedReceipt(null)} fullWidth maxWidth="sm">
-                <DialogTitle>Payment Receipt</DialogTitle>
+                <DialogTitle>Payment Detail</DialogTitle>
                 <DialogContent dividers>
                     {selectedReceipt ? (
                         <Stack spacing={2}>
@@ -446,10 +770,10 @@ export function PaymentsPage() {
                                 variant="outlined"
                             >
                                 <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.35 }}>
-                                    {selectedReceipt.member_name || "Member payment"}
+                                    {selectedReceipt.member_name || "Payment action"}
                                 </Typography>
                                 <Typography variant="body2">
-                                    {formatPaymentPurpose(selectedReceipt.purpose)} · {formatPaymentStatus(selectedReceipt.status)}
+                                    {formatPaymentOperation(selectedReceipt.operation)} · {formatPaymentStatus(selectedReceipt.status)} · {selectedReceipt.channel_label}
                                 </Typography>
                             </Alert>
 
@@ -459,17 +783,22 @@ export function PaymentsPage() {
                                         {formatCurrency(selectedReceipt.amount)}
                                     </Typography>
                                     <Typography variant="body2" color="text.secondary">
-                                        {selectedReceipt.provider.toUpperCase()} · {selectedReceipt.currency}
+                                        {selectedReceipt.direction === "out" ? "Outflow" : "Inflow"} · {selectedReceipt.currency}
                                     </Typography>
                                     <Divider />
-                                    <Typography variant="body2"><strong>Member:</strong> {selectedReceipt.member_name || selectedReceipt.member_id}</Typography>
+                                    <Typography variant="body2"><strong>Channel:</strong> {selectedReceipt.channel_label}</Typography>
+                                    <Typography variant="body2"><strong>Source:</strong> {selectedReceipt.source === "teller" ? "Teller cash desk" : "Member portal gateway"}</Typography>
+                                    <Typography variant="body2"><strong>Member:</strong> {selectedReceipt.member_name || "N/A"}</Typography>
                                     <Typography variant="body2"><strong>Member No:</strong> {selectedReceipt.member_no || "N/A"}</Typography>
-                                    <Typography variant="body2"><strong>Account:</strong> {selectedReceipt.account_name || selectedReceipt.account_number || selectedReceipt.account_id}</Typography>
-                                    <Typography variant="body2"><strong>Reference:</strong> {selectedReceipt.provider_ref || selectedReceipt.external_id}</Typography>
-                                    <Typography variant="body2"><strong>Initiated:</strong> {formatDate(selectedReceipt.created_at)}</Typography>
+                                    <Typography variant="body2"><strong>Account / Loan:</strong> {selectedReceipt.account_label || selectedReceipt.loan_number || "N/A"}</Typography>
+                                    <Typography variant="body2"><strong>Branch:</strong> {selectedReceipt.branch_name || selectedBranchName || "N/A"}</Typography>
+                                    {selectedReceipt.teller_name ? <Typography variant="body2"><strong>Teller:</strong> {selectedReceipt.teller_name}</Typography> : null}
+                                    <Typography variant="body2"><strong>Reference:</strong> {selectedReceipt.reference || "N/A"}</Typography>
+                                    <Typography variant="body2"><strong>Date:</strong> {formatDate(selectedReceipt.date)}</Typography>
                                     {selectedReceipt.paid_at ? <Typography variant="body2"><strong>Paid:</strong> {formatDate(selectedReceipt.paid_at)}</Typography> : null}
                                     {selectedReceipt.posted_at ? <Typography variant="body2"><strong>Posted:</strong> {formatDate(selectedReceipt.posted_at)}</Typography> : null}
                                     {selectedReceipt.journal_id ? <Typography variant="body2"><strong>Journal:</strong> {selectedReceipt.journal_id}</Typography> : null}
+                                    {selectedReceipt.receipt_count != null ? <Typography variant="body2"><strong>Receipts:</strong> {selectedReceipt.receipt_count}</Typography> : null}
                                     {selectedReceipt.description ? <Typography variant="body2"><strong>Description:</strong> {selectedReceipt.description}</Typography> : null}
                                     {selectedReceipt.error_message ? (
                                         <Typography variant="body2" color="error.main"><strong>Issue:</strong> {selectedReceipt.error_message}</Typography>

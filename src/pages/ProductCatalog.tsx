@@ -1345,7 +1345,7 @@ export function ProductCatalogPage() {
                                                     type="number"
                                                     label="Min opening balance"
                                                     {...form.register("min_opening_balance", { valueAsNumber: true })}
-                                                    helperText="Members must deposit this amount when opening the account."
+                                                    helperText="Also used as the minimum monthly savings commitment during onboarding."
                                                     InputProps={{ inputProps: { min: 0, step: 1 } }}
                                                 />
                                             </Grid>
@@ -2128,9 +2128,18 @@ export function ProductCatalogPage() {
                                     )
                                 },
                                 { key: "code", header: "Code", render: (row) => row.code },
-                                { key: "pricing", header: "Pricing", render: (row) => `${formatMonthlyLoanRate(row.annual_interest_rate)} · ${row.interest_method.replace(/_/g, " ")}` },
+                                {
+                                    key: "pricing",
+                                    header: "Pricing",
+                                    render: (row) => {
+                                        const processingFee = row.processing_fee_type === "percentage"
+                                            ? `${row.processing_fee_percent ?? 0}% fee`
+                                            : `${formatCurrency(row.processing_fee_amount || 0)} fee`;
+                                        return `${formatMonthlyLoanRate(row.annual_interest_rate)} · ${processingFee}`;
+                                    }
+                                },
                                 { key: "range", header: "Range", render: (row) => `${formatCurrency(row.min_amount)} · ${row.max_amount ? formatCurrency(row.max_amount) : "Open cap"}` },
-                                { key: "term", header: "Term", render: (row) => `${row.min_term_count} - ${row.max_term_count ?? "Open"}` }
+                                { key: "term", header: "Term", render: (row) => `${row.min_term_count} - ${row.max_term_count ?? "Open"} ${row.term_unit}` }
                             ]}
                             emptyMessage={loading ? "Loading loan products..." : "No loan products configured."}
                         />
@@ -2148,7 +2157,7 @@ export function ProductCatalogPage() {
                             columns={[
                                 { key: "name", header: "Product", render: (row) => <Button onClick={() => openDialog("savings", row)}>{row.name}</Button> },
                                 { key: "code", header: "Code", render: (row) => row.code },
-                                { key: "rules", header: "Rules", render: (row) => `Min ${formatCurrency(row.min_balance)} · Notice ${row.withdrawal_notice_days} days` },
+                                { key: "rules", header: "Rules", render: (row) => `Opening ${formatCurrency(row.min_opening_balance)} · Retain ${formatCurrency(row.min_balance)}` },
                                 { key: "account", header: "Liability GL", render: (row) => accountLabel.get(row.liability_account_id) || row.liability_account_id }
                             ]}
                             emptyMessage={loading ? "Loading savings products..." : "No savings products configured."}
@@ -2167,7 +2176,7 @@ export function ProductCatalogPage() {
                             columns={[
                                 { key: "name", header: "Product", render: (row) => <Button onClick={() => openDialog("shares", row)}>{row.name}</Button> },
                                 { key: "code", header: "Code", render: (row) => row.code },
-                                { key: "limits", header: "Limits", render: (row) => `Min ${row.minimum_shares} · Max ${row.maximum_shares ?? "Open"}` },
+                                { key: "limits", header: "Limits", render: (row) => `Min ${formatCurrency(row.minimum_shares)} · Max ${row.maximum_shares ? formatCurrency(row.maximum_shares) : "Open"}` },
                                 { key: "account", header: "Equity GL", render: (row) => accountLabel.get(row.equity_account_id) || row.equity_account_id }
                             ]}
                             emptyMessage={loading ? "Loading share products..." : "No share products configured."}
@@ -2186,7 +2195,16 @@ export function ProductCatalogPage() {
                             columns={[
                                 { key: "name", header: "Rule", render: (row) => <Button onClick={() => openDialog("fees", row)}>{row.name}</Button> },
                                 { key: "type", header: "Type", render: (row) => row.fee_type.replace(/_/g, " ") },
-                                { key: "value", header: "Value", render: (row) => row.calculation_method === "flat" ? formatCurrency(row.flat_amount) : `${row.percentage_value}%` },
+                                {
+                                    key: "value",
+                                    header: "Value",
+                                    render: (row) => (
+                                        <Stack direction="row" spacing={1} alignItems="center">
+                                            <span>{row.calculation_method === "flat" ? formatCurrency(row.flat_amount) : `${row.percentage_value}%`}</span>
+                                            {!row.is_active ? <Chip label="Inactive" size="small" variant="outlined" /> : null}
+                                        </Stack>
+                                    )
+                                },
                                 { key: "account", header: "Income GL", render: (row) => accountLabel.get(row.income_account_id) || row.income_account_id }
                             ]}
                             emptyMessage={loading ? "Loading fee rules..." : "No fee rules configured."}
@@ -2205,7 +2223,16 @@ export function ProductCatalogPage() {
                             columns={[
                                 { key: "name", header: "Rule", render: (row) => <Button onClick={() => openDialog("penalties", row)}>{row.name}</Button> },
                                 { key: "type", header: "Type", render: (row) => row.penalty_type.replace(/_/g, " ") },
-                                { key: "value", header: "Value", render: (row) => row.calculation_method === "flat" ? formatCurrency(row.flat_amount) : `${row.percentage_value}%` },
+                                {
+                                    key: "value",
+                                    header: "Value",
+                                    render: (row) => (
+                                        <Stack direction="row" spacing={1} alignItems="center">
+                                            <span>{row.calculation_method === "flat" ? formatCurrency(row.flat_amount) : `${row.percentage_value}%`}</span>
+                                            {!row.is_active ? <Chip label="Inactive" size="small" variant="outlined" /> : null}
+                                        </Stack>
+                                    )
+                                },
                                 { key: "account", header: "Income GL", render: (row) => accountLabel.get(row.income_account_id) || row.income_account_id }
                             ]}
                             emptyMessage={loading ? "Loading penalty rules..." : "No penalty rules configured."}

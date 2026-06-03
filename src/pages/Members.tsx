@@ -438,6 +438,7 @@ export function MembersPage() {
     const canDeleteMembers = Boolean(
         profile && ["super_admin", "branch_manager"].includes(profile.role)
     );
+    const canLoadProductBootstrap = canCreateMembers;
     const isTeller = profile?.role === "teller";
     const canOpenCashDesk = profile?.role === "teller";
     const canOpenLoans = profile?.role === "loan_officer";
@@ -600,7 +601,7 @@ export function MembersPage() {
     };
 
     const loadProductBootstrap = async () => {
-        if (!selectedTenantId) {
+        if (!selectedTenantId || !canLoadProductBootstrap) {
             setProductBootstrap(emptyProductBootstrap);
             setProductBootstrapLoading(false);
             return;
@@ -788,7 +789,7 @@ export function MembersPage() {
 
     useEffect(() => {
         void loadProductBootstrap();
-    }, [selectedTenantId]);
+    }, [canLoadProductBootstrap, selectedTenantId]);
 
     useEffect(() => {
         const branchCandidate = selectedBranchId || branches[0]?.id;

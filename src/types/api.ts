@@ -517,6 +517,7 @@ export interface Member {
     membership_type?: "individual" | "group" | "company" | null;
     initial_share_amount?: number | null;
     monthly_savings_commitment?: number | null;
+    performance_target_amount?: number | null;
     kyc_status?: KycStatus;
     kyc_reason?: string | null;
     created_at: string;
@@ -720,6 +721,31 @@ export interface SaccoFinancialYearSettings {
     financial_year_configured_at?: string | null;
     financial_year_configured_by?: string | null;
     locked: boolean;
+    updated_at?: string | null;
+}
+
+export type PerformanceTargetActualSource =
+    | "savings_balance"
+    | "available_savings"
+    | "share_balance"
+    | "savings_plus_shares";
+
+export type PerformanceTargetMemberSource =
+    | "notes_or_member_field"
+    | "member_field"
+    | "member_field_annualized"
+    | "tenant_default";
+
+export interface SaccoPerformanceTargetSettings {
+    tenant_id: string | null;
+    performance_target_enabled: boolean;
+    performance_target_actual_source: PerformanceTargetActualSource;
+    performance_target_default_annual_amount: number;
+    performance_target_required_amount: number;
+    performance_target_on_track_percent: number;
+    performance_target_member_target_source: PerformanceTargetMemberSource;
+    performance_target_configured_at?: string | null;
+    performance_target_configured_by?: string | null;
     updated_at?: string | null;
 }
 
@@ -1311,6 +1337,50 @@ export interface PaymentOrder {
     updated_at: string;
 }
 
+export type TellerPaymentTransactionType = "deposit" | "withdraw" | "share_contribution" | "loan_repay" | "loan_disburse" | "fee_revenue";
+
+export interface TellerPaymentTransaction {
+    id: string;
+    tenant_id: string;
+    branch_id: string;
+    branch_name?: string | null;
+    branch_code?: string | null;
+    session_id: string;
+    session_status?: string | null;
+    journal_id: string;
+    transaction_type: TellerPaymentTransactionType;
+    direction: "in" | "out";
+    amount: number;
+    payment_channel: "cash_desk";
+    payment_method: "cash";
+    status: "posted";
+    member_id?: string | null;
+    member_name?: string | null;
+    member_no?: string | null;
+    member_phone?: string | null;
+    account_id?: string | null;
+    account_number?: string | null;
+    account_name?: string | null;
+    product_type?: "savings" | "shares" | "fixed_deposit" | null;
+    loan_id?: string | null;
+    loan_number?: string | null;
+    teller_user_id: string;
+    teller_name?: string | null;
+    teller_role?: string | null;
+    reference?: string | null;
+    description?: string | null;
+    source_type?: string | null;
+    entry_date?: string | null;
+    created_at: string;
+    recorded_at: string;
+    receipt_count: number;
+    principal_component?: number | null;
+    interest_component?: number | null;
+    running_balance?: number | null;
+    running_principal_balance?: number | null;
+    running_interest_balance?: number | null;
+}
+
 export interface TellerSession {
     id: string;
     tenant_id: string;
@@ -1341,7 +1411,7 @@ export interface ReceiptPolicy {
     max_receipts_per_tx: number;
     allowed_mime_types: string[];
     max_file_size_mb: number;
-    enforce_on_types: Array<"deposit" | "withdraw" | "loan_repay" | "loan_disburse" | "share_contribution">;
+    enforce_on_types: Array<"deposit" | "withdraw" | "loan_repay" | "loan_disburse" | "share_contribution" | "fee_revenue">;
     created_at: string;
     updated_at: string;
 }
@@ -1352,7 +1422,7 @@ export interface TransactionReceipt {
     branch_id: string;
     journal_id?: string | null;
     member_id?: string | null;
-    transaction_type: "deposit" | "withdraw" | "loan_repay" | "loan_disburse" | "share_contribution";
+    transaction_type: "deposit" | "withdraw" | "loan_repay" | "loan_disburse" | "share_contribution" | "fee_revenue";
     draft_token: string;
     storage_bucket: string;
     storage_path: string;
@@ -1374,9 +1444,19 @@ export interface DailyCashSummary {
     teller_user_id: string;
     business_date: string;
     sessions_count: number;
+    transaction_count?: number;
+    receipt_count?: number;
     opening_cash_total: number;
     deposits_total: number;
     withdrawals_total: number;
+    inflow_total?: number;
+    outflow_total?: number;
+    savings_deposit_total?: number;
+    savings_withdrawal_total?: number;
+    share_contribution_total?: number;
+    loan_repayment_total?: number;
+    loan_disbursement_total?: number;
+    fee_revenue_total?: number;
     net_movement: number;
     expected_cash_total: number;
     closing_cash_total: number;
@@ -1952,6 +2032,8 @@ export interface ChargeRevenueTotals {
     penalty_revenue: number;
     loan_interest_revenue: number;
     loan_fee_revenue: number;
+    treasury_revenue: number;
+    other_revenue: number;
     mixed_revenue: number;
     charge_revenue: number;
     loan_revenue: number;
@@ -1971,6 +2053,8 @@ export interface ChargeRevenueWarning {
     loan_interest_product_names?: string[];
     loan_fee_product_names?: string[];
     loan_penalty_product_names?: string[];
+    loan_fee_rule_names?: string[];
+    treasury_income_source_names?: string[];
 }
 
 export interface ChargeRevenueTrendPoint {
@@ -1979,6 +2063,8 @@ export interface ChargeRevenueTrendPoint {
     penalty_revenue: number;
     loan_interest_revenue: number;
     loan_fee_revenue: number;
+    treasury_revenue: number;
+    other_revenue: number;
     mixed_revenue: number;
     charge_revenue: number;
     loan_revenue: number;
@@ -1993,6 +2079,8 @@ export interface ChargeRevenueBranchRow {
     penalty_revenue: number;
     loan_interest_revenue: number;
     loan_fee_revenue: number;
+    treasury_revenue: number;
+    other_revenue: number;
     mixed_revenue: number;
     charge_revenue: number;
     loan_revenue: number;
@@ -2000,7 +2088,7 @@ export interface ChargeRevenueBranchRow {
 }
 
 export interface ChargeRevenueAccountRow {
-    revenue_type: "fee" | "penalty" | "loan_interest" | "loan_fee" | "mixed";
+    revenue_type: "fee" | "penalty" | "loan_interest" | "loan_fee" | "treasury_income" | "other_income" | "mixed";
     account_id: string;
     account_code: string;
     account_name: string;
@@ -2009,10 +2097,12 @@ export interface ChargeRevenueAccountRow {
     last_entry_date: string;
     configured_rule_names: string[];
     fee_rule_names: string[];
+    loan_fee_rule_names: string[];
     penalty_rule_names: string[];
     loan_interest_product_names: string[];
     loan_fee_product_names: string[];
     loan_penalty_product_names: string[];
+    treasury_income_source_names: string[];
 }
 
 export interface ChargeRevenueSummary {

@@ -3,9 +3,18 @@ import type { StatementRow } from "../../types/api";
 export interface FinancialSummaryData {
     totalSavings: number;
     totalShareCapital: number;
+    totalDividends: number;
     outstandingLoan: number;
     availableToWithdraw: number;
     netPosition: number;
+    annualSavingsTarget: number;
+    targetProgressPercent: number;
+    targetRemainingAmount: number;
+    nextRequiredAmount: number;
+    targetStatusLabel: string;
+    targetStatusTone: FinancialStandingTone;
+    nextInstallmentDueDate?: string | null;
+    nextInstallmentAmount: number;
 }
 
 export type FinancialStandingTone = "success" | "warning" | "danger" | "neutral";

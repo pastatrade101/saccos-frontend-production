@@ -23,24 +23,79 @@ import { DataTable, type Column } from "../components/DataTable";
 import { api, getApiErrorMessage } from "../lib/api";
 import {
     endpoints,
-    type ChargeRevenueSummaryResponse
+    type ChargeRevenueSummaryResponse,
+    type SaccoFinancialYearSettingsResponse
 } from "../lib/endpoints";
 import type {
     ChargeRevenueAccountRow,
     ChargeRevenueBranchRow,
+    SaccoFinancialYearSettings,
     ChargeRevenueSummary
 } from "../types/api";
 import { brandColors } from "../theme/colors";
 import { MotionCard } from "../ui/motion";
 import { formatCurrency, formatDate } from "../utils/format";
-
-function monthStartIsoDate() {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-}
+import {
+    DEFAULT_SACCO_FINANCIAL_YEAR_SETTINGS,
+    dateIso,
+    normalizeSaccoFinancialYearSettings,
+    resolveFinancialYearPeriod
+} from "../utils/financialYear";
 
 function todayIsoDate() {
-    return new Date().toISOString().slice(0, 10);
+    return dateIso(new Date());
+}
+
+function financialYearStartIso(settings: SaccoFinancialYearSettings = DEFAULT_SACCO_FINANCIAL_YEAR_SETTINGS) {
+    return resolveFinancialYearPeriod(settings).startIso;
+}
+
+function revenueTypeLabel(type: ChargeRevenueAccountRow["revenue_type"]) {
+    if (type === "mixed") {
+        return "Shared account";
+    }
+
+    if (type === "penalty") {
+        return "Penalty";
+    }
+
+    if (type === "loan_interest") {
+        return "Loan interest";
+    }
+
+    if (type === "loan_fee") {
+        return "Loan fees";
+    }
+
+    if (type === "treasury_income") {
+        return "Treasury income";
+    }
+
+    if (type === "other_income") {
+        return "Other income";
+    }
+
+    return "Fee";
+}
+
+function revenueTypeColor(type: ChargeRevenueAccountRow["revenue_type"]) {
+    if (type === "mixed") {
+        return "warning" as const;
+    }
+
+    if (type === "penalty") {
+        return "secondary" as const;
+    }
+
+    if (type === "loan_interest" || type === "loan_fee") {
+        return "success" as const;
+    }
+
+    if (type === "treasury_income") {
+        return "info" as const;
+    }
+
+    return "primary" as const;
 }
 
 interface RevenueMetricCardProps {
@@ -97,11 +152,52 @@ function RevenueMetricCard({ label, value, helper, icon: Icon, tone }: RevenueMe
 export function ChargeRevenuePage() {
     const theme = useTheme();
     const { selectedTenantId, selectedBranchId, selectedBranchName, profile } = useAuth();
-    const [fromDate, setFromDate] = useState(monthStartIsoDate());
+    const [financialYearSettings, setFinancialYearSettings] = useState<SaccoFinancialYearSettings>(DEFAULT_SACCO_FINANCIAL_YEAR_SETTINGS);
+    const [fromDate, setFromDate] = useState(() => financialYearStartIso());
     const [toDate, setToDate] = useState(todayIsoDate());
     const [summary, setSummary] = useState<ChargeRevenueSummary | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const financialYearPeriod = useMemo(() => resolveFinancialYearPeriod(financialYearSettings), [financialYearSettings]);
+
+    useEffect(() => {
+        let isActive = true;
+
+        const loadFinancialYear = async () => {
+            if (!selectedTenantId) {
+                setFinancialYearSettings(DEFAULT_SACCO_FINANCIAL_YEAR_SETTINGS);
+                return;
+            }
+
+            try {
+                const { data } = await api.get<SaccoFinancialYearSettingsResponse>(endpoints.saccoSettings.financialYear(), {
+                    params: { tenant_id: selectedTenantId }
+                });
+
+                if (!isActive) {
+                    return;
+                }
+
+                const normalized = normalizeSaccoFinancialYearSettings(data.data);
+                const period = resolveFinancialYearPeriod(normalized);
+                setFinancialYearSettings(normalized);
+                setFromDate(period.startIso);
+                setToDate(todayIsoDate());
+            } catch {
+                if (isActive) {
+                    setFinancialYearSettings(DEFAULT_SACCO_FINANCIAL_YEAR_SETTINGS);
+                    setFromDate(financialYearStartIso());
+                    setToDate(todayIsoDate());
+                }
+            }
+        };
+
+        void loadFinancialYear();
+
+        return () => {
+            isActive = false;
+        };
+    }, [selectedTenantId]);
 
     useEffect(() => {
         const loadSummary = async () => {
@@ -140,6 +236,8 @@ export function ChargeRevenuePage() {
         penalty_revenue: 0,
         loan_interest_revenue: 0,
         loan_fee_revenue: 0,
+        treasury_revenue: 0,
+        other_revenue: 0,
         mixed_revenue: 0,
         charge_revenue: 0,
         loan_revenue: 0,
@@ -179,26 +277,8 @@ export function ChargeRevenuePage() {
             render: (row) => (
                 <Chip
                     size="small"
-                    label={
-                        row.revenue_type === "mixed"
-                            ? "Shared account"
-                            : row.revenue_type === "penalty"
-                                ? "Penalty"
-                                : row.revenue_type === "loan_interest"
-                                    ? "Loan interest"
-                                    : row.revenue_type === "loan_fee"
-                                        ? "Loan fees"
-                                        : "Fee"
-                    }
-                    color={
-                        row.revenue_type === "mixed"
-                            ? "warning"
-                            : row.revenue_type === "penalty"
-                                ? "secondary"
-                                : row.revenue_type === "loan_interest" || row.revenue_type === "loan_fee"
-                                    ? "success"
-                                    : "primary"
-                    }
+                    label={revenueTypeLabel(row.revenue_type)}
+                    color={revenueTypeColor(row.revenue_type)}
                     variant="outlined"
                 />
             )
@@ -256,6 +336,16 @@ export function ChargeRevenuePage() {
             render: (row) => formatCurrency(row.loan_fee_revenue)
         },
         {
+            key: "treasury_revenue",
+            header: "Treasury",
+            render: (row) => formatCurrency(row.treasury_revenue)
+        },
+        {
+            key: "other_revenue",
+            header: "Other Income",
+            render: (row) => formatCurrency(row.other_revenue)
+        },
+        {
             key: "penalty_revenue",
             header: "Penalty Income",
             render: (row) => formatCurrency(row.penalty_revenue)
@@ -285,11 +375,11 @@ export function ChargeRevenuePage() {
                                     Branch gross revenue
                                 </Typography>
                                 <Typography variant="h5" sx={{ mt: 0.5 }}>
-                                    Fees, penalties, loan interest income, and loan fee income in one branch view
+                                    All posted SACCO income in one branch view
                                 </Typography>
                                 <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75, maxWidth: 780 }}>
-                                    Track posted operating gross revenue by branch scope, watch the trend through the selected period,
-                                    and catch configuration problems where fee, penalty, and loan income are sharing the same ledger accounts.
+                                    Track posted fees, penalties, loan interest, loan fees, treasury income, and other income from ledger data
+                                    generated by teller operations, imports, and automated workflows.
                                 </Typography>
                             </Box>
                             <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25} useFlexGap>
@@ -318,6 +408,10 @@ export function ChargeRevenuePage() {
                                 variant="outlined"
                             />
                             <Chip
+                                label={`SACCO year ${financialYearPeriod.startLabel} to ${financialYearPeriod.endLabel}`}
+                                variant="outlined"
+                            />
+                            <Chip
                                 icon={<AccountTreeRoundedIcon />}
                                 label={`${totals.configured_fee_rules} fee rule(s) · ${totals.configured_penalty_rules} penalty rule(s) · ${totals.configured_loan_products} loan product(s)`}
                                 variant="outlined"
@@ -340,7 +434,7 @@ export function ChargeRevenuePage() {
                     <RevenueMetricCard
                         label="Total Gross Revenue"
                         value={formatCurrency(totals.total_revenue)}
-                        helper="All posted fee, penalty, loan-interest, and loan-fee income in scope."
+                        helper="All posted income ledger lines in the selected branch and period."
                         icon={PaidRoundedIcon}
                         tone="primary"
                     />
@@ -367,7 +461,7 @@ export function ChargeRevenuePage() {
                     <RevenueMetricCard
                         label="Unclassified Revenue"
                         value={formatCurrency(totals.mixed_revenue)}
-                        helper="Posted into shared income accounts and excluded from charge or loan subtotals."
+                        helper="Posted into shared income accounts and kept separate from clean source subtotals."
                         icon={WarningAmberRoundedIcon}
                         tone={totals.mixed_revenue > 0 ? "danger" : "warning"}
                     />
@@ -410,6 +504,24 @@ export function ChargeRevenuePage() {
                 </Grid>
                 <Grid size={{ xs: 12, md: 6, xl: 2 }}>
                     <RevenueMetricCard
+                        label="Treasury Income"
+                        value={formatCurrency(totals.treasury_revenue)}
+                        helper="UTT, investment dividend, interest, and other treasury income posted to income accounts."
+                        icon={AccountTreeRoundedIcon}
+                        tone="primary"
+                    />
+                </Grid>
+                <Grid size={{ xs: 12, md: 6, xl: 2 }}>
+                    <RevenueMetricCard
+                        label="Other Income"
+                        value={formatCurrency(totals.other_revenue)}
+                        helper="Income ledger lines that are valid revenue but not tied to configured products or fee rules."
+                        icon={ReceiptLongRoundedIcon}
+                        tone="warning"
+                    />
+                </Grid>
+                <Grid size={{ xs: 12, md: 6, xl: 2 }}>
+                    <RevenueMetricCard
                         label="Posted Revenue Lines"
                         value={String(totals.posted_lines)}
                         helper="Accounting lines contributing to this revenue view."
@@ -434,7 +546,7 @@ export function ChargeRevenuePage() {
 
             {!loading && !summary?.account_breakdown.length ? (
                 <Alert severity="info" variant="outlined">
-                    No posted fee, penalty, loan-interest, or loan-fee revenue is visible for the selected period and branch scope yet.
+                    No posted income ledger revenue is visible for the selected period and branch scope yet.
                 </Alert>
             ) : null}
 
@@ -472,6 +584,18 @@ export function ChargeRevenuePage() {
                                     borderColor: theme.palette.primary.main
                                 },
                                 {
+                                    label: "Treasury",
+                                    data: (summary?.trend || []).map((point) => point.treasury_revenue),
+                                    backgroundColor: alpha(theme.palette.secondary.main, 0.45),
+                                    borderColor: theme.palette.secondary.main
+                                },
+                                {
+                                    label: "Other",
+                                    data: (summary?.trend || []).map((point) => point.other_revenue),
+                                    backgroundColor: alpha(theme.palette.grey[600], 0.36),
+                                    borderColor: theme.palette.grey[600]
+                                },
+                                {
                                     label: "Unclassified",
                                     data: (summary?.trend || []).map((point) => point.mixed_revenue),
                                     backgroundColor: alpha(theme.palette.error.main, 0.45),
@@ -505,6 +629,16 @@ export function ChargeRevenuePage() {
                                 {totals.penalty_revenue > 0 ? (
                                     <Alert severity="warning" variant="outlined">
                                         Penalty income currently stands at {formatCurrency(totals.penalty_revenue)}. If loan products use penalty income accounts, that amount is included here.
+                                    </Alert>
+                                ) : null}
+                                {totals.treasury_revenue > 0 ? (
+                                    <Alert severity="info" variant="outlined">
+                                        Treasury and investment income is currently {formatCurrency(totals.treasury_revenue)}.
+                                    </Alert>
+                                ) : null}
+                                {totals.other_revenue > 0 ? (
+                                    <Alert severity="info" variant="outlined">
+                                        Other income is currently {formatCurrency(totals.other_revenue)}. Map recurring Excel revenue sources to dedicated income accounts when they become regular products.
                                     </Alert>
                                 ) : null}
                                 {totals.mixed_revenue > 0 ? (
@@ -599,6 +733,11 @@ export function ChargeRevenuePage() {
                                             Fee rules: {warning.fee_rule_names.join(", ")}
                                         </Typography>
                                     ) : null}
+                                    {warning.loan_fee_rule_names?.length ? (
+                                        <Typography variant="body2" color="text.secondary">
+                                            Loan fee rules: {warning.loan_fee_rule_names.join(", ")}
+                                        </Typography>
+                                    ) : null}
                                     {warning.penalty_rule_names.length ? (
                                         <Typography variant="body2" color="text.secondary">
                                             Penalty rules: {warning.penalty_rule_names.join(", ")}
@@ -617,6 +756,11 @@ export function ChargeRevenuePage() {
                                     {warning.loan_penalty_product_names?.length ? (
                                         <Typography variant="body2" color="text.secondary">
                                             Loan penalty products: {warning.loan_penalty_product_names.join(", ")}
+                                        </Typography>
+                                    ) : null}
+                                    {warning.treasury_income_source_names?.length ? (
+                                        <Typography variant="body2" color="text.secondary">
+                                            Treasury income sources: {warning.treasury_income_source_names.join(", ")}
                                         </Typography>
                                     ) : null}
                                 </Stack>

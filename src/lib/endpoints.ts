@@ -66,7 +66,9 @@ import type {
     WorkspaceTwoFactorSettings,
     WorkspacePublicRegistrationSettings,
     SaccoFinancialYearSettings,
+    SaccoPerformanceTargetSettings,
     PaymentOrder,
+    TellerPaymentTransaction,
     MobileMoneyProvider,
     NotificationItem,
     NotificationListPayload,
@@ -117,6 +119,7 @@ const routeMap = {
         journalReceipts: (journalId: string) => `/cash-control/journals/${journalId}/receipts`,
         receiptDownload: (receiptId: string) => `/cash-control/receipts/${receiptId}/download`,
         dailySummary: "/cash-control/summary/daily",
+        transactions: "/cash-control/transactions",
         dailyCashbookCsv: "/cash-control/reports/daily-cashbook.csv",
         tellerBalancingCsv: "/cash-control/reports/teller-balancing.csv"
     },
@@ -198,6 +201,7 @@ const routeMap = {
         memberShareHistory: "/imports/members/share-history",
         memberLoanHistory: "/imports/members/loan-history",
         memberDividendHistory: "/imports/members/dividend-history",
+        memberPerformanceTargets: "/imports/members/performance-targets",
         memberJob: (jobId: string) => `/imports/members/${jobId}`,
         memberJobRows: (jobId: string) => `/imports/members/${jobId}/rows`,
         memberJobFailuresCsv: (jobId: string) => `/imports/members/${jobId}/failures.csv`,
@@ -213,6 +217,8 @@ const routeMap = {
         loanTransactions: "/loan/transactions",
         loanDisburse: "/loan/disburse",
         loanRepay: "/loan/repay",
+        feeRevenue: "/fee-revenue",
+        operationalBatch: "/operational-batch",
         statements: "/statements"
     },
     memberPayments: {
@@ -295,7 +301,8 @@ const routeMap = {
         publicRegistration: "/security-settings/public-registration"
     },
     saccoSettings: {
-        financialYear: "/sacco-settings/financial-year"
+        financialYear: "/sacco-settings/financial-year",
+        performanceTarget: "/sacco-settings/performance-target"
     },
     notifications: {
         list: "/notifications",
@@ -362,6 +369,7 @@ export const endpoints = {
         journalReceipts: (journalId: string) => routeMap.cashControl.journalReceipts(journalId),
         receiptDownload: (receiptId: string) => routeMap.cashControl.receiptDownload(receiptId),
         dailySummary: () => routeMap.cashControl.dailySummary,
+        transactions: () => routeMap.cashControl.transactions,
         dailyCashbookCsv: () => routeMap.cashControl.dailyCashbookCsv,
         tellerBalancingCsv: () => routeMap.cashControl.tellerBalancingCsv
     },
@@ -444,6 +452,7 @@ export const endpoints = {
         memberShareHistory: () => routeMap.imports.memberShareHistory,
         memberLoanHistory: () => routeMap.imports.memberLoanHistory,
         memberDividendHistory: () => routeMap.imports.memberDividendHistory,
+        memberPerformanceTargets: () => routeMap.imports.memberPerformanceTargets,
         memberJob: (jobId: string) => routeMap.imports.memberJob(jobId),
         memberJobRows: (jobId: string) => routeMap.imports.memberJobRows(jobId),
         memberJobFailuresCsv: (jobId: string) => routeMap.imports.memberJobFailuresCsv(jobId),
@@ -459,6 +468,8 @@ export const endpoints = {
         loanTransactions: () => routeMap.finance.loanTransactions,
         loanDisburse: () => routeMap.finance.loanDisburse,
         loanRepay: () => routeMap.finance.loanRepay,
+        feeRevenue: () => routeMap.finance.feeRevenue,
+        operationalBatch: () => routeMap.finance.operationalBatch,
         statements: () => routeMap.finance.statements
     },
     memberPayments: {
@@ -541,7 +552,8 @@ export const endpoints = {
         publicRegistration: () => routeMap.securitySettings.publicRegistration
     },
     saccoSettings: {
-        financialYear: () => routeMap.saccoSettings.financialYear
+        financialYear: () => routeMap.saccoSettings.financialYear,
+        performanceTarget: () => routeMap.saccoSettings.performanceTarget
     },
     notifications: {
         list: () => routeMap.notifications.list,
@@ -1143,13 +1155,13 @@ export interface UpdateReceiptPolicyRequest {
     max_receipts_per_tx: number;
     allowed_mime_types: string[];
     max_file_size_mb: number;
-    enforce_on_types: Array<"deposit" | "withdraw" | "loan_repay" | "loan_disburse" | "share_contribution">;
+    enforce_on_types: Array<"deposit" | "withdraw" | "loan_repay" | "loan_disburse" | "share_contribution" | "fee_revenue">;
 }
 
 export interface ReceiptInitRequest {
     branch_id: string;
     member_id?: string | null;
-    transaction_type: "deposit" | "withdraw" | "loan_repay" | "loan_disburse" | "share_contribution";
+    transaction_type: "deposit" | "withdraw" | "loan_repay" | "loan_disburse" | "share_contribution" | "fee_revenue";
     file_name: string;
     mime_type: string;
     file_size_bytes: number;
@@ -1166,6 +1178,7 @@ export interface ReceiptInitResponseData {
 
 export type ReceiptInitResponse = ApiEnvelope<ReceiptInitResponseData>;
 export type ReceiptDownloadResponse = ApiEnvelope<{ signed_url: string; receipt: TransactionReceipt }>;
+export type TellerPaymentTransactionsResponse = ApiEnvelope<TellerPaymentTransaction[]>;
 
 export type CreateMemberLoginResponse = ApiEnvelope<MemberLoginProvisionResult>;
 export type ResetMemberPasswordResponse = ApiEnvelope<MemberLoginProvisionResult>;
@@ -1275,6 +1288,24 @@ export interface MemberDividendHistoryImportResponseData extends Omit<MemberSavi
 }
 
 export type MemberDividendHistoryImportResponse = ApiEnvelope<MemberDividendHistoryImportResponseData>;
+export interface MemberPerformanceTargetImportResponseData {
+    tenant_id: string;
+    total_rows: number;
+    updated_rows: number;
+    failed_rows: number;
+    rows: Array<{
+        row_number: number;
+        member_id?: string | null;
+        member_no?: string | null;
+        full_name?: string | null;
+        old_target: number | null;
+        new_target: number | null;
+        status: "success" | "failed";
+        error?: string | null;
+    }>;
+}
+
+export type MemberPerformanceTargetImportResponse = ApiEnvelope<MemberPerformanceTargetImportResponseData>;
 export type ImportJobResponse = ApiEnvelope<import("../types/api").ImportJob>;
 export type ImportJobRowsResponse = ApiEnvelope<{
     items: import("../types/api").ImportJobRow[];
@@ -1299,6 +1330,47 @@ export type ShareContributionRequest = CashRequest;
 export type ShareContributionResponse = CashResponse;
 export type DividendAllocationRequest = CashRequest;
 export type DividendAllocationResponse = CashResponse;
+
+export interface OperationalBatchRowRequest {
+    operation: "savings_deposit" | "share_contribution" | "loan_repayment" | "fee_revenue";
+    member_id?: string;
+    member_no?: string;
+    email?: string;
+    account_id?: string;
+    loan_id?: string;
+    loan_number?: string;
+    fee_rule_code?: string;
+    amount?: number;
+    reference?: string | null;
+    description?: string | null;
+    receipt_ids?: string[];
+}
+
+export interface OperationalBatchRequest {
+    tenant_id?: string;
+    branch_id?: string;
+    rows: OperationalBatchRowRequest[];
+}
+
+export interface OperationalBatchResultRow {
+    row_number: number;
+    operation: OperationalBatchRowRequest["operation"] | null;
+    status: "posted" | "failed";
+    reference?: string | null;
+    journal_id?: string | null;
+    amount: number;
+    code?: string;
+    message: string;
+}
+
+export interface OperationalBatchResult {
+    total_rows: number;
+    posted_rows: number;
+    failed_rows: number;
+    rows: OperationalBatchResultRow[];
+}
+
+export type OperationalBatchResponse = ApiEnvelope<OperationalBatchResult>;
 
 export interface InitiateContributionPaymentRequest {
     tenant_id?: string;
@@ -1665,6 +1737,7 @@ export interface MemberPortalPaymentControlsResponse extends ApiEnvelope<MemberP
 export interface WorkspaceTwoFactorSettingsResponse extends ApiEnvelope<WorkspaceTwoFactorSettings> {}
 export interface WorkspacePublicRegistrationSettingsResponse extends ApiEnvelope<WorkspacePublicRegistrationSettings> {}
 export interface SaccoFinancialYearSettingsResponse extends ApiEnvelope<SaccoFinancialYearSettings> {}
+export interface SaccoPerformanceTargetSettingsResponse extends ApiEnvelope<SaccoPerformanceTargetSettings> {}
 
 export interface UpdateApprovalPolicyRequest {
     tenant_id?: string;
@@ -1717,6 +1790,16 @@ export interface UpdateSaccoFinancialYearSettingsRequest {
     tenant_id?: string;
     financial_year_start_month: number;
     financial_year_start_day: number;
+}
+
+export interface UpdateSaccoPerformanceTargetSettingsRequest {
+    tenant_id?: string;
+    performance_target_enabled?: boolean;
+    performance_target_actual_source?: SaccoPerformanceTargetSettings["performance_target_actual_source"];
+    performance_target_default_annual_amount?: number;
+    performance_target_required_amount?: number;
+    performance_target_on_track_percent?: number;
+    performance_target_member_target_source?: SaccoPerformanceTargetSettings["performance_target_member_target_source"];
 }
 
 export interface PendingApprovalPayload {

@@ -91,14 +91,14 @@ const navItems: NavItem[] = [
     { to: "/member-applications", label: "Applications", roles: ["super_admin", "branch_manager", "auditor"], section: "workspace", icon: DescriptionRoundedIcon },
     { to: "/members", label: "Members", roles: ["super_admin", "branch_manager", "teller"], section: "workspace", icon: GroupRoundedIcon },
     { to: "/members/import", label: "Member Import", roles: ["branch_manager"], section: "workspace", icon: StoreRoundedIcon },
-    { to: "/settings/sacco-year", label: "SACCO Year", roles: ["super_admin", "branch_manager"], section: "workspace", icon: SettingsRoundedIcon },
+    { to: "/settings/sacco-year", label: "SACCO Settings", roles: ["super_admin", "branch_manager"], section: "workspace", icon: SettingsRoundedIcon },
     { to: "/auditor/workbench", label: "Workbench", roles: ["auditor"], section: "workspace", icon: HubRoundedIcon },
     { to: "/auditor/exceptions", label: "Exceptions", roles: ["auditor"], section: "workspace", icon: WarningAmberRoundedIcon },
     { to: "/auditor/journals", label: "Journals", roles: ["auditor"], section: "workspace", icon: RuleFolderRoundedIcon },
     { to: "/auditor/audit-logs", label: "Audit Logs", roles: ["auditor"], section: "workspace", icon: PolicyRoundedIcon },
     { to: "/contributions", label: "Contributions", roles: ["branch_manager"], section: "finance", icon: PieChartRoundedIcon },
     { to: "/savings", label: "Savings", roles: ["branch_manager"], section: "finance", icon: SavingsRoundedIcon },
-    { to: "/payments", label: "Payments", roles: ["branch_manager"], section: "finance", icon: PaidRoundedIcon },
+    { to: "/payments", label: "Payments", roles: ["super_admin", "branch_manager"], section: "finance", icon: PaidRoundedIcon },
     { to: "/revenue", label: "Gross Revenue", roles: ["branch_manager"], section: "finance", icon: PaidRoundedIcon },
     { to: "/dividends", label: "Dividends", roles: ["super_admin", "branch_manager"], section: "finance", icon: EventRepeatRoundedIcon },
     { to: "/approvals", label: "Approvals", roles: ["super_admin", "branch_manager", "treasury_officer", "loan_officer", "teller"], section: "finance", icon: PendingActionsRoundedIcon },
@@ -136,7 +136,7 @@ const searchKeywords: Partial<Record<NavItem["to"], string[]>> = {
     "/auditor/reports": ["audit reports", "exports", "compliance"],
     "/contributions": ["shares", "share capital", "dividends", "capital"],
     "/savings": ["savings", "deposits", "withdrawals", "balances"],
-    "/payments": ["member payments", "mobile money", "payment gateway", "failed payments", "receipts", "reconcile"],
+    "/payments": ["member payments", "mobile money", "payment gateway", "teller", "cash desk", "failed payments", "receipts", "reconcile"],
     "/revenue": ["fees", "penalties", "loan interest", "loan fees", "branch revenue", "income accounts"],
     "/charge-revenue": ["fees", "penalties", "loan interest", "loan fees", "branch revenue", "income accounts"],
     "/dividends": ["dividend cycle", "allocations", "approvals"],
@@ -162,7 +162,7 @@ function getPageSubtitle(pathname: string) {
     }
 
     if (pathname.startsWith("/settings/sacco-year")) {
-        return "Set and review the tenant-wide SACCO financial year used by dashboards and report presets.";
+        return "Set and review tenant-wide SACCO year and performance target rules used by dashboards, reports, and member portal.";
     }
 
     if (pathname.startsWith("/products")) {
