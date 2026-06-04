@@ -174,13 +174,12 @@ export function downloadMemberStatementPdf(payload: MemberStatementPdfPayload) {
 
     const summaryCards = [
         { label: "Total Savings", value: formatCurrency(payload.totalSavings), tone: "success" as const },
-        { label: "Share Capital", value: formatCurrency(payload.shareCapital), tone: "primary" as const },
         { label: "Outstanding Loan", value: formatCurrency(payload.outstandingLoan), tone: "danger" as const },
         { label: "Net Position", value: formatCurrency(payload.netPosition), tone: payload.netPosition < 0 ? "danger" : "success" as const }
     ];
 
     const cardGap = 10;
-    const cardWidth = (pageWidth - margin * 2 - cardGap * 3) / 4;
+    const cardWidth = (pageWidth - margin * 2 - cardGap * 2) / 3;
     const cardHeight = 62;
 
     summaryCards.forEach((card, index) => {

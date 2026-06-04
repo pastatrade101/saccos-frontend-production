@@ -8,7 +8,6 @@ import { LoanRepaymentProgress } from "./LoanRepaymentProgress";
 import { RecentActivityCard } from "./RecentActivityCard";
 import { SavingsCard } from "./SavingsCard";
 import { SavingsTrendChart } from "./SavingsTrendChart";
-import { ShareCapitalCard } from "./ShareCapitalCard";
 import { TransactionsPreview } from "./TransactionsPreview";
 import type { FinancialStanding, FinancialSummaryData, LoanExposureData, MemberAlertItem, RecentActivityData } from "./types";
 
@@ -19,11 +18,6 @@ interface MemberOverviewProps {
         totalSavings: number;
         availableBalance: number;
         lockedAmount: number;
-    };
-    shareCard: {
-        totalShares: number;
-        dividendEarned: number;
-        lastContributionDate?: string | null;
     };
     loanExposure: LoanExposureData;
     recentActivity: RecentActivityData;
@@ -43,7 +37,6 @@ export function MemberOverview({
     summary,
     standing,
     savingsCard,
-    shareCard,
     loanExposure,
     recentActivity,
     alerts,
@@ -65,16 +58,13 @@ export function MemberOverview({
             />
 
             <Grid container spacing={2} alignItems="stretch" sx={{ width: "100%", minWidth: 0 }}>
-                <Grid size={{ xs: 12, md: 6, xl: 3 }} sx={{ display: "flex", minWidth: 0 }}>
+                <Grid size={{ xs: 12, md: 4 }} sx={{ display: "flex", minWidth: 0 }}>
                     <SavingsCard {...savingsCard} />
                 </Grid>
-                <Grid size={{ xs: 12, md: 6, xl: 3 }} sx={{ display: "flex", minWidth: 0 }}>
-                    <ShareCapitalCard {...shareCard} />
-                </Grid>
-                <Grid size={{ xs: 12, md: 6, xl: 3 }} sx={{ display: "flex", minWidth: 0 }}>
+                <Grid size={{ xs: 12, md: 4 }} sx={{ display: "flex", minWidth: 0 }}>
                     <LoanCard {...loanExposure} />
                 </Grid>
-                <Grid size={{ xs: 12, md: 6, xl: 3 }} sx={{ display: "flex", minWidth: 0 }}>
+                <Grid size={{ xs: 12, md: 4 }} sx={{ display: "flex", minWidth: 0 }}>
                     <RecentActivityCard {...recentActivity} />
                 </Grid>
             </Grid>

@@ -46,9 +46,7 @@ import type { ChangeEvent } from "react";
 
 const performanceActualSourceOptions = [
     { value: "savings_balance", label: "Savings balance", helper: "Excel actual detail uses member savings only." },
-    { value: "available_savings", label: "Available savings only", helper: "Excludes locked savings balances." },
-    { value: "share_balance", label: "Share balance", helper: "Use share capital as the target actual." },
-    { value: "savings_plus_shares", label: "Savings plus shares", helper: "Use total visible member capital." }
+    { value: "available_savings", label: "Available savings only", helper: "Excludes locked savings balances." }
 ] as const;
 
 const performanceMemberTargetSourceOptions = [

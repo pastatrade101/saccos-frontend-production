@@ -5,9 +5,21 @@ import {
     CardContent,
     Chip,
     Divider,
+    FormControl,
     Grid,
+    InputLabel,
     LinearProgress,
+    MenuItem,
+    Select,
     Stack,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
+    ToggleButton,
+    ToggleButtonGroup,
     Typography
 } from "@mui/material";
 import AccountBalanceWalletRoundedIcon from "@mui/icons-material/AccountBalanceWalletRounded";
@@ -20,9 +32,11 @@ import RequestQuoteRoundedIcon from "@mui/icons-material/RequestQuoteRounded";
 import RuleRoundedIcon from "@mui/icons-material/RuleRounded";
 import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
 import { alpha, useTheme } from "@mui/material/styles";
+import type { ChartData, ChartOptions } from "chart.js";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Bar } from "react-chartjs-2";
 
 import { useAuth } from "../auth/AuthContext";
 import { AppLoader } from "../components/AppLoader";
@@ -63,6 +77,7 @@ import {
     type UsersListResponse
 } from "../lib/endpoints";
 import { buildTellerDashboardData } from "../lib/tellerDashboard";
+import { registerCharts } from "../lib/charts";
 import type { Branch, ChargeRevenueSummary, DailyCashSummary, Loan, LoanApplication, LoanSchedule, ManualDividendBatch, Member, MemberAccount, MemberApplication, SaccoFinancialYearSettings, SaccoPerformanceTargetSettings, StaffAccessUser, StatementRow, Tenant } from "../types/api";
 import { MotionCard, MotionListItem, MotionSection } from "../ui/motion";
 import {
@@ -75,9 +90,13 @@ import {
     calculateMemberPerformanceTarget,
     DEFAULT_SACCO_PERFORMANCE_TARGET_SETTINGS,
     normalizeSaccoPerformanceTargetSettings,
-    type PerformanceTargetLevelColor
+    resolvePerformanceTargetStatusId,
+    type PerformanceTargetLevelColor,
+    type PerformanceTargetStatusId
 } from "../utils/performanceTarget";
 import { formatCurrency, formatDate, formatRole } from "../utils/format";
+
+registerCharts();
 
 interface DashboardState {
     members: Member[];
@@ -172,7 +191,49 @@ interface MemberPerformanceSummary {
     averageReachPercent: number;
 }
 
+type BranchActivityView = "chart" | "table";
+type BranchActivityFilter = "all" | "deposits" | "withdrawals" | "loans" | "dividends" | "other";
+type BranchActivityWindow = "7" | "30" | "year";
+type BranchActivityCategory = Exclude<BranchActivityFilter, "all">;
+
+interface BranchActivityDailyRow {
+    date: string;
+    deposits: number;
+    withdrawals: number;
+    loans: number;
+    dividends: number;
+    other: number;
+    inflow: number;
+    outflow: number;
+    net: number;
+    count: number;
+}
+
 const DASHBOARD_ACCOUNTS_PAGE_LIMIT = 100;
+type TargetWatchFilter = "needs_action" | "no_activity" | "needs_top_up" | "building" | "on_track" | "target_met" | "variance" | "all";
+
+function resolveTargetWatchStatus(row: MemberPerformanceRow, settings: SaccoPerformanceTargetSettings): PerformanceTargetStatusId {
+    return resolvePerformanceTargetStatusId(row.reachPercent, row.actualFormAmount, settings);
+}
+
+function matchesTargetWatchFilter(row: MemberPerformanceRow, filter: TargetWatchFilter, settings: SaccoPerformanceTargetSettings) {
+    const status = resolveTargetWatchStatus(row, settings);
+    const onTrackPercent = settings.performance_target_on_track_percent;
+
+    if (filter === "all") {
+        return true;
+    }
+
+    if (filter === "variance") {
+        return !row.matchesDetail;
+    }
+
+    if (filter === "needs_action") {
+        return row.annualTargetAmount > 0 && row.reachPercent < onTrackPercent;
+    }
+
+    return status === filter;
+}
 
 function formatSignedCurrency(value: number) {
     if (value < 0) {
@@ -900,6 +961,277 @@ function DashboardLoadingState() {
     return <AppLoader fullscreen={false} minHeight="72vh" message="Loading dashboard..." />;
 }
 
+function BranchActivityPanel({
+    statements,
+    view,
+    filter,
+    window,
+    onViewChange,
+    onFilterChange,
+    onWindowChange
+}: {
+    statements: StatementRow[];
+    view: BranchActivityView;
+    filter: BranchActivityFilter;
+    window: BranchActivityWindow;
+    onViewChange: (value: BranchActivityView) => void;
+    onFilterChange: (value: BranchActivityFilter) => void;
+    onWindowChange: (value: BranchActivityWindow) => void;
+}) {
+    const theme = useTheme();
+    const windowedStatements = useMemo(
+        () => filterBranchActivityByWindow(statements, window),
+        [statements, window]
+    );
+    const visibleStatements = useMemo(
+        () => filterBranchActivityByType(windowedStatements, filter)
+            .slice()
+            .sort((left, right) =>
+                normalizeActivityDate(right.transaction_date).localeCompare(normalizeActivityDate(left.transaction_date))
+                || (right.created_at || "").localeCompare(left.created_at || "")
+            ),
+        [filter, windowedStatements]
+    );
+    const dailyRows = useMemo(
+        () => buildBranchActivityDailyRows(visibleStatements),
+        [visibleStatements]
+    );
+    const activityTotals = useMemo(() => {
+        const inflow = visibleStatements
+            .filter((entry) => entry.direction === "in")
+            .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+        const outflow = visibleStatements
+            .filter((entry) => entry.direction === "out")
+            .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+
+        return {
+            inflow,
+            outflow,
+            net: inflow - outflow,
+            count: visibleStatements.length
+        };
+    }, [visibleStatements]);
+
+    const categoryMeta: Record<BranchActivityCategory, { label: string; color: string }> = {
+        deposits: { label: "Deposits", color: theme.palette.primary.main },
+        withdrawals: { label: "Withdrawals", color: theme.palette.error.main },
+        loans: { label: "Loans", color: theme.palette.warning.main },
+        dividends: { label: "Dividends", color: theme.palette.info.main },
+        other: { label: "Other", color: theme.palette.text.secondary }
+    };
+    const categoryTotals = BRANCH_ACTIVITY_CATEGORIES.reduce<Record<BranchActivityCategory, number>>((totals, category) => {
+        totals[category] = dailyRows.reduce((sum, row) => sum + row[category], 0);
+        return totals;
+    }, {
+        deposits: 0,
+        withdrawals: 0,
+        loans: 0,
+        dividends: 0,
+        other: 0
+    });
+    const chartCategories = (filter === "all"
+        ? BRANCH_ACTIVITY_CATEGORIES.filter((category) => categoryTotals[category] > 0)
+        : [filter]
+    ) as BranchActivityCategory[];
+    const categoriesToPlot: BranchActivityCategory[] = chartCategories.length ? chartCategories : ["deposits"];
+    const chartData: ChartData<"bar"> = {
+        labels: dailyRows.map((row) => formatDate(row.date)),
+        datasets: categoriesToPlot.map((category) => ({
+            label: categoryMeta[category].label,
+            data: dailyRows.map((row) => row[category]),
+            backgroundColor: alpha(categoryMeta[category].color, 0.72),
+            borderColor: categoryMeta[category].color,
+            borderWidth: 1,
+            borderRadius: 5
+        }))
+    };
+    const chartOptions: ChartOptions<"bar"> = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                position: "bottom"
+            },
+            tooltip: {
+                callbacks: {
+                    label: (context) => `${context.dataset.label || "Amount"}: ${formatCurrency(Number(context.parsed.y || 0))}`
+                }
+            }
+        },
+        scales: {
+            x: {
+                stacked: false,
+                grid: {
+                    display: false
+                }
+            },
+            y: {
+                beginAtZero: true,
+                ticks: {
+                    callback: (value) => formatCurrency(Number(value))
+                }
+            }
+        }
+    };
+    const tableRows = visibleStatements.slice(0, 40);
+    const latestDate = latestActivityDate(visibleStatements);
+
+    return (
+        <MotionCard
+            variant="outlined"
+            inView
+            sx={{
+                background: `linear-gradient(180deg, ${alpha(theme.palette.background.paper, 0.98)}, ${alpha(theme.palette.primary.main, 0.025)})`
+            }}
+        >
+            <CardContent>
+                <Stack spacing={2}>
+                    <Stack direction={{ xs: "column", lg: "row" }} justifyContent="space-between" alignItems={{ xs: "stretch", lg: "flex-start" }} spacing={2}>
+                        <Box>
+                            <Typography variant="h6">Recent Branch Activity</Typography>
+                            <Typography variant="body2" color="text.secondary">
+                                Daily branch movement from visible statements. Filter by posting type, switch the period, or inspect the same data as a table.
+                            </Typography>
+                        </Box>
+                        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap justifyContent={{ xs: "flex-start", lg: "flex-end" }}>
+                            <ToggleButtonGroup
+                                size="small"
+                                exclusive
+                                value={view}
+                                onChange={(_, nextView) => {
+                                    if (nextView) {
+                                        onViewChange(nextView);
+                                    }
+                                }}
+                            >
+                                <ToggleButton value="chart">Chart</ToggleButton>
+                                <ToggleButton value="table">Table</ToggleButton>
+                            </ToggleButtonGroup>
+                            <FormControl size="small" sx={{ minWidth: 160 }}>
+                                <InputLabel>Type</InputLabel>
+                                <Select
+                                    label="Type"
+                                    value={filter}
+                                    onChange={(event) => onFilterChange(event.target.value as BranchActivityFilter)}
+                                >
+                                    {Object.entries(branchActivityFilterLabels).map(([value, label]) => (
+                                        <MenuItem key={value} value={value}>{label}</MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
+                            <FormControl size="small" sx={{ minWidth: 150 }}>
+                                <InputLabel>Period</InputLabel>
+                                <Select
+                                    label="Period"
+                                    value={window}
+                                    onChange={(event) => onWindowChange(event.target.value as BranchActivityWindow)}
+                                >
+                                    <MenuItem value="7">Latest 7 days</MenuItem>
+                                    <MenuItem value="30">Latest 30 days</MenuItem>
+                                    <MenuItem value="year">SACCO year</MenuItem>
+                                </Select>
+                            </FormControl>
+                        </Stack>
+                    </Stack>
+
+                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                        <Chip label={`${activityTotals.count} posting(s)`} size="small" color="primary" variant="outlined" />
+                        <Chip label={`In ${formatCurrency(activityTotals.inflow)}`} size="small" color="success" variant="outlined" />
+                        <Chip label={`Out ${formatCurrency(activityTotals.outflow)}`} size="small" color="error" variant="outlined" />
+                        <Chip
+                            label={`Net ${formatCurrency(activityTotals.net)}`}
+                            size="small"
+                            color={activityTotals.net >= 0 ? "success" : "warning"}
+                            variant="outlined"
+                        />
+                        <Chip label={latestDate ? `Latest ${formatDate(latestDate)}` : "No activity yet"} size="small" variant="outlined" />
+                    </Stack>
+
+                    {visibleStatements.length ? (
+                        view === "table" ? (
+                            <Box>
+                                <TableContainer sx={{ maxHeight: 380, overflowX: "auto" }}>
+                                    <Table size="small" stickyHeader sx={{ minWidth: 980 }}>
+                                        <TableHead>
+                                            <TableRow>
+                                                <TableCell sx={{ fontWeight: 800 }}>No.</TableCell>
+                                                <TableCell sx={{ fontWeight: 800 }}>Date</TableCell>
+                                                <TableCell sx={{ fontWeight: 800 }}>Member</TableCell>
+                                                <TableCell sx={{ fontWeight: 800 }}>Type</TableCell>
+                                                <TableCell sx={{ fontWeight: 800 }}>Direction</TableCell>
+                                                <TableCell sx={{ fontWeight: 800 }} align="right">Amount</TableCell>
+                                                <TableCell sx={{ fontWeight: 800 }}>Reference</TableCell>
+                                            </TableRow>
+                                        </TableHead>
+                                        <TableBody>
+                                            {tableRows.map((entry, index) => {
+                                                const category = classifyBranchActivity(entry);
+                                                const categoryColor = categoryMeta[category].color;
+
+                                                return (
+                                                    <TableRow key={`${entry.transaction_id}-${index}`} hover>
+                                                        <TableCell>{index + 1}</TableCell>
+                                                        <TableCell>{formatDate(entry.transaction_date)}</TableCell>
+                                                        <TableCell>
+                                                            <Stack spacing={0.2}>
+                                                                <Typography variant="body2" fontWeight={700}>{entry.member_name}</Typography>
+                                                                <Typography variant="caption" color="text.secondary">{entry.account_number}</Typography>
+                                                            </Stack>
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <Chip
+                                                                label={categoryMeta[category].label}
+                                                                size="small"
+                                                                variant="outlined"
+                                                                sx={{ color: categoryColor, borderColor: alpha(categoryColor, 0.45) }}
+                                                            />
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <Chip
+                                                                label={entry.direction === "out" ? "Out" : "In"}
+                                                                size="small"
+                                                                color={entry.direction === "out" ? "error" : "success"}
+                                                                variant="outlined"
+                                                            />
+                                                        </TableCell>
+                                                        <TableCell align="right">
+                                                            <Typography variant="body2" fontWeight={800} color={entry.direction === "out" ? "error.main" : "success.main"}>
+                                                                {formatCurrency(entry.amount)}
+                                                            </Typography>
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <Typography variant="caption" color="text.secondary">
+                                                                {entry.reference || entry.transaction_type}
+                                                            </Typography>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                );
+                                            })}
+                                        </TableBody>
+                                    </Table>
+                                </TableContainer>
+                                {visibleStatements.length > tableRows.length ? (
+                                    <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
+                                        Showing latest {tableRows.length} of {visibleStatements.length} filtered postings.
+                                    </Typography>
+                                ) : null}
+                            </Box>
+                        ) : (
+                            <Box sx={{ height: { xs: 320, md: 360 } }}>
+                                <Bar data={chartData} options={chartOptions} />
+                            </Box>
+                        )
+                    ) : (
+                        <Alert severity="info" variant="outlined">
+                            No branch activity matches the selected period and type.
+                        </Alert>
+                    )}
+                </Stack>
+            </CardContent>
+        </MotionCard>
+    );
+}
+
 function buildDeltaLabel(current: number, baseline: number, prefix = "vs baseline") {
     if (!baseline && !current) {
         return `Flat ${prefix}`;
@@ -961,6 +1293,121 @@ function averageSeries(values: number[]) {
     return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
+const BRANCH_ACTIVITY_CATEGORIES: BranchActivityCategory[] = ["deposits", "withdrawals", "loans", "dividends", "other"];
+const branchActivityFilterLabels: Record<BranchActivityFilter, string> = {
+    all: "All activity",
+    deposits: "Savings deposits",
+    withdrawals: "Withdrawals",
+    loans: "Loan movement",
+    dividends: "Dividends",
+    other: "Other"
+};
+
+function normalizeActivityDate(value?: string | null) {
+    return value ? value.slice(0, 10) : "";
+}
+
+function shiftIsoDate(value: string, days: number) {
+    const date = new Date(`${value}T00:00:00Z`);
+    date.setUTCDate(date.getUTCDate() + days);
+    return date.toISOString().slice(0, 10);
+}
+
+function latestActivityDate(statements: StatementRow[]) {
+    return statements.reduce((latest, entry) => {
+        const date = normalizeActivityDate(entry.transaction_date);
+        return date && (!latest || date > latest) ? date : latest;
+    }, "");
+}
+
+function isShareBranchActivity(entry: StatementRow) {
+    return (entry.transaction_type || "").toLowerCase().includes("share");
+}
+
+function classifyBranchActivity(entry: StatementRow): BranchActivityCategory {
+    const transactionType = (entry.transaction_type || "").toLowerCase();
+
+    if (transactionType.includes("dividend")) {
+        return "dividends";
+    }
+
+    if (transactionType.includes("loan")) {
+        return "loans";
+    }
+
+    if (entry.direction === "out" || transactionType.includes("withdraw")) {
+        return "withdrawals";
+    }
+
+    if (entry.direction === "in" || transactionType.includes("deposit")) {
+        return "deposits";
+    }
+
+    return "other";
+}
+
+function filterBranchActivityByWindow(statements: StatementRow[], window: BranchActivityWindow) {
+    const savingsOnlyStatements = statements.filter((entry) => !isShareBranchActivity(entry));
+    const latest = latestActivityDate(savingsOnlyStatements);
+
+    if (!latest || window === "year") {
+        return savingsOnlyStatements;
+    }
+
+    const startDate = shiftIsoDate(latest, -(Number(window) - 1));
+    return savingsOnlyStatements.filter((entry) => normalizeActivityDate(entry.transaction_date) >= startDate);
+}
+
+function filterBranchActivityByType(statements: StatementRow[], filter: BranchActivityFilter) {
+    if (filter === "all") {
+        return statements;
+    }
+
+    return statements.filter((entry) => classifyBranchActivity(entry) === filter);
+}
+
+function buildBranchActivityDailyRows(statements: StatementRow[]) {
+    const map = new Map<string, BranchActivityDailyRow>();
+
+    statements.forEach((entry) => {
+        const date = normalizeActivityDate(entry.transaction_date);
+
+        if (!date) {
+            return;
+        }
+
+        const category = classifyBranchActivity(entry);
+        const current = map.get(date) || {
+            date,
+            deposits: 0,
+            withdrawals: 0,
+            loans: 0,
+            dividends: 0,
+            other: 0,
+            inflow: 0,
+            outflow: 0,
+            net: 0,
+            count: 0
+        };
+        const amount = Number(entry.amount || 0);
+
+        current[category] += amount;
+        current.count += 1;
+
+        if (entry.direction === "out") {
+            current.outflow += amount;
+            current.net -= amount;
+        } else {
+            current.inflow += amount;
+            current.net += amount;
+        }
+
+        map.set(date, current);
+    });
+
+    return [...map.values()].sort((left, right) => left.date.localeCompare(right.date));
+}
+
 export function DashboardPage() {
     const theme = useTheme();
     const navigate = useNavigate();
@@ -980,6 +1427,10 @@ export function DashboardPage() {
     });
     const [financialYearSettings, setFinancialYearSettings] = useState<SaccoFinancialYearSettings>(DEFAULT_SACCO_FINANCIAL_YEAR_SETTINGS);
     const [performanceTargetSettings, setPerformanceTargetSettings] = useState<SaccoPerformanceTargetSettings>(DEFAULT_SACCO_PERFORMANCE_TARGET_SETTINGS);
+    const [targetWatchFilter, setTargetWatchFilter] = useState<TargetWatchFilter>("needs_action");
+    const [branchActivityView, setBranchActivityView] = useState<BranchActivityView>("chart");
+    const [branchActivityFilter, setBranchActivityFilter] = useState<BranchActivityFilter>("all");
+    const [branchActivityWindow, setBranchActivityWindow] = useState<BranchActivityWindow>("30");
     const [platformState, setPlatformState] = useState<PlatformState>({
         tenants: [],
         branches: [],
@@ -1324,9 +1775,6 @@ export function DashboardPage() {
         const branchSavingsBalance = activeBranchAccounts
             .filter((account) => account.product_type === "savings")
             .reduce((sum, account) => sum + Number(account.available_balance || 0) + Number(account.locked_balance || 0), 0);
-        const branchSharesBalance = activeBranchAccounts
-            .filter((account) => account.product_type === "shares")
-            .reduce((sum, account) => sum + Number(account.available_balance || 0) + Number(account.locked_balance || 0), 0);
         const totalDeposits = state.statements
             .filter((entry) => entry.direction === "in")
             .reduce((sum, entry) => sum + entry.amount, 0);
@@ -1347,13 +1795,10 @@ export function DashboardPage() {
             && entry.transaction_date <= financialYearPeriod.endIso
         );
         const branchDepositIntake = branchYearStatements
-            .filter((entry) => entry.direction === "in")
+            .filter((entry) => entry.direction === "in" && !isShareBranchActivity(entry))
             .reduce((sum, entry) => sum + entry.amount, 0);
         const branchWithdrawalOutflow = branchYearStatements
-            .filter((entry) => entry.direction === "out")
-            .reduce((sum, entry) => sum + entry.amount, 0);
-        const branchContributionTotal = branchYearStatements
-            .filter((entry) => entry.transaction_type === "share_contribution")
+            .filter((entry) => entry.direction === "out" && !isShareBranchActivity(entry))
             .reduce((sum, entry) => sum + entry.amount, 0);
         const branchOverdueOutstanding = branchLoans
             .filter((loan) => loan.status === "in_arrears")
@@ -1394,11 +1839,8 @@ export function DashboardPage() {
             branchMembers: branchMembers.length,
             branchActiveMembers: branchMembers.filter((member) => member.status === "active").length,
             branchSavings: branchSavingsBalance,
-            branchShares: branchSharesBalance,
-            branchMemberCapital: branchSavingsBalance + branchSharesBalance,
             branchDepositIntake,
             branchWithdrawalOutflow,
-            branchContributionTotal,
             branchOutstanding: branchLoans.reduce((sum, loan) => sum + loan.outstanding_principal, 0),
             branchAccruedInterest: branchLoans.reduce((sum, loan) => sum + loan.accrued_interest, 0),
             branchOverdueLoans: branchLoans.filter((loan) => loan.status === "in_arrears").length,
@@ -1514,26 +1956,9 @@ export function DashboardPage() {
         () => buildTellerAverageTicketSparkline(state.statements),
         [state.statements]
     );
-    const branchCashTrend = useMemo(() => groupAmountsByDate(metrics.branchStatements), [metrics.branchStatements]);
-    const branchDepositTrend = useMemo(() => groupAmountsByDate(metrics.branchStatements, "in"), [metrics.branchStatements]);
     const branchWithdrawalTrend = useMemo(() => groupAmountsByDate(metrics.branchStatements, "out"), [metrics.branchStatements]);
-    const branchContributionTrend = useMemo(() => {
-        const map = new Map<string, number>();
-
-        metrics.branchStatements
-            .filter((entry) => entry.transaction_type === "share_contribution")
-            .forEach((entry) => {
-                map.set(entry.transaction_date, (map.get(entry.transaction_date) || 0) + entry.amount);
-            });
-
-        return [...map.entries()].sort(([left], [right]) => left.localeCompare(right)).slice(-7);
-    }, [metrics.branchStatements]);
-    const branchDepositSeries = branchDepositTrend.map(([, value]) => value);
     const branchWithdrawalSeries = branchWithdrawalTrend.map(([, value]) => value);
-    const branchContributionSeries = branchContributionTrend.map(([, value]) => value);
-    const branchDepositAverage = averageSeries(branchDepositSeries);
     const branchWithdrawalAverage = averageSeries(branchWithdrawalSeries);
-    const branchContributionAverage = averageSeries(branchContributionSeries);
     const branchNetMovement = metrics.branchDepositIntake - metrics.branchWithdrawalOutflow;
     const branchAlerts = useMemo(() => {
         const alerts: BranchAlertItem[] = [];
@@ -1562,15 +1987,6 @@ export function DashboardPage() {
                 severity: "warning",
                 title: "Overdue portfolio requires follow-up",
                 description: `${metrics.branchOverdueLoans} loans and ${metrics.branchOverdueSchedules} schedules need immediate branch collection follow-up.`
-            });
-        }
-
-        if (metrics.branchContributionTotal > branchContributionAverage * 1.25 && metrics.branchContributionTotal > 0) {
-            alerts.push({
-                id: "branch-contribution-growth",
-                severity: "success",
-                title: "Share capital momentum improved",
-                description: "Member share subscriptions are above the recent branch contribution pace."
             });
         }
 
@@ -1603,12 +2019,10 @@ export function DashboardPage() {
 
         return alerts.slice(0, 3);
     }, [
-        branchContributionAverage,
         branchWithdrawalAverage,
         memberPerformanceSummary.averageReachPercent,
         memberPerformanceSummary.behindMembers,
         metrics.branchCashControlVarianceToday,
-        metrics.branchContributionTotal,
         metrics.branchMixedRevenue,
         metrics.branchOverdueLoans,
         metrics.branchOverdueSchedules,
@@ -1862,10 +2276,53 @@ export function DashboardPage() {
     ];
     const branchTargetReachPercent = memberPerformanceSummary.averageReachPercent;
     const branchTargetProgressValue = Math.min(Math.max(branchTargetReachPercent, 0), 100);
+    const targetWatchFilterOptions: Array<{ value: TargetWatchFilter; label: string; count: number }> = [
+        {
+            value: "needs_action",
+            label: "Needs action",
+            count: memberPerformanceRows.filter((row) => matchesTargetWatchFilter(row, "needs_action", performanceTargetSettings)).length
+        },
+        {
+            value: "no_activity",
+            label: "No activity",
+            count: memberPerformanceRows.filter((row) => matchesTargetWatchFilter(row, "no_activity", performanceTargetSettings)).length
+        },
+        {
+            value: "needs_top_up",
+            label: "Top-up",
+            count: memberPerformanceRows.filter((row) => matchesTargetWatchFilter(row, "needs_top_up", performanceTargetSettings)).length
+        },
+        {
+            value: "building",
+            label: "Building",
+            count: memberPerformanceRows.filter((row) => matchesTargetWatchFilter(row, "building", performanceTargetSettings)).length
+        },
+        {
+            value: "on_track",
+            label: "On track",
+            count: memberPerformanceRows.filter((row) => matchesTargetWatchFilter(row, "on_track", performanceTargetSettings)).length
+        },
+        {
+            value: "target_met",
+            label: "Met",
+            count: memberPerformanceRows.filter((row) => matchesTargetWatchFilter(row, "target_met", performanceTargetSettings)).length
+        },
+        {
+            value: "variance",
+            label: "Variance",
+            count: memberPerformanceRows.filter((row) => matchesTargetWatchFilter(row, "variance", performanceTargetSettings)).length
+        },
+        {
+            value: "all",
+            label: "All",
+            count: memberPerformanceRows.length
+        }
+    ];
     const memberTargetWatchRows = memberPerformanceRows
-        .filter((row) => row.reachPercent < 60)
-        .sort((left, right) => left.reachPercent - right.reachPercent || right.remainingAmount - left.remainingAmount)
+        .filter((row) => matchesTargetWatchFilter(row, targetWatchFilter, performanceTargetSettings))
+        .sort((left, right) => left.reachPercent - right.reachPercent || left.remainingAmount - right.remainingAmount)
         .slice(0, 8);
+    const selectedTargetWatchFilter = targetWatchFilterOptions.find((option) => option.value === targetWatchFilter);
     const memberTargetWatchColumns: Column<MemberPerformanceRow>[] = [
         {
             key: "member",
@@ -1888,10 +2345,17 @@ export function DashboardPage() {
             render: (row) => formatCurrency(row.annualTargetAmount)
         },
         {
+            key: "level",
+            header: "Level",
+            render: (row) => (
+                <Chip label={row.level} color={row.levelColor} size="small" variant="outlined" />
+            )
+        },
+        {
             key: "remaining",
             header: "Remaining",
             render: (row) => (
-                <Typography variant="body2" color="warning.main" fontWeight={700}>
+                <Typography variant="body2" color={row.remainingAmount < 0 ? "warning.main" : "success.main"} fontWeight={700}>
                     {formatSignedCurrency(row.remainingAmount)}
                 </Typography>
             )
@@ -1907,17 +2371,14 @@ export function DashboardPage() {
             )
         }
     ];
-    const branchCapitalMixTotal = metrics.branchSavings + metrics.branchShares;
+    const branchSavingsPositionTotal = metrics.branchSavings;
     const branchRevenueMixTotal = metrics.branchGrossRevenue;
-    const branchCapitalMixData = {
-        labels: branchCapitalMixTotal > 0 ? ["Savings", "Shares"] : ["No member capital posted"],
+    const branchSavingsPositionData = {
+        labels: branchSavingsPositionTotal > 0 ? ["Savings"] : ["No savings posted"],
         datasets: [{
-            data: branchCapitalMixTotal > 0 ? [metrics.branchSavings, metrics.branchShares] : [1],
-            backgroundColor: branchCapitalMixTotal > 0
-                ? [
-                    alpha(theme.palette.primary.main, 0.76),
-                    alpha(theme.palette.success.main, 0.76)
-                ]
+            data: branchSavingsPositionTotal > 0 ? [metrics.branchSavings] : [1],
+            backgroundColor: branchSavingsPositionTotal > 0
+                ? [alpha(theme.palette.primary.main, 0.76)]
                 : [alpha(theme.palette.text.secondary, 0.18)],
             borderWidth: 0
         }]
@@ -2707,9 +3168,6 @@ export function DashboardPage() {
                                     <Button variant="contained" onClick={() => navigate("/cash-control")} startIcon={<ReceiptLongRoundedIcon />}>
                                         Cash Control
                                     </Button>
-                                    <Button variant="outlined" onClick={() => navigate("/contributions")} startIcon={<PieChartRoundedIcon />}>
-                                        Contributions
-                                    </Button>
                                     <Button variant="outlined" onClick={() => navigate("/revenue")} startIcon={<PaymentsRoundedIcon />}>
                                         Revenue
                                     </Button>
@@ -2729,21 +3187,11 @@ export function DashboardPage() {
                             <BranchManagerTopCard
                                 label="Savings"
                                 value={formatCurrency(metrics.branchSavings)}
-                                helper="Member savings only. Shares are shown separately."
+                                helper="Operational member balance used for targets, borrowing context, and dashboard totals."
                                 status="Savings book"
                                 tone="positive"
                                 icon={<AccountBalanceWalletRoundedIcon fontSize="small" />}
                                 featured
-                            />
-                        </Grid>
-                        <Grid size={{ xs: 12, sm: 6, lg: 4 }}>
-                            <BranchManagerTopCard
-                                label="Shares"
-                                value={formatCurrency(metrics.branchShares)}
-                                helper="Member share capital currently visible in active share accounts."
-                                status={`${formatCurrency(metrics.branchContributionTotal)} YTD`}
-                                tone="positive"
-                                icon={<PieChartRoundedIcon fontSize="small" />}
                             />
                         </Grid>
                         <Grid size={{ xs: 12, sm: 6, lg: 4 }}>
@@ -2992,10 +3440,10 @@ export function DashboardPage() {
                     <>
                         <Grid size={{ xs: 12, lg: 4 }}>
                             <ChartPanel
-                                title="Member Capital Mix"
-                                subtitle="Savings and shares are separated so balances stay financially clear."
+                                title="Savings Position"
+                                subtitle="Savings is the single operational member balance used across ILBORU."
                                 type="doughnut"
-                                data={branchCapitalMixData}
+                                data={branchSavingsPositionData}
                                 height={240}
                                 options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } }}
                             />
@@ -3100,16 +3548,34 @@ export function DashboardPage() {
                         </Grid>
                         <Grid size={{ xs: 12 }}>
                             <Stack spacing={1}>
-                                <Box>
-                                    <Typography variant="h6">Target Watchlist</Typography>
-                                    <Typography variant="body2" color="text.secondary">
-                                        Members below 60% of their annual target by {financialYearPeriod.endLabel}.
-                                    </Typography>
-                                </Box>
+                                <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" alignItems={{ xs: "stretch", md: "flex-start" }} spacing={1.5}>
+                                    <Box>
+                                        <Typography variant="h6">Target Watchlist</Typography>
+                                        <Typography variant="body2" color="text.secondary">
+                                            {selectedTargetWatchFilter?.count || 0} member(s) in {selectedTargetWatchFilter?.label.toLowerCase() || "this"} view. Full control covers search, sorting, pagination, and all target bands.
+                                        </Typography>
+                                    </Box>
+                                    <Button variant="outlined" size="small" onClick={() => navigate("/performance-targets")}>
+                                        View all targets
+                                    </Button>
+                                </Stack>
+                                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                                    {targetWatchFilterOptions.map((option) => (
+                                        <Chip
+                                            key={option.value}
+                                            label={`${option.label}: ${option.count}`}
+                                            size="small"
+                                            clickable
+                                            color={targetWatchFilter === option.value ? "primary" : "default"}
+                                            variant={targetWatchFilter === option.value ? "filled" : "outlined"}
+                                            onClick={() => setTargetWatchFilter(option.value)}
+                                        />
+                                    ))}
+                                </Stack>
                                 <DataTable
                                     rows={memberTargetWatchRows}
                                     columns={memberTargetWatchColumns}
-                                    emptyMessage="No member is below the watch threshold."
+                                    emptyMessage="No member matches this watchlist filter."
                                     maxHeight={360}
                                     stickyHeader
                                 />
@@ -3237,52 +3703,27 @@ export function DashboardPage() {
                 )
             ) : role === "branch_manager" ? (
                 <MotionSection inView>
-                <Box
-                    sx={{
-                        display: "flex",
-                        flexDirection: { xs: "column", lg: "row" },
-                        gap: 2,
-                        alignItems: "stretch"
-                    }}
-                >
-                    <Box sx={{ flex: { xs: "1 1 100%", lg: "1.6 1 0" }, minWidth: 0 }}>
-                        <ChartPanel
-                            title="Recent Branch Activity"
-                            subtitle="Latest visible savings and contribution postings for the supervised branch."
-                            type="bar"
-                            data={{
-                                labels: metrics.branchStatements.slice(0, 8).map((entry) => entry.member_name),
-                                datasets: [{
-                                    label: "Amount",
-                                    data: metrics.branchStatements.slice(0, 8).map((entry) => entry.amount),
-                                    backgroundColor: metrics.branchStatements.slice(0, 8).map((entry) => {
-                                        if (entry.transaction_type === "share_contribution") {
-                                            return alpha(theme.palette.success.main, 0.72);
-                                        }
-
-                                        return entry.direction === "in"
-                                            ? alpha(theme.palette.primary.main, 0.72)
-                                            : alpha(theme.palette.error.main, 0.72);
-                                    })
-                                }]
-                            }}
-                            options={{
-                                responsive: true,
-                                maintainAspectRatio: false,
-                                plugins: { legend: { display: false } }
-                            }}
-                            height={250}
+                <Grid container spacing={2}>
+                    <Grid size={{ xs: 12 }}>
+                        <BranchActivityPanel
+                            statements={metrics.branchStatements}
+                            view={branchActivityView}
+                            filter={branchActivityFilter}
+                            window={branchActivityWindow}
+                            onViewChange={setBranchActivityView}
+                            onFilterChange={setBranchActivityFilter}
+                            onWindowChange={setBranchActivityWindow}
                         />
-                    </Box>
-                    <Box sx={{ flex: { xs: "1 1 100%", lg: "1 1 0" }, minWidth: 0 }}>
+                    </Grid>
+                    <Grid size={{ xs: 12 }}>
                         <FollowUpPanel
                             title="Priority Follow-up"
                             subtitle="Branch loan items that need collections, review, or immediate member contact."
                             items={branchFollowUps}
                             onViewAll={() => navigate("/follow-ups")}
                         />
-                    </Box>
-                </Box>
+                    </Grid>
+                </Grid>
                 </MotionSection>
             ) : role === "loan_officer" ? (
                 <MotionSection inView>
@@ -3293,15 +3734,11 @@ export function DashboardPage() {
                             subtitle="Latest member postings tied to your supervised branch loan and savings movement."
                             type="bar"
                             data={{
-                                labels: metrics.branchStatements.slice(0, 8).map((entry) => entry.member_name),
+                                labels: metrics.branchStatements.filter((entry) => !isShareBranchActivity(entry)).slice(0, 8).map((entry) => entry.member_name),
                                 datasets: [{
                                     label: "Amount",
-                                    data: metrics.branchStatements.slice(0, 8).map((entry) => entry.amount),
-                                    backgroundColor: metrics.branchStatements.slice(0, 8).map((entry) => {
-                                        if (entry.transaction_type === "share_contribution") {
-                                            return alpha(theme.palette.success.main, 0.72);
-                                        }
-
+                                    data: metrics.branchStatements.filter((entry) => !isShareBranchActivity(entry)).slice(0, 8).map((entry) => entry.amount),
+                                    backgroundColor: metrics.branchStatements.filter((entry) => !isShareBranchActivity(entry)).slice(0, 8).map((entry) => {
                                         return entry.direction === "in"
                                             ? alpha(theme.palette.primary.main, 0.72)
                                             : alpha(theme.palette.error.main, 0.72);

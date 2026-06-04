@@ -34,6 +34,7 @@ import { LoanDetailPage } from "./pages/LoanDetail";
 import { ProductCatalogPage } from "./pages/ProductCatalog";
 import { ReportsPage } from "./pages/Reports";
 import { SaccoSettingsPage } from "./pages/SaccoSettings";
+import { PerformanceTargetsPage } from "./pages/PerformanceTargets";
 import { TreasuryPage } from "./pages/Treasury";
 import { TreasuryPolicySettingsPage } from "./pages/TreasuryPolicySettings";
 import { MemberPortalPage } from "./pages/MemberPortal";
@@ -248,6 +249,7 @@ export default function App() {
                         >
                             <Route path="/staff-users" element={<StaffUsersPage />} />
                             <Route path="/settings/sacco-year" element={<SaccoSettingsPage />} />
+                            <Route path="/performance-targets" element={<PerformanceTargetsPage />} />
                         </Route>
                         <Route
                             element={

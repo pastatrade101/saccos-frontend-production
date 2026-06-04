@@ -233,6 +233,8 @@ const routeMap = {
     dividends: {
         options: "/dividends/options",
         manualBatches: "/dividends/manual-batches",
+        formulaTemplates: "/dividends/formula-templates",
+        formulaManualBatch: "/dividends/manual-batches/formula",
         manualBatch: (batchId: string) => `/dividends/manual-batches/${batchId}`,
         submitManualBatch: (batchId: string) => `/dividends/manual-batches/${batchId}/submit`,
         postManualBatch: (batchId: string) => `/dividends/manual-batches/${batchId}/post`,
@@ -484,6 +486,8 @@ export const endpoints = {
     dividends: {
         options: () => routeMap.dividends.options,
         manualBatches: () => routeMap.dividends.manualBatches,
+        formulaTemplates: () => routeMap.dividends.formulaTemplates,
+        formulaManualBatch: () => routeMap.dividends.formulaManualBatch,
         manualBatch: (batchId: string) => routeMap.dividends.manualBatch(batchId),
         submitManualBatch: (batchId: string) => routeMap.dividends.submitManualBatch(batchId),
         postManualBatch: (batchId: string) => routeMap.dividends.postManualBatch(batchId),
@@ -1493,6 +1497,47 @@ export interface CreateManualDividendBatchRequest {
     rows: ManualDividendBatchRowInput[];
 }
 
+export interface FormulaDividendComponentInput {
+    key?: string;
+    dividend_date: string;
+    dividend_label: string;
+    source_type: "utt" | "loan" | "other";
+    base_cutoff_date: string;
+    pool_amount: number;
+}
+
+export interface DividendFormulaTemplate {
+    id: string;
+    tenant_id: string;
+    branch_id?: string | null;
+    template_name: string;
+    description?: string | null;
+    components: FormulaDividendComponentInput[];
+    status: "active" | "archived";
+    created_at: string;
+    updated_at?: string;
+}
+
+export type DividendFormulaTemplatesResponse = ApiEnvelope<DividendFormulaTemplate[]>;
+
+export interface SaveDividendFormulaTemplateRequest {
+    tenant_id?: string;
+    branch_id?: string | null;
+    template_name: string;
+    description?: string | null;
+    components: FormulaDividendComponentInput[];
+}
+
+export interface GenerateFormulaManualDividendBatchRequest {
+    tenant_id?: string;
+    branch_id: string;
+    batch_label?: string;
+    template_id?: string;
+    save_as_template?: boolean;
+    template_name?: string;
+    components?: FormulaDividendComponentInput[];
+}
+
 export interface RejectManualDividendBatchRequest {
     notes?: string | null;
 }
@@ -1513,6 +1558,25 @@ export type ManualDividendBatchesResponse = ApiEnvelope<ManualDividendBatch[]>;
 export type ManualDividendBatchDetailResponse = ApiEnvelope<{
     batch: ManualDividendBatch;
     rows: ManualDividendBatchRow[];
+    formula?: {
+        generated_rows: number;
+        total_amount: number;
+        template_id?: string | null;
+        template_name?: string | null;
+        components: Array<{
+            key: string;
+            dividend_label: string;
+            dividend_date: string;
+            source_type: "utt" | "loan" | "other";
+            base_column: string;
+            base_label: string;
+            base_cutoff_date: string;
+            base_total: number;
+            pool_cell: string;
+            pool_amount: number;
+            generated_rows: number;
+        }>;
+    };
     posting?: {
         posted_rows: number;
         total_amount: number;

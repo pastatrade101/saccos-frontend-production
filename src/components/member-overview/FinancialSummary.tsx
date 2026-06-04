@@ -1,4 +1,3 @@
-import AccountBalanceWalletRoundedIcon from "@mui/icons-material/AccountBalanceWalletRounded";
 import CreditScoreRoundedIcon from "@mui/icons-material/CreditScoreRounded";
 import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 import PaidRoundedIcon from "@mui/icons-material/PaidRounded";
@@ -81,14 +80,6 @@ export function FinancialSummary({
             icon: SavingsRoundedIcon,
             color: brandColors.success,
             bg: alpha(brandColors.success, 0.12)
-        },
-        {
-            label: "Shares",
-            value: formatCurrency(summary.totalShareCapital),
-            helper: "Paid share capital",
-            icon: AccountBalanceWalletRoundedIcon,
-            color: "#B45309",
-            bg: alpha(brandColors.warning, 0.16)
         },
         {
             label: "Dividends",
@@ -256,7 +247,7 @@ export function FinancialSummary({
                             gridTemplateColumns: {
                                 xs: "minmax(0, 1fr)",
                                 md: "repeat(2, minmax(0, 1fr))",
-                                xl: "repeat(4, minmax(0, 1fr))"
+                                xl: "repeat(3, minmax(0, 1fr))"
                             }
                         }}
                     >

@@ -1,6 +1,5 @@
 import AccountBalanceWalletRoundedIcon from "@mui/icons-material/AccountBalanceWalletRounded";
 import AutoGraphRoundedIcon from "@mui/icons-material/AutoGraphRounded";
-import CalendarTodayRoundedIcon from "@mui/icons-material/CalendarTodayRounded";
 import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 import PaymentsRoundedIcon from "@mui/icons-material/PaymentsRounded";
 import PrintRoundedIcon from "@mui/icons-material/PrintRounded";
@@ -169,47 +168,6 @@ function LoanMiniMetric({
     );
 }
 
-function DetailList({
-    title,
-    description,
-    items
-}: {
-    title: string;
-    description: string;
-    items: Array<{ label: string; value: string }>;
-}) {
-    return (
-        <Box
-            sx={{
-                p: 2,
-                borderRadius: 1.75,
-                border: (theme) => `1px solid ${alpha(theme.palette.divider, 0.9)}`,
-                bgcolor: (theme) => theme.palette.mode === "dark" ? alpha("#FFFFFF", 0.02) : alpha("#FFFFFF", 0.85),
-                height: "100%"
-            }}
-        >
-            <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                {title}
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 1.5 }}>
-                {description}
-            </Typography>
-            <Stack spacing={1}>
-                {items.map((item) => (
-                    <Stack key={item.label} direction="row" justifyContent="space-between" spacing={1.5} alignItems="flex-start">
-                        <Typography variant="body2" color="text.secondary">
-                            {item.label}
-                        </Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 700, textAlign: "right" }}>
-                            {item.value}
-                        </Typography>
-                    </Stack>
-                ))}
-            </Stack>
-        </Box>
-    );
-}
-
 export function MemberLoanWorkspaceCard({
     selectedLoan,
     loans,
@@ -307,6 +265,35 @@ export function MemberLoanWorkspaceCard({
                         : nextDueSchedule
                             ? `${formatCurrency(totalOutstanding)} remains outstanding. Your next installment of ${formatCurrency(nextDueAmount)} is due on ${formatDate(nextDueSchedule.due_date)}.`
                             : `${formatCurrency(totalOutstanding)} remains outstanding and there are no unpaid schedule lines visible yet.`;
+    const nextStepTitle = !selectedLoan
+        ? "Choose a loan to continue"
+        : selectedLoan.status === "written_off"
+            ? "Contact the branch"
+            : totalOutstanding <= 0 || selectedLoan.status === "closed"
+                ? "No repayment needed"
+                : dueNowAmount > 0
+                    ? `Pay ${formatCurrency(dueNowAmount)}`
+                    : nextDueSchedule
+                        ? `Next due ${formatDate(nextDueSchedule.due_date)}`
+                        : "Review the statement";
+    const nextStepMessage = !selectedLoan
+        ? "Select a facility first so the system can show repayment status and available actions."
+        : selectedLoan.status === "written_off"
+            ? "This account needs branch guidance before member self-service repayment."
+            : totalOutstanding <= 0 || selectedLoan.status === "closed"
+                ? "The visible loan balance is cleared. Keep the statement for your records."
+                : dueNowAmount > 0
+                    ? overdueSchedules.length
+                        ? "This amount is overdue. Pay it first to bring the loan back toward good standing."
+                        : "This amount is currently due. Use repayment if you want to settle it now."
+                    : nextDueSchedule
+                        ? `${formatCurrency(nextDueAmount)} is expected on the next unpaid installment.`
+                        : "No unpaid installment is visible, but the statement can confirm the latest posting position.";
+    const repaymentButtonLabel = dueNowAmount > 0
+        ? "Pay Due Amount"
+        : totalOutstanding > 0
+            ? "Make Repayment"
+            : "No Repayment Due";
 
     return (
         <MotionCard
@@ -362,105 +349,165 @@ export function MemberLoanWorkspaceCard({
                                 warning: <WarningAmberRoundedIcon fontSize="inherit" />,
                                 error: <WarningAmberRoundedIcon fontSize="inherit" />
                             }}>
-                                <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 0.35 }}>
-                                    {snapshotTitle}
-                                </Typography>
-                                <Typography variant="body2">
-                                    {snapshotMessage}
-                                </Typography>
+                                <Stack direction={{ xs: "column", sm: "row" }} spacing={1} justifyContent="space-between" alignItems={{ sm: "center" }}>
+                                    <Box sx={{ minWidth: 0 }}>
+                                        <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 0.25 }}>
+                                            {snapshotTitle}
+                                        </Typography>
+                                        <Typography variant="body2">
+                                            {snapshotMessage}
+                                        </Typography>
+                                    </Box>
+                                    <Chip
+                                        label={selectedLoan ? formatLoanStatusLabel(selectedLoan.status) : "No loan"}
+                                        color={selectedLoan?.status === "in_arrears" ? "warning" : selectedLoan?.status === "closed" ? "success" : "default"}
+                                        variant={selectedLoan?.status === "active" ? "outlined" : "filled"}
+                                        sx={{ textTransform: "capitalize", alignSelf: { xs: "flex-start", sm: "center" } }}
+                                    />
+                                </Stack>
                             </Alert>
 
-                            <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-                                <Chip
-                                    label={selectedLoan ? formatLoanStatusLabel(selectedLoan.status) : "No active selection"}
-                                    color={selectedLoan?.status === "in_arrears" ? "warning" : selectedLoan?.status === "closed" ? "success" : "default"}
-                                    variant={selectedLoan?.status === "active" ? "outlined" : "filled"}
-                                    sx={{ textTransform: "capitalize" }}
-                                />
-                                {selectedLoan ? (
-                                    <>
-                                        <Chip label={`Rate ${formatMonthlyLoanRate(selectedLoan.annual_interest_rate)}`} variant="outlined" />
-                                        <Chip label={`${getRepaymentFrequencyLabel(selectedLoan.repayment_frequency)} repayment`} variant="outlined" />
-                                        <Chip label={`Penalty est. ${formatCurrency(penaltyEstimate)}`} color={penaltyEstimate > 0 ? "warning" : "default"} variant="outlined" />
-                                    </>
-                                ) : null}
-                            </Stack>
-
                             <Grid container spacing={1.5}>
-                                <Grid size={{ xs: 12, sm: 6 }}>
-                                    <LoanMiniMetric
-                                        icon={AccountBalanceWalletRoundedIcon}
-                                        label="Total outstanding"
-                                        value={formatCurrency(totalOutstanding)}
-                                        helper={selectedLoan ? `Principal ${formatCurrency(selectedLoan.outstanding_principal)} + interest ${formatCurrency(selectedLoan.accrued_interest)}` : "Choose a facility to view balances."}
-                                        tone={totalOutstanding > 0 ? "primary" : "success"}
-                                    />
-                                </Grid>
-                                <Grid size={{ xs: 12, sm: 6 }}>
+                                <Grid size={{ xs: 12, md: 4 }}>
                                     <LoanMiniMetric
                                         icon={PaymentsRoundedIcon}
-                                        label="Due now"
-                                        value={dueNowAmount > 0 ? formatCurrency(dueNowAmount) : "No amount due"}
+                                        label="Pay now"
+                                        value={dueNowAmount > 0 ? formatCurrency(dueNowAmount) : "Nothing due"}
                                         helper={overdueSchedules.length ? `${overdueSchedules.length} overdue installment(s)` : nextDueSchedule ? `Next due ${formatDate(nextDueSchedule.due_date)}` : "No unpaid installment detected"}
                                         tone={overdueSchedules.length || dueNowAmount > 0 ? "warning" : "success"}
                                     />
                                 </Grid>
-                                <Grid size={{ xs: 12, sm: 6 }}>
+                                <Grid size={{ xs: 12, md: 4 }}>
                                     <LoanMiniMetric
-                                        icon={ScheduleRoundedIcon}
-                                        label="Remaining term"
-                                        value={selectedLoan ? `${remainingInstallments} of ${selectedLoan.term_count}` : "No schedule"}
-                                        helper={selectedLoan ? `${paidInstallments} installment(s) already settled` : "Installment schedule unavailable."}
-                                        tone="primary"
+                                        icon={AccountBalanceWalletRoundedIcon}
+                                        label="Still owed"
+                                        value={formatCurrency(totalOutstanding)}
+                                        helper={selectedLoan ? `Principal ${formatCurrency(selectedLoan.outstanding_principal)} · interest ${formatCurrency(selectedLoan.accrued_interest)}` : "Choose a facility to view balances."}
+                                        tone={totalOutstanding > 0 ? "primary" : "success"}
                                     />
                                 </Grid>
-                                <Grid size={{ xs: 12, sm: 6 }}>
+                                <Grid size={{ xs: 12, md: 4 }}>
                                     <LoanMiniMetric
-                                        icon={CalendarTodayRoundedIcon}
-                                        label="Last repayment"
-                                        value={lastRepayment ? formatCurrency(lastRepayment.amount) : "Not posted yet"}
-                                        helper={lastRepayment ? `${formatDate(lastRepayment.created_at)} · principal ${formatCurrency(lastRepayment.principal_component)}` : "No repayment posted on this facility yet."}
-                                        tone="success"
+                                        icon={ScheduleRoundedIcon}
+                                        label="Schedule"
+                                        value={selectedLoan ? `${remainingInstallments} open` : "No schedule"}
+                                        helper={selectedLoan ? `${paidInstallments}/${selectedLoan.term_count} installment(s) settled` : "Installment schedule unavailable."}
+                                        tone="primary"
                                     />
                                 </Grid>
                             </Grid>
 
+                            <Box
+                                sx={{
+                                    p: 1.5,
+                                    borderRadius: 1.75,
+                                    border: `1px solid ${alpha(theme.palette.divider, 0.9)}`,
+                                    bgcolor: theme.palette.mode === "dark" ? alpha("#FFFFFF", 0.03) : alpha("#FFFFFF", 0.85)
+                                }}
+                            >
+                                <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 1 }}>
+                                    Loan terms
+                                </Typography>
+                                <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                                    <Chip label={selectedLoan?.loan_number || "No loan number"} variant="outlined" />
+                                    <Chip label={`Original ${formatCurrency(selectedLoan?.principal_amount || 0)}`} variant="outlined" />
+                                    <Chip label={`Rate ${formatMonthlyLoanRate(selectedLoan?.annual_interest_rate || 0)}`} variant="outlined" />
+                                    <Chip label={selectedLoan ? `${getRepaymentFrequencyLabel(selectedLoan.repayment_frequency)} repayment` : "Repayment unavailable"} variant="outlined" />
+                                    <Chip label={selectedLoan ? `${selectedLoan.term_count} installment(s)` : "Term unavailable"} variant="outlined" />
+                                    {penaltyEstimate > 0 ? (
+                                        <Chip label={`Penalty est. ${formatCurrency(penaltyEstimate)}`} color="warning" variant="outlined" />
+                                    ) : null}
+                                    {lastRepayment ? (
+                                        <Chip label={`Last paid ${formatCurrency(lastRepayment.amount)} on ${formatDate(lastRepayment.created_at)}`} color="success" variant="outlined" />
+                                    ) : null}
+                                </Stack>
+                            </Box>
+
                             <Grid container spacing={1.5}>
                                 <Grid size={{ xs: 12, md: 6 }}>
-                                    <DetailList
-                                        title="Facility details"
-                                        description="Loan setup and contractual terms for the currently selected facility."
-                                        items={[
-                                            { label: "Loan number", value: selectedLoan?.loan_number || "Not available" },
-                                            { label: "Disbursed on", value: formatDate(selectedLoan?.disbursed_at || selectedLoan?.created_at || null) },
-                                            { label: "Original principal", value: formatCurrency(selectedLoan?.principal_amount || 0) },
-                                            { label: "Interest rate", value: formatMonthlyLoanRate(selectedLoan?.annual_interest_rate || 0) },
-                                            { label: "Repayment frequency", value: selectedLoan ? getRepaymentFrequencyLabel(selectedLoan.repayment_frequency) : "Not available" },
-                                            { label: "Term length", value: selectedLoan ? `${selectedLoan.term_count} installment(s)` : "Not available" }
-                                        ]}
-                                    />
+                                    <Box
+                                        sx={{
+                                            height: "100%",
+                                            p: 2,
+                                            borderRadius: 1.75,
+                                            border: `1px solid ${alpha(theme.palette.divider, 0.9)}`,
+                                            bgcolor: theme.palette.mode === "dark" ? alpha("#FFFFFF", 0.03) : alpha("#FFFFFF", 0.85)
+                                        }}
+                                    >
+                                        <Stack spacing={1}>
+                                            <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="baseline">
+                                                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                                                    Principal repayment progress
+                                                </Typography>
+                                                <Typography variant="caption" sx={{ fontWeight: 800, color: brandColors.primary[700] }}>
+                                                    {Math.max(Math.min(principalProgressPercent, 100), 0).toFixed(0)}%
+                                                </Typography>
+                                            </Stack>
+                                            <LinearProgress
+                                                variant="determinate"
+                                                value={Math.max(Math.min(principalProgressPercent, 100), 0)}
+                                                sx={{
+                                                    height: 8,
+                                                    borderRadius: 999,
+                                                    bgcolor: alpha(brandColors.primary[500], 0.12),
+                                                    "& .MuiLinearProgress-bar": {
+                                                        borderRadius: 999,
+                                                        bgcolor: brandColors.primary[700]
+                                                    }
+                                                }}
+                                            />
+                                            <Typography variant="body2" color="text.secondary">
+                                                {selectedLoan
+                                                    ? `${formatCurrency(Math.max(selectedLoan.principal_amount - selectedLoan.outstanding_principal, 0))} of principal has been cleared.`
+                                                    : "Select a loan to see repayment progress."}
+                                            </Typography>
+                                        </Stack>
+                                    </Box>
                                 </Grid>
                                 <Grid size={{ xs: 12, md: 6 }}>
-                                    <Box sx={{ height: "100%" }}>
-                                        <DetailList
-                                            title="Repayment position"
-                                            description="Current exposure, schedule pressure, and the next unpaid repayment checkpoint."
-                                            items={[
-                                                { label: "Outstanding principal", value: formatCurrency(selectedLoan?.outstanding_principal || 0) },
-                                                { label: "Posted accrued interest", value: formatCurrency(selectedLoan?.accrued_interest || 0) },
-                                                { label: "Penalty estimate", value: formatCurrency(penaltyEstimate) },
-                                                { label: "Next unpaid due date", value: nextDueSchedule ? formatDate(nextDueSchedule.due_date) : "Not scheduled" },
-                                                { label: "Next unpaid due amount", value: nextDueSchedule ? formatCurrency(nextDueAmount) : "Not scheduled" },
-                                                { label: "Days to next unpaid due", value: daysUntilNextDue === null ? "Not scheduled" : `${daysUntilNextDue} day(s)` }
-                                            ]}
+                                    <Box
+                                        sx={{
+                                            height: "100%",
+                                            p: 2,
+                                            borderRadius: 1.75,
+                                            border: `1px solid ${alpha(theme.palette.divider, 0.9)}`,
+                                            bgcolor: theme.palette.mode === "dark" ? alpha("#FFFFFF", 0.03) : alpha("#FFFFFF", 0.85)
+                                        }}
+                                    >
+                                        <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                                            Prepayment simulation
+                                        </Typography>
+                                        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                                            Test how an extra principal payment would change the remaining balance before repayment.
+                                        </Typography>
+                                        <TextField
+                                            size="small"
+                                            type="number"
+                                            label="Prepay amount"
+                                            value={prepaymentAmount}
+                                            onChange={(event) => onPrepaymentAmountChange(Number(event.target.value) || 0)}
+                                            fullWidth
+                                            sx={{ mt: 1.5 }}
                                         />
-                                        {(selectedLoan?.annual_interest_rate || 0) > 0 ? (
-                                            <Alert severity="info" variant="outlined" sx={{ mt: 1.25, alignItems: "flex-start" }}>
-                                                <Typography variant="body2">
-                                                    <strong>Posted accrued interest</strong> is the accounting balance already posted by the backend accrual process. It can stay at {formatCurrency(0)} until the scheduled accrual job posts the next interest run, even when the loan carries interest.
+                                        <Divider sx={{ my: 1.5 }} />
+                                        <Stack spacing={0.75}>
+                                            <Stack direction="row" justifyContent="space-between" spacing={1}>
+                                                <Typography variant="body2" color="text.secondary">
+                                                    Projected outstanding
                                                 </Typography>
-                                            </Alert>
-                                        ) : null}
+                                                <Typography variant="body2" sx={{ fontWeight: 800 }}>
+                                                    {formatCurrency(prepaymentProjection?.newOutstanding || (selectedLoan?.outstanding_principal || 0))}
+                                                </Typography>
+                                            </Stack>
+                                            <Stack direction="row" justifyContent="space-between" spacing={1}>
+                                                <Typography variant="body2" color="text.secondary">
+                                                    Estimated term reduction
+                                                </Typography>
+                                                <Typography variant="body2" sx={{ fontWeight: 800 }}>
+                                                    {prepaymentProjection?.termsReduced || 0} installment(s)
+                                                </Typography>
+                                            </Stack>
+                                        </Stack>
                                     </Box>
                                 </Grid>
                             </Grid>
@@ -468,7 +515,7 @@ export function MemberLoanWorkspaceCard({
                     </Grid>
 
                     <Grid size={{ xs: 12, lg: 4 }}>
-                        <Stack spacing={1.5} sx={{ height: "100%" }}>
+                        <Stack spacing={1.5}>
                             <Box
                                 sx={{
                                     p: 2,
@@ -477,13 +524,46 @@ export function MemberLoanWorkspaceCard({
                                     bgcolor: theme.palette.mode === "dark" ? alpha("#FFFFFF", 0.03) : alpha("#FFFFFF", 0.85)
                                 }}
                             >
-                                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                                    Action center
-                                </Typography>
-                                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                                    Repay, export the statement, or print the current view once you understand the facility position.
-                                </Typography>
-                                <Stack spacing={1} sx={{ mt: 2 }}>
+                                <Stack spacing={1.25}>
+                                    <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="flex-start">
+                                        <Box sx={{ minWidth: 0 }}>
+                                            <Typography variant="overline" color="text.secondary">
+                                                Next step
+                                            </Typography>
+                                            <Typography variant="h6" sx={{ fontWeight: 800, lineHeight: 1.15, mt: 0.25, overflowWrap: "anywhere" }}>
+                                                {nextStepTitle}
+                                            </Typography>
+                                        </Box>
+                                        <Chip
+                                            size="small"
+                                            label={dueNowAmount > 0 ? "Action" : totalOutstanding > 0 ? "Upcoming" : "Clear"}
+                                            color={dueNowAmount > 0 ? "warning" : totalOutstanding > 0 ? "default" : "success"}
+                                        />
+                                    </Stack>
+                                    <Typography variant="body2" color="text.secondary">
+                                        {nextStepMessage}
+                                    </Typography>
+                                    <Divider />
+                                    <Stack spacing={0.8}>
+                                        <Stack direction="row" justifyContent="space-between" spacing={1}>
+                                            <Typography variant="body2" color="text.secondary">Due date</Typography>
+                                            <Typography variant="body2" sx={{ fontWeight: 800, textAlign: "right" }}>
+                                                {nextDueSchedule ? formatDate(nextDueSchedule.due_date) : "No unpaid due"}
+                                            </Typography>
+                                        </Stack>
+                                        <Stack direction="row" justifyContent="space-between" spacing={1}>
+                                            <Typography variant="body2" color="text.secondary">Penalty estimate</Typography>
+                                            <Typography variant="body2" sx={{ fontWeight: 800, textAlign: "right" }}>
+                                                {formatCurrency(penaltyEstimate)}
+                                            </Typography>
+                                        </Stack>
+                                        <Stack direction="row" justifyContent="space-between" spacing={1}>
+                                            <Typography variant="body2" color="text.secondary">Last repayment</Typography>
+                                            <Typography variant="body2" sx={{ fontWeight: 800, textAlign: "right" }}>
+                                                {lastRepayment ? formatDate(lastRepayment.created_at) : "None posted"}
+                                            </Typography>
+                                        </Stack>
+                                    </Stack>
                                     {!loanRepaymentEnabled ? (
                                         <Alert severity="info" variant="outlined">
                                             Mobile money self-service loan repayment is currently turned off by the tenant super admin.
@@ -493,99 +573,19 @@ export function MemberLoanWorkspaceCard({
                                         <Button
                                             variant="contained"
                                             onClick={onRepay}
-                                            disabled={submittingContribution || !hasRepaymentLoanOption}
+                                            disabled={submittingContribution || !hasRepaymentLoanOption || totalOutstanding <= 0}
                                             sx={repayButtonSx}
                                         >
-                                            Repay with Mobile Money
+                                            {repaymentButtonLabel}
                                         </Button>
                                     ) : null}
-                                    <Button variant="outlined" startIcon={<DownloadRoundedIcon />} onClick={onDownloadStatement} disabled={!selectedLoan}>
-                                        Download Loan Statement PDF
-                                    </Button>
-                                    <Button variant="outlined" startIcon={<PrintRoundedIcon />} onClick={onPrint}>
-                                        Printable View
-                                    </Button>
-                                </Stack>
-                            </Box>
-
-                            <Box
-                                sx={{
-                                    p: 2,
-                                    borderRadius: 1.75,
-                                    border: `1px solid ${alpha(theme.palette.divider, 0.9)}`,
-                                    bgcolor: theme.palette.mode === "dark" ? alpha("#FFFFFF", 0.03) : alpha("#FFFFFF", 0.85)
-                                }}
-                            >
-                                <Stack spacing={1}>
-                                    <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="baseline">
-                                        <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                                            Principal repayment progress
-                                        </Typography>
-                                        <Typography variant="caption" sx={{ fontWeight: 800, color: brandColors.primary[700] }}>
-                                            {Math.max(Math.min(principalProgressPercent, 100), 0).toFixed(0)}%
-                                        </Typography>
-                                    </Stack>
-                                    <LinearProgress
-                                        variant="determinate"
-                                        value={Math.max(Math.min(principalProgressPercent, 100), 0)}
-                                        sx={{
-                                            height: 8,
-                                            borderRadius: 999,
-                                            bgcolor: alpha(brandColors.primary[500], 0.12),
-                                            "& .MuiLinearProgress-bar": {
-                                                borderRadius: 999,
-                                                bgcolor: brandColors.primary[700]
-                                            }
-                                        }}
-                                    />
-                                    <Typography variant="body2" color="text.secondary">
-                                        {selectedLoan
-                                            ? `${formatCurrency(Math.max(selectedLoan.principal_amount - selectedLoan.outstanding_principal, 0))} of principal has been cleared.`
-                                            : "Select a loan to see repayment progress."}
-                                    </Typography>
-                                </Stack>
-                            </Box>
-
-                            <Box
-                                sx={{
-                                    p: 2,
-                                    borderRadius: 1.75,
-                                    border: `1px solid ${alpha(theme.palette.divider, 0.9)}`,
-                                    bgcolor: theme.palette.mode === "dark" ? alpha("#FFFFFF", 0.03) : alpha("#FFFFFF", 0.85)
-                                }}
-                            >
-                                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                                    Prepayment simulation
-                                </Typography>
-                                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                                    Test how an extra principal payment would change the remaining balance before you initiate repayment.
-                                </Typography>
-                                <TextField
-                                    size="small"
-                                    type="number"
-                                    label="Prepay amount"
-                                    value={prepaymentAmount}
-                                    onChange={(event) => onPrepaymentAmountChange(Number(event.target.value) || 0)}
-                                    fullWidth
-                                    sx={{ mt: 1.5 }}
-                                />
-                                <Divider sx={{ my: 1.5 }} />
-                                <Stack spacing={0.75}>
-                                    <Stack direction="row" justifyContent="space-between" spacing={1}>
-                                        <Typography variant="body2" color="text.secondary">
-                                            Projected outstanding
-                                        </Typography>
-                                        <Typography variant="body2" sx={{ fontWeight: 800 }}>
-                                            {formatCurrency(prepaymentProjection?.newOutstanding || (selectedLoan?.outstanding_principal || 0))}
-                                        </Typography>
-                                    </Stack>
-                                    <Stack direction="row" justifyContent="space-between" spacing={1}>
-                                        <Typography variant="body2" color="text.secondary">
-                                            Estimated term reduction
-                                        </Typography>
-                                        <Typography variant="body2" sx={{ fontWeight: 800 }}>
-                                            {prepaymentProjection?.termsReduced || 0} installment(s)
-                                        </Typography>
+                                    <Stack direction={{ xs: "column", sm: "row", lg: "column" }} spacing={1}>
+                                        <Button variant="outlined" startIcon={<DownloadRoundedIcon />} onClick={onDownloadStatement} disabled={!selectedLoan}>
+                                            Statement PDF
+                                        </Button>
+                                        <Button variant="outlined" startIcon={<PrintRoundedIcon />} onClick={onPrint}>
+                                            Print View
+                                        </Button>
                                     </Stack>
                                 </Stack>
                             </Box>

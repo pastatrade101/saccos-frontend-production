@@ -94,7 +94,7 @@ function formatPaymentOperation(operation: string) {
     const labels: Record<string, string> = {
         savings_deposit: "Savings deposit",
         savings_withdrawal: "Savings withdrawal",
-        share_contribution: "Share contribution",
+        share_contribution: "Legacy contribution",
         loan_repayment: "Loan repayment",
         loan_disbursement: "Loan disbursement",
         membership_fee: "Membership fee",
@@ -707,7 +707,6 @@ export function PaymentsPage() {
                                     <MenuItem value="all">All operations</MenuItem>
                                     <MenuItem value="savings_deposit">Savings deposits</MenuItem>
                                     <MenuItem value="savings_withdrawal">Savings withdrawals</MenuItem>
-                                    <MenuItem value="share_contribution">Share contributions</MenuItem>
                                     <MenuItem value="loan_repayment">Loan repayments</MenuItem>
                                     <MenuItem value="loan_disbursement">Loan disbursements</MenuItem>
                                     <MenuItem value="membership_fee">Membership fees</MenuItem>

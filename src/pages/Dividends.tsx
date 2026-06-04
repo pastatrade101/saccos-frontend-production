@@ -1,23 +1,23 @@
 import { MotionCard, MotionModal } from "../ui/motion";
 import AddCircleOutlineRoundedIcon from "@mui/icons-material/AddCircleOutlineRounded";
 import CheckCircleOutlineRoundedIcon from "@mui/icons-material/CheckCircleOutlineRounded";
-import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 import MonetizationOnOutlinedIcon from "@mui/icons-material/MonetizationOnOutlined";
 import PaidOutlinedIcon from "@mui/icons-material/PaidOutlined";
 import PolicyOutlinedIcon from "@mui/icons-material/PolicyOutlined";
-import UploadFileRoundedIcon from "@mui/icons-material/UploadFileRounded";
 import {
     Alert,
     Box,
     Button,
     Card,
     CardContent,
+    Checkbox,
     Chip,
     Dialog,
     DialogActions,
     DialogContent,
     DialogTitle,
     Divider,
+    FormControlLabel,
     Grid,
     MenuItem,
     Stack,
@@ -42,8 +42,12 @@ import {
     type DividendApprovalRequest,
     type DividendCycleDetailResponse,
     type DividendCyclesResponse,
+    type DividendFormulaTemplate,
+    type DividendFormulaTemplatesResponse,
     type DividendOptionsResponse,
     type DividendPaymentRequest,
+    type FormulaDividendComponentInput,
+    type GenerateFormulaManualDividendBatchRequest,
     type ManualDividendBatchDetailResponse,
     type ManualDividendBatchesResponse,
     type RejectManualDividendBatchRequest
@@ -165,6 +169,28 @@ const defaultManualDividendRow = (): ManualDividendBatchFormValues["rows"][numbe
     notes: ""
 });
 
+const todayDate = () => new Date().toISOString().slice(0, 10);
+
+const defaultFormulaComponent = (): FormulaDividendComponentInput => ({
+    key: "POOL-1",
+    dividend_label: "Current dividend",
+    dividend_date: todayDate(),
+    source_type: "utt",
+    base_cutoff_date: todayDate(),
+    pool_amount: 0
+});
+
+const defaultFormulaDraft = () => ({
+    branch_id: "",
+    batch_label: "Current dividend disbursement",
+    template_id: "",
+    template_name: "Savings pro-rata dividend",
+    save_as_template: true,
+    components: [defaultFormulaComponent()]
+});
+
+type FormulaDividendDraft = ReturnType<typeof defaultFormulaDraft>;
+
 function MetricCard({
     label,
     value,
@@ -253,6 +279,7 @@ export function DividendsPage() {
     const { profile, selectedTenantId, selectedTenantName } = useAuth();
     const [cycles, setCycles] = useState<DividendCycle[]>([]);
     const [manualBatches, setManualBatches] = useState<ManualDividendBatch[]>([]);
+    const [formulaTemplates, setFormulaTemplates] = useState<DividendFormulaTemplate[]>([]);
     const [manualDetail, setManualDetail] = useState<ManualDividendBatchDetailResponse["data"] | null>(null);
     const [selectedCycleId, setSelectedCycleId] = useState<string | null>(null);
     const [selectedCycleDetail, setSelectedCycleDetail] = useState<DividendCycleDetailResponse["data"] | null>(null);
@@ -261,6 +288,7 @@ export function DividendsPage() {
     const [submitting, setSubmitting] = useState(false);
     const [showCreateDialog, setShowCreateDialog] = useState(false);
     const [showManualDialog, setShowManualDialog] = useState(false);
+    const [showFormulaDialog, setShowFormulaDialog] = useState(false);
     const [showManualDetailDialog, setShowManualDetailDialog] = useState(false);
     const [actionDialog, setActionDialog] = useState<null | {
         type: "approve" | "reject";
@@ -271,6 +299,7 @@ export function DividendsPage() {
     }>(null);
     const [actionNotes, setActionNotes] = useState("");
     const [manualActionNotes, setManualActionNotes] = useState("");
+    const [formulaDraft, setFormulaDraft] = useState<FormulaDividendDraft>(() => defaultFormulaDraft());
     const importInputRef = useRef<HTMLInputElement | null>(null);
 
     const canManageCycles = Boolean(profile?.role === "branch_manager");
@@ -323,18 +352,22 @@ export function DividendsPage() {
         setLoading(true);
 
         try {
-            const [{ data: cyclesResponse }, { data: manualBatchesResponse }, { data: optionsResponse }] = await Promise.all([
+            const [{ data: cyclesResponse }, { data: manualBatchesResponse }, { data: formulaTemplatesResponse }, { data: optionsResponse }] = await Promise.all([
                 api.get<DividendCyclesResponse>(endpoints.dividends.cycles(), {
                     params: { tenant_id: selectedTenantId, page: 1, limit: 100 }
                 }),
                 api.get<ManualDividendBatchesResponse>(endpoints.dividends.manualBatches(), {
                     params: { tenant_id: selectedTenantId, page: 1, limit: 100 }
                 }),
+                api.get<DividendFormulaTemplatesResponse>(endpoints.dividends.formulaTemplates(), {
+                    params: { tenant_id: selectedTenantId }
+                }),
                 api.get<DividendOptionsResponse>(endpoints.dividends.options())
             ]);
 
             setCycles(cyclesResponse.data || []);
             setManualBatches(manualBatchesResponse.data || []);
+            setFormulaTemplates(formulaTemplatesResponse.data || []);
             setOptions(optionsResponse.data);
             setSelectedCycleId((current) => current || cyclesResponse.data?.[0]?.id || null);
         } catch (error) {
@@ -423,6 +456,11 @@ export function DividendsPage() {
             .filter((batch) => ["draft", "submitted"].includes(batch.status))
             .reduce((sum, batch) => sum + Number(batch.total_amount || 0), 0)
     }), [manualBatches]);
+
+    const formulaPoolTotal = useMemo(
+        () => formulaDraft.components.reduce((sum, component) => sum + Number(component.pool_amount || 0), 0),
+        [formulaDraft.components]
+    );
 
     const allocationNameMap = useMemo(() => {
         const map = new Map<string, string>();
@@ -672,8 +710,135 @@ export function DividendsPage() {
         }
     };
 
+    const openFormulaDividendDialog = () => {
+        setFormulaDraft((current) => ({
+            ...current,
+            branch_id: current.branch_id || branchOptions[0]?.id || ""
+        }));
+        setShowFormulaDialog(true);
+    };
+
+    const applyFormulaTemplate = (templateId: string) => {
+        const template = formulaTemplates.find((item) => item.id === templateId);
+        if (!template) {
+            setFormulaDraft((current) => ({
+                ...current,
+                template_id: "",
+                components: current.components.length ? current.components : [defaultFormulaComponent()]
+            }));
+            return;
+        }
+
+        setFormulaDraft((current) => ({
+            ...current,
+            template_id: template.id,
+            template_name: template.template_name,
+            branch_id: template.branch_id || current.branch_id || branchOptions[0]?.id || "",
+            batch_label: template.template_name,
+            save_as_template: false,
+            components: template.components.length ? template.components.map((component) => ({ ...component })) : [defaultFormulaComponent()]
+        }));
+    };
+
+    const updateFormulaComponent = (
+        index: number,
+        patch: Partial<FormulaDividendDraft["components"][number]>
+    ) => {
+        setFormulaDraft((current) => ({
+            ...current,
+            components: current.components.map((component, componentIndex) => (
+                componentIndex === index ? { ...component, ...patch } : component
+            ))
+        }));
+    };
+
+    const addFormulaComponent = () => {
+        setFormulaDraft((current) => ({
+            ...current,
+            components: [
+                ...current.components,
+                {
+                    ...defaultFormulaComponent(),
+                    key: `POOL-${current.components.length + 1}`
+                }
+            ]
+        }));
+    };
+
+    const removeFormulaComponent = (index: number) => {
+        setFormulaDraft((current) => ({
+            ...current,
+            components: current.components.filter((_, componentIndex) => componentIndex !== index)
+        }));
+    };
+
+    const generateFormulaDividendBatch = async () => {
+        if (!selectedTenantId) {
+            return;
+        }
+
+        if (!formulaDraft.branch_id) {
+            pushToast({
+                type: "error",
+                title: "Branch required",
+                message: "Choose the branch whose active members should receive this formula dividend batch."
+            });
+            return;
+        }
+
+        setSubmitting(true);
+
+        try {
+            const payload: GenerateFormulaManualDividendBatchRequest = {
+                tenant_id: selectedTenantId,
+                branch_id: formulaDraft.branch_id,
+                batch_label: formulaDraft.batch_label || "Current dividend disbursement",
+                template_id: formulaDraft.template_id || undefined,
+                save_as_template: formulaDraft.save_as_template,
+                template_name: formulaDraft.save_as_template ? formulaDraft.template_name : undefined,
+                components: formulaDraft.components.map((component) => ({
+                    key: component.key,
+                    dividend_date: component.dividend_date,
+                    dividend_label: component.dividend_label,
+                    source_type: component.source_type || "other",
+                    base_cutoff_date: component.base_cutoff_date,
+                    pool_amount: Number(component.pool_amount || 0)
+                }))
+            };
+
+            const { data } = await api.post<ManualDividendBatchDetailResponse>(endpoints.dividends.formulaManualBatch(), payload);
+
+            setManualDetail(data.data);
+            setShowFormulaDialog(false);
+            setShowManualDetailDialog(true);
+            pushToast({
+                type: "success",
+                title: "Formula dividend batch generated",
+                message: `${data.data.batch.batch_label} created with ${data.data.rows.length} row(s), total ${formatCurrency(data.data.batch.total_amount)}.`
+            });
+            await loadCycles();
+        } catch (error) {
+            pushToast({
+                type: "error",
+                title: "Unable to generate formula dividends",
+                message: getApiErrorMessage(error)
+            });
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
     const manualBatchColumns: Column<ManualDividendBatch>[] = [
         { key: "label", header: "Batch", render: (row) => row.batch_label },
+        {
+            key: "source",
+            header: "Source",
+            render: (row) => row.source_format === "reusable_formula"
+                ? "Reusable formula"
+                : row.source_format === "excel_details_sorted_formula"
+                    ? "DETAILS formula"
+                    : "Manual"
+        },
         {
             key: "status",
             header: "Status",
@@ -861,25 +1026,10 @@ export function DividendsPage() {
                                 hidden
                                 onChange={(event) => void importCsvTemplate(event)}
                             />
-                            <Button
-                                component="a"
-                                href="/dividend-cycle-template.csv"
-                                download="dividend-cycle-template.csv"
-                                variant="outlined"
-                                startIcon={<DownloadRoundedIcon />}
-                            >
-                                Download CSV Template
-                            </Button>
                             {canManageCycles ? (
                                 <>
-                                    <Button variant="contained" color="secondary" startIcon={<AddCircleOutlineRoundedIcon />} onClick={() => setShowManualDialog(true)}>
-                                        Manual Dividend Entry
-                                    </Button>
-                                    <Button variant="outlined" startIcon={<UploadFileRoundedIcon />} onClick={openImportPicker}>
-                                        Import CSV
-                                    </Button>
-                                    <Button variant="contained" startIcon={<AddCircleOutlineRoundedIcon />} onClick={() => setShowCreateDialog(true)}>
-                                        Create Cycle
+                                    <Button variant="contained" color="secondary" startIcon={<AddCircleOutlineRoundedIcon />} onClick={openFormulaDividendDialog}>
+                                        Generate Formula Batch
                                     </Button>
                                 </>
                             ) : null}
@@ -910,9 +1060,9 @@ export function DividendsPage() {
                     <Stack spacing={2}>
                         <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={2}>
                             <Box>
-                                <Typography variant="h6">Manual Dividend Batches</Typography>
+                                <Typography variant="h6">Formula Dividend Batches</Typography>
                                 <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                                    Excel-style dividend rows using Date, Dividend, and Amount, staged by branch manager before super admin posting.
+                                    DETAILS (sorted) formula dividends using savings balances at each cutoff date, staged by branch manager before super admin posting.
                                 </Typography>
                             </Box>
                             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
@@ -920,19 +1070,9 @@ export function DividendsPage() {
                                 <Chip label={`${manualSummary.submitted} submitted`} color={manualSummary.submitted ? "warning" : "default"} variant="outlined" />
                                 <Chip label={`${manualSummary.posted} posted`} color={manualSummary.posted ? "success" : "default"} variant="outlined" />
                                 <Chip label={`${formatCurrency(manualSummary.totalPendingAmount)} pending`} variant="outlined" />
-                                <Button
-                                    component="a"
-                                    href="/manual-dividend-batch-template.csv"
-                                    download="manual-dividend-batch-template.csv"
-                                    size="small"
-                                    variant="outlined"
-                                    startIcon={<DownloadRoundedIcon />}
-                                >
-                                    Manual Template
-                                </Button>
                             </Stack>
                         </Stack>
-                        <DataTable rows={manualBatches} columns={manualBatchColumns} emptyMessage="No manual dividend batches yet." />
+                        <DataTable rows={manualBatches} columns={manualBatchColumns} emptyMessage="No formula dividend batches yet." />
                     </Stack>
                 </CardContent>
             </MotionCard>
@@ -1110,6 +1250,190 @@ export function DividendsPage() {
                 </MotionCard>
             ) : null}
 
+            <MotionModal open={showFormulaDialog} onClose={submitting ? undefined : () => setShowFormulaDialog(false)} maxWidth="lg" fullWidth>
+                <DialogTitle>Generate Dividend Formula Batch</DialogTitle>
+                <DialogContent dividers>
+                    <Stack spacing={2.5}>
+                        <Alert severity="info" variant="outlined">
+                            Formula: member savings balance at cutoff / total branch savings at cutoff * dividend pool. This creates a draft only; Super Admin posting is still required before ledger and member savings are updated.
+                        </Alert>
+
+                        <Grid container spacing={2}>
+                            <Grid size={{ xs: 12, md: 4 }}>
+                                <TextField
+                                    select
+                                    label="Saved formula"
+                                    fullWidth
+                                    value={formulaDraft.template_id}
+                                    onChange={(event) => applyFormulaTemplate(event.target.value)}
+                                >
+                                    <MenuItem value="">New / one-time formula</MenuItem>
+                                    {formulaTemplates.map((template) => (
+                                        <MenuItem key={template.id} value={template.id}>
+                                            {template.template_name}
+                                        </MenuItem>
+                                    ))}
+                                </TextField>
+                            </Grid>
+                            <Grid size={{ xs: 12, md: 4 }}>
+                                <TextField
+                                    label="Batch label"
+                                    fullWidth
+                                    value={formulaDraft.batch_label}
+                                    onChange={(event) => setFormulaDraft((current) => ({ ...current, batch_label: event.target.value }))}
+                                />
+                            </Grid>
+                            <Grid size={{ xs: 12, md: 4 }}>
+                                <TextField
+                                    select
+                                    label="Branch scope"
+                                    fullWidth
+                                    value={formulaDraft.branch_id}
+                                    onChange={(event) => setFormulaDraft((current) => ({ ...current, branch_id: event.target.value }))}
+                                >
+                                    {branchOptions.map((branch) => (
+                                        <MenuItem key={branch.id} value={branch.id}>
+                                            {branch.code} - {branch.name}
+                                        </MenuItem>
+                                    ))}
+                                </TextField>
+                            </Grid>
+                        </Grid>
+
+                        <Grid container spacing={2}>
+                            <Grid size={{ xs: 12, md: 6 }}>
+                                <TextField
+                                    label="Formula name"
+                                    fullWidth
+                                    value={formulaDraft.template_name}
+                                    onChange={(event) => setFormulaDraft((current) => ({ ...current, template_name: event.target.value }))}
+                                    helperText="Used when saving this formula for later."
+                                />
+                            </Grid>
+                            <Grid size={{ xs: 12, md: 6 }}>
+                                <FormControlLabel
+                                    control={(
+                                        <Checkbox
+                                            checked={formulaDraft.save_as_template}
+                                            onChange={(event) => setFormulaDraft((current) => ({
+                                                ...current,
+                                                save_as_template: event.target.checked,
+                                                template_id: event.target.checked ? "" : current.template_id
+                                            }))}
+                                        />
+                                    )}
+                                    label="Save this formula for reuse"
+                                />
+                            </Grid>
+                        </Grid>
+
+                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1} flexWrap="wrap" useFlexGap>
+                            <Chip label={`${formulaDraft.components.length} pool component(s)`} variant="outlined" />
+                            <Chip label={`${formatCurrency(formulaPoolTotal)} total pool`} variant="outlined" color="primary" />
+                            <Chip label="Posts to savings accounts" variant="outlined" color="success" />
+                        </Stack>
+
+                        <Stack direction="row" justifyContent="space-between" alignItems="center">
+                            <Typography variant="subtitle1">Dividend Pools</Typography>
+                            <Button size="small" variant="outlined" onClick={addFormulaComponent} startIcon={<AddCircleOutlineRoundedIcon />}>
+                                Add Pool
+                            </Button>
+                        </Stack>
+
+                        <Grid container spacing={1.5}>
+                            {formulaDraft.components.map((component, index) => (
+                                <Grid key={`${component.key || "POOL"}-${index}`} size={{ xs: 12, md: 6 }}>
+                                    <Card variant="outlined" sx={{ height: "100%" }}>
+                                        <CardContent>
+                                            <Stack spacing={1.5}>
+                                                <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="center">
+                                                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                                                        <Chip size="small" label={component.key || `POOL-${index + 1}`} />
+                                                        <Chip size="small" label="Savings basis" variant="outlined" />
+                                                    </Stack>
+                                                    {formulaDraft.components.length > 1 ? (
+                                                        <Button size="small" color="inherit" onClick={() => removeFormulaComponent(index)}>
+                                                            Remove
+                                                        </Button>
+                                                    ) : null}
+                                                </Stack>
+
+                                                <TextField
+                                                    label="Dividend label"
+                                                    size="small"
+                                                    fullWidth
+                                                    value={component.dividend_label || ""}
+                                                    onChange={(event) => updateFormulaComponent(index, { dividend_label: event.target.value })}
+                                                />
+
+                                                <Grid container spacing={1}>
+                                                    <Grid size={{ xs: 12, sm: 6 }}>
+                                                        <TextField
+                                                            label="Dividend date"
+                                                            type="date"
+                                                            size="small"
+                                                            fullWidth
+                                                            value={component.dividend_date || ""}
+                                                            onChange={(event) => updateFormulaComponent(index, { dividend_date: event.target.value })}
+                                                            slotProps={{ inputLabel: { shrink: true } }}
+                                                        />
+                                                    </Grid>
+                                                    <Grid size={{ xs: 12, sm: 6 }}>
+                                                        <TextField
+                                                            label="Pool amount"
+                                                            type="number"
+                                                            size="small"
+                                                            fullWidth
+                                                            value={component.pool_amount ?? 0}
+                                                            onChange={(event) => updateFormulaComponent(index, { pool_amount: Number(event.target.value || 0) })}
+                                                        />
+                                                    </Grid>
+                                                    <Grid size={{ xs: 12, sm: 6 }}>
+                                                        <TextField
+                                                            label="Savings cutoff"
+                                                            type="date"
+                                                            size="small"
+                                                            fullWidth
+                                                            value={component.base_cutoff_date || ""}
+                                                            onChange={(event) => updateFormulaComponent(index, { base_cutoff_date: event.target.value })}
+                                                            slotProps={{ inputLabel: { shrink: true } }}
+                                                        />
+                                                    </Grid>
+                                                    <Grid size={{ xs: 12, sm: 6 }}>
+                                                        <TextField
+                                                            select
+                                                            label="Dividend source"
+                                                            size="small"
+                                                            fullWidth
+                                                            value={component.source_type || "utt"}
+                                                            onChange={(event) => updateFormulaComponent(index, { source_type: event.target.value as FormulaDividendDraft["components"][number]["source_type"] })}
+                                                        >
+                                                            <MenuItem value="utt">UTT dividend</MenuItem>
+                                                            <MenuItem value="loan">Loan dividend</MenuItem>
+                                                            <MenuItem value="other">Other dividend</MenuItem>
+                                                        </TextField>
+                                                    </Grid>
+                                                </Grid>
+
+                                                <Typography variant="caption" color="text.secondary">
+                                                    Formula: member savings at {formatDate(component.base_cutoff_date)} / total branch savings at cutoff * {formatCurrency(component.pool_amount || 0)}.
+                                                </Typography>
+                                            </Stack>
+                                        </CardContent>
+                                    </Card>
+                                </Grid>
+                            ))}
+                        </Grid>
+                    </Stack>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setShowFormulaDialog(false)} disabled={submitting} color="inherit">Cancel</Button>
+                    <Button variant="contained" onClick={() => void generateFormulaDividendBatch()} disabled={submitting || !formulaDraft.branch_id}>
+                        Generate Draft Batch
+                    </Button>
+                </DialogActions>
+            </MotionModal>
+
             <MotionModal open={showManualDialog} onClose={submitting ? undefined : () => setShowManualDialog(false)} maxWidth="lg" fullWidth>
                 <DialogTitle>Manual Dividend Entry</DialogTitle>
                 <DialogContent dividers>
@@ -1258,7 +1582,7 @@ export function DividendsPage() {
             </MotionModal>
 
             <MotionModal open={showManualDetailDialog} onClose={() => setShowManualDetailDialog(false)} maxWidth="lg" fullWidth>
-                <DialogTitle>{manualDetail?.batch.batch_label || "Manual Dividend Batch"}</DialogTitle>
+                <DialogTitle>{manualDetail?.batch.batch_label || "Dividend Batch"}</DialogTitle>
                 <DialogContent dividers>
                     {manualDetail ? (
                         <Stack spacing={2}>
@@ -1282,7 +1606,32 @@ export function DividendsPage() {
                                     </Box>
                                 </Grid>
                             </Grid>
-                            <DataTable rows={manualDetail.rows} columns={manualRowColumns} emptyMessage="No manual dividend rows." />
+                            {manualDetail.formula ? (
+                                <Box>
+                                    <Typography variant="subtitle1">Formula Components</Typography>
+                                    <Grid container spacing={1.25} sx={{ mt: 1 }}>
+                                        {manualDetail.formula.components.map((component) => (
+                                            <Grid key={component.key} size={{ xs: 12, md: 6 }}>
+                                                <Box sx={{ p: 1.5, border: `1px solid ${theme.palette.divider}`, borderRadius: 2, height: "100%" }}>
+                                                    <Stack direction="row" justifyContent="space-between" spacing={1}>
+                                                        <Typography variant="body2" fontWeight={700}>
+                                                            {component.key} - {component.dividend_label}
+                                                        </Typography>
+                                                        <Chip size="small" label={component.source_type.toUpperCase()} variant="outlined" />
+                                                    </Stack>
+                                                    <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.75 }}>
+                                                        Base {component.base_column} at {formatDate(component.base_cutoff_date)}: {formatCurrency(component.base_total)}
+                                                    </Typography>
+                                                    <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                                                        Pool {component.pool_cell}: {formatCurrency(component.pool_amount)} across {component.generated_rows} member row(s)
+                                                    </Typography>
+                                                </Box>
+                                            </Grid>
+                                        ))}
+                                    </Grid>
+                                </Box>
+                            ) : null}
+                            <DataTable rows={manualDetail.rows} columns={manualRowColumns} emptyMessage="No dividend rows." />
                         </Stack>
                     ) : (
                         <AppLoader fullscreen={false} minHeight={180} message="Loading manual dividend rows..." />

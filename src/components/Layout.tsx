@@ -12,7 +12,6 @@ import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
 import MonitorHeartRoundedIcon from "@mui/icons-material/MonitorHeartRounded";
 import PaidRoundedIcon from "@mui/icons-material/PaidRounded";
 import PeopleAltRoundedIcon from "@mui/icons-material/PeopleAltRounded";
-import PieChartRoundedIcon from "@mui/icons-material/PieChartRounded";
 import PolicyRoundedIcon from "@mui/icons-material/PolicyRounded";
 import SavingsRoundedIcon from "@mui/icons-material/SavingsRounded";
 import StorefrontRoundedIcon from "@mui/icons-material/StorefrontRounded";
@@ -24,6 +23,7 @@ import SummarizeRoundedIcon from "@mui/icons-material/SummarizeRounded";
 import PendingActionsRoundedIcon from "@mui/icons-material/PendingActionsRounded";
 import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
 import RuleFolderRoundedIcon from "@mui/icons-material/RuleFolderRounded";
+import TrackChangesRoundedIcon from "@mui/icons-material/TrackChangesRounded";
 import {
     Autocomplete,
     AppBar,
@@ -91,12 +91,12 @@ const navItems: NavItem[] = [
     { to: "/member-applications", label: "Applications", roles: ["super_admin", "branch_manager", "auditor"], section: "workspace", icon: DescriptionRoundedIcon },
     { to: "/members", label: "Members", roles: ["super_admin", "branch_manager", "teller"], section: "workspace", icon: GroupRoundedIcon },
     { to: "/members/import", label: "Member Import", roles: ["branch_manager"], section: "workspace", icon: StoreRoundedIcon },
+    { to: "/performance-targets", label: "Performance Targets", roles: ["super_admin", "branch_manager"], section: "workspace", icon: TrackChangesRoundedIcon },
     { to: "/settings/sacco-year", label: "SACCO Settings", roles: ["super_admin", "branch_manager"], section: "workspace", icon: SettingsRoundedIcon },
     { to: "/auditor/workbench", label: "Workbench", roles: ["auditor"], section: "workspace", icon: HubRoundedIcon },
     { to: "/auditor/exceptions", label: "Exceptions", roles: ["auditor"], section: "workspace", icon: WarningAmberRoundedIcon },
     { to: "/auditor/journals", label: "Journals", roles: ["auditor"], section: "workspace", icon: RuleFolderRoundedIcon },
     { to: "/auditor/audit-logs", label: "Audit Logs", roles: ["auditor"], section: "workspace", icon: PolicyRoundedIcon },
-    { to: "/contributions", label: "Contributions", roles: ["branch_manager"], section: "finance", icon: PieChartRoundedIcon },
     { to: "/savings", label: "Savings", roles: ["branch_manager"], section: "finance", icon: SavingsRoundedIcon },
     { to: "/payments", label: "Payments", roles: ["super_admin", "branch_manager"], section: "finance", icon: PaidRoundedIcon },
     { to: "/revenue", label: "Gross Revenue", roles: ["branch_manager"], section: "finance", icon: PaidRoundedIcon },
@@ -114,19 +114,20 @@ const navItems: NavItem[] = [
 const navGroups: NavGroup[] = [
     { key: "workspace", label: "Workspace", itemTos: ["/member-applications", "/members", "/members/import", "/staff-users"] },
     { key: "products", label: "Products", itemTos: ["/products"] },
-    { key: "finance", label: "Finance", itemTos: ["/contributions", "/savings", "/loans", "/payments", "/revenue", "/dividends", "/cash-control", "/cash", "/treasury", "/treasury/policy-settings"] },
+    { key: "finance", label: "Finance", itemTos: ["/savings", "/loans", "/payments", "/revenue", "/dividends", "/cash-control", "/cash", "/treasury", "/treasury/policy-settings"] },
     { key: "operations", label: "Operations", itemTos: ["/approvals"] },
-    { key: "analytics", label: "Analytics", itemTos: ["/reports", "/auditor/reports", "/auditor/workbench", "/auditor/exceptions", "/auditor/journals", "/auditor/audit-logs"] },
+    { key: "analytics", label: "Analytics", itemTos: ["/performance-targets", "/reports", "/auditor/reports", "/auditor/workbench", "/auditor/exceptions", "/auditor/journals", "/auditor/audit-logs"] },
     { key: "setup", label: "Setup", itemTos: ["/setup/super-admin", "/settings/sacco-year"] }
 ];
 
 const searchKeywords: Partial<Record<NavItem["to"], string[]>> = {
     "/dashboard": ["overview", "home", "kpi", "summary"],
     "/staff-users": ["team", "staff", "users", "roles", "access"],
-    "/products": ["savings products", "share products", "charges", "posting rules", "coa mappings"],
+    "/products": ["savings products", "charges", "posting rules", "coa mappings"],
     "/member-applications": ["applications", "kyc", "member approval", "onboarding review"],
     "/members": ["customers", "registry", "member onboarding"],
     "/members/import": ["csv import", "bulk members", "credentials", "portal onboarding"],
+    "/performance-targets": ["performance target", "target watchlist", "annual target", "member level", "branch target"],
     "/settings/sacco-year": ["financial year", "sacco year", "fiscal year", "year to date", "settings"],
     "/cash-control": ["receipt policy", "teller balancing", "daily cashbook", "cash summary"],
     "/auditor/exceptions": ["audit", "exceptions", "flags", "compliance"],
@@ -134,7 +135,6 @@ const searchKeywords: Partial<Record<NavItem["to"], string[]>> = {
     "/auditor/journals": ["audit", "journals", "ledger", "entries"],
     "/auditor/audit-logs": ["audit logs", "trail", "changes"],
     "/auditor/reports": ["audit reports", "exports", "compliance"],
-    "/contributions": ["shares", "share capital", "dividends", "capital"],
     "/savings": ["savings", "deposits", "withdrawals", "balances"],
     "/payments": ["member payments", "mobile money", "payment gateway", "teller", "cash desk", "failed payments", "receipts", "reconcile"],
     "/revenue": ["fees", "penalties", "loan interest", "loan fees", "branch revenue", "income accounts"],
@@ -165,8 +165,12 @@ function getPageSubtitle(pathname: string) {
         return "Set and review tenant-wide SACCO year and performance target rules used by dashboards, reports, and member portal.";
     }
 
+    if (pathname.startsWith("/performance-targets")) {
+        return "Control the full member target watchlist with search, filters, pagination, and branch-level gap analysis.";
+    }
+
     if (pathname.startsWith("/products")) {
-        return "Configure savings, share, charge, penalty, and posting-rule foundations before money moves.";
+        return "Configure savings, charge, penalty, and posting-rule foundations before money moves.";
     }
 
     if (pathname.startsWith("/member-applications")) {
@@ -207,10 +211,6 @@ function getPageSubtitle(pathname: string) {
 
     if (pathname.startsWith("/cash-control")) {
         return "Configure receipt evidence and review teller balancing before day-end close.";
-    }
-
-    if (pathname.startsWith("/contributions")) {
-        return "Review member share capital growth, contribution patterns, and dividend credits.";
     }
 
     if (pathname.startsWith("/savings")) {

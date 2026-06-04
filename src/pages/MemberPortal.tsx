@@ -235,18 +235,7 @@ function resolveLoanEligibilityPolicy(product?: LoanProduct | null) {
             "savings_eligibility_multiplier",
             "savingsEligibilityMultiplier"
         ], 1) ?? 1,
-        sharesMultiplier: getLoanEligibilityRuleNumber(rules, [
-            "share_multiplier",
-            "shareMultiplier",
-            "shares_multiplier",
-            "sharesMultiplier",
-            "share_balance_multiplier",
-            "shareBalanceMultiplier",
-            "shares_balance_multiplier",
-            "sharesBalanceMultiplier",
-            "share_eligibility_multiplier",
-            "shareEligibilityMultiplier"
-        ], 1) ?? 1,
+        sharesMultiplier: 0,
         baseEligibilityAmount: getLoanEligibilityRuleNumber(rules, [
             "base_eligibility_amount",
             "baseEligibilityAmount"
@@ -560,7 +549,7 @@ function formatPaymentPurpose(purpose: string) {
     return purpose === "savings_deposit"
         ? "Savings deposit"
         : purpose === "share_contribution"
-            ? "Share contribution"
+            ? "Legacy contribution"
             : purpose === "membership_fee"
                 ? "Membership fee"
                 : purpose === "loan_repayment"
@@ -1007,7 +996,7 @@ export function MemberPortalPage() {
     const [reconcilingPayment, setReconcilingPayment] = useState(false);
     const [checkingPaymentStatus, setCheckingPaymentStatus] = useState(false);
     const [phoneCancellationRequested, setPhoneCancellationRequested] = useState(false);
-    const [paymentFlowPurpose, setPaymentFlowPurpose] = useState<MemberPaymentPurpose>("share_contribution");
+    const [paymentFlowPurpose, setPaymentFlowPurpose] = useState<MemberPaymentPurpose>("savings_deposit");
     const [paymentOrder, setPaymentOrder] = useState<PaymentOrder | null>(null);
     const [paymentOrders, setPaymentOrders] = useState<PaymentOrder[]>([]);
     const [lastPaymentToastStatus, setLastPaymentToastStatus] = useState<PaymentOrder["status"] | null>(null);
@@ -1067,10 +1056,10 @@ export function MemberPortalPage() {
             description: ""
         }
     });
-    const shareContributionSelfServiceEnabled = memberPortalPaymentControls.share_contribution_enabled;
+    const shareContributionSelfServiceEnabled = false;
     const savingsDepositSelfServiceEnabled = memberPortalPaymentControls.savings_deposit_enabled;
     const loanRepaymentSelfServiceEnabled = memberPortalPaymentControls.loan_repayment_enabled;
-    const canUsePortalDeposits = shareContributionSelfServiceEnabled || savingsDepositSelfServiceEnabled;
+    const canUsePortalDeposits = savingsDepositSelfServiceEnabled;
     const memberProfileCompletionForm = useForm<MemberProfileCompletionValues>({
         resolver: zodResolver(memberProfileCompletionSchema),
         mode: "onChange",
@@ -1222,27 +1211,13 @@ export function MemberPortalPage() {
             ),
         [accounts, latestStatementBalanceByAccountId]
     );
-    const sharesEligibilityBalance = useMemo(
-        () => accounts
-            .filter((account) => account.status === "active" && account.product_type === "shares")
-            .reduce(
-                (sum, account) => sum + (
-                    latestStatementBalanceByAccountId.has(account.id)
-                        ? Number(latestStatementBalanceByAccountId.get(account.id) || 0)
-                        : Number(account.available_balance || 0)
-                ),
-                0
-            ),
-        [accounts, latestStatementBalanceByAccountId]
-    );
     const selectedLoanEligibleAmount = useMemo(() => {
         if (!selectedLoanProduct) {
             return 0;
         }
 
         let eligibleAmount = selectedLoanPolicy.baseEligibilityAmount
-            + savingsEligibilityBalance * selectedLoanPolicy.savingsMultiplier
-            + sharesEligibilityBalance * selectedLoanPolicy.sharesMultiplier;
+            + savingsEligibilityBalance * selectedLoanPolicy.savingsMultiplier;
 
         if (selectedLoanPolicy.eligibilityCapAmount !== null) {
             eligibleAmount = Math.min(eligibleAmount, selectedLoanPolicy.eligibilityCapAmount);
@@ -1253,7 +1228,7 @@ export function MemberPortalPage() {
         }
 
         return Math.max(0, eligibleAmount);
-    }, [selectedLoanPolicy, selectedLoanProduct, savingsEligibilityBalance, sharesEligibilityBalance]);
+    }, [selectedLoanPolicy, selectedLoanProduct, savingsEligibilityBalance]);
     const selectedLoanMinimumAmount = useMemo(
         () => Math.max(10000, Number(loanCapacity?.minimum_loan_amount ?? selectedLoanProduct?.min_amount ?? 0)),
         [loanCapacity, selectedLoanProduct]
@@ -1598,7 +1573,7 @@ export function MemberPortalPage() {
     const latestSavingsPaymentOrder = normalizedPaymentOrders.find((order) => order.purpose === "savings_deposit") || null;
     const latestMembershipFeePaymentOrder = normalizedPaymentOrders.find((order) => order.purpose === "membership_fee") || null;
     const latestLoanRepaymentPaymentOrder = normalizedPaymentOrders.find((order) => order.purpose === "loan_repayment") || null;
-    const latestAccountsDepositPaymentOrder = savingsDepositSelfServiceEnabled ? latestSavingsPaymentOrder : latestSharePaymentOrder;
+    const latestAccountsDepositPaymentOrder = latestSavingsPaymentOrder;
     const trackedContributionOrder = useMemo(() => {
         if (!activeContributionOrderId) {
             return null;
@@ -1643,12 +1618,12 @@ export function MemberPortalPage() {
                     emptyAccountMessage: "No repayable loan is linked to this member profile right now."
                 }
             : {
-                noun: "share contribution",
-                title: "Share Contribution",
-                accountLabel: "Share Account",
+                noun: "savings deposit",
+                title: "Savings Deposit",
+                accountLabel: "Savings Account",
                 amountLabel: "Deposit Amount",
                 helperText: "Amount to push to your phone.",
-                emptyAccountMessage: "A share account will be prepared automatically when this contribution starts."
+                emptyAccountMessage: "A savings account will be prepared automatically when this deposit starts."
             };
     const contributionFlowState = submittingContribution ? "initiating" : trackedContributionOrder?.status || null;
     const pendingOrderCreatedMs = trackedContributionOrder?.created_at ? Date.parse(trackedContributionOrder.created_at) : Number.NaN;
@@ -1841,11 +1816,11 @@ export function MemberPortalPage() {
         };
     }, [loading, memberPortalTourSeen, runFeatureTour, showApplyDialog, showContributionDialog, showProfileCompletionDialog]);
 
-    const openDepositDialog = (purpose: MemberPaymentPurpose = "share_contribution", loanId?: string | null) => {
+    const openDepositDialog = (purpose: MemberPaymentPurpose = "savings_deposit", loanId?: string | null) => {
         if (purpose === "share_contribution" && !shareContributionSelfServiceEnabled) {
             pushToast({
-                title: "Share contribution unavailable",
-                message: "Tenant super admin has turned off self-service share contributions for members.",
+                title: "Contribution unavailable",
+                message: "This SACCO uses savings deposits as the operational member contribution source.",
                 type: "error"
             });
             return;
@@ -2729,7 +2704,7 @@ export function MemberPortalPage() {
     useEffect(() => {
         const canShowPaymentHistorySection = canUsePortalPayments || paymentOrders.length > 0;
 
-        if (!canShowPaymentHistorySection && activeSection === "member-payments") {
+        if ((!canShowPaymentHistorySection && activeSection === "member-payments") || activeSection === "member-contributions") {
             setActiveSection("member-overview");
         }
 
@@ -2751,13 +2726,7 @@ export function MemberPortalPage() {
         () => savingsAccounts.reduce((sum, account) => sum + account.locked_balance, 0),
         [savingsAccounts]
     );
-    const totalShareCapital = useMemo(
-        () =>
-            accounts
-                .filter((account) => account.product_type === "shares")
-                .reduce((sum, account) => sum + account.available_balance + account.locked_balance, 0),
-        [accounts]
-    );
+    const totalShareCapital = 0;
     const performanceTargetPosition = useMemo(
         () => calculateMemberPerformanceTarget(memberRecord, accounts, performanceTargetSettings),
         [accounts, memberRecord, performanceTargetSettings]
@@ -2770,15 +2739,13 @@ export function MemberPortalPage() {
         label: performanceTargetPosition.statusLabel,
         tone: performanceTargetPosition.statusTone
     };
-    const shareAccounts = useMemo(() => accounts.filter((account) => account.product_type === "shares"), [accounts]);
+    const shareAccounts = useMemo(() => [], []);
     const portalRepaymentLoans = useMemo(
         () => loans.filter((loan) => ["active", "in_arrears"].includes(loan.status) && (loan.outstanding_principal + loan.accrued_interest) > 0),
         [loans]
     );
     const canShowLoanRepaymentOption = loanRepaymentSelfServiceEnabled && portalRepaymentLoans.length > 0;
-    const paymentTargetAccounts = paymentFlowPurpose === "share_contribution"
-        ? shareAccounts
-        : paymentFlowPurpose === "loan_repayment"
+    const paymentTargetAccounts = paymentFlowPurpose === "loan_repayment"
             ? []
             : savingsAccounts;
     const paymentAccountOptions = useMemo(
@@ -2824,28 +2791,28 @@ export function MemberPortalPage() {
 
     useEffect(() => {
         if (!canShowMembershipFeePaymentOption && paymentFlowPurpose === "membership_fee") {
-            setPaymentFlowPurpose("share_contribution");
+            setPaymentFlowPurpose(savingsDepositSelfServiceEnabled ? "savings_deposit" : loanRepaymentSelfServiceEnabled ? "loan_repayment" : "savings_deposit");
             setActiveContributionOrderId(null);
         }
-    }, [canShowMembershipFeePaymentOption, paymentFlowPurpose]);
+    }, [canShowMembershipFeePaymentOption, loanRepaymentSelfServiceEnabled, paymentFlowPurpose, savingsDepositSelfServiceEnabled]);
 
     useEffect(() => {
         if (!shareContributionSelfServiceEnabled && paymentFlowPurpose === "share_contribution") {
-            setPaymentFlowPurpose(savingsDepositSelfServiceEnabled ? "savings_deposit" : canShowMembershipFeePaymentOption ? "membership_fee" : loanRepaymentSelfServiceEnabled ? "loan_repayment" : "share_contribution");
+            setPaymentFlowPurpose(savingsDepositSelfServiceEnabled ? "savings_deposit" : canShowMembershipFeePaymentOption ? "membership_fee" : loanRepaymentSelfServiceEnabled ? "loan_repayment" : "savings_deposit");
             setActiveContributionOrderId(null);
         }
     }, [canShowMembershipFeePaymentOption, loanRepaymentSelfServiceEnabled, paymentFlowPurpose, savingsDepositSelfServiceEnabled, shareContributionSelfServiceEnabled]);
 
     useEffect(() => {
         if (!savingsDepositSelfServiceEnabled && paymentFlowPurpose === "savings_deposit") {
-            setPaymentFlowPurpose(shareContributionSelfServiceEnabled ? "share_contribution" : canShowMembershipFeePaymentOption ? "membership_fee" : loanRepaymentSelfServiceEnabled ? "loan_repayment" : "share_contribution");
+            setPaymentFlowPurpose(canShowMembershipFeePaymentOption ? "membership_fee" : loanRepaymentSelfServiceEnabled ? "loan_repayment" : "savings_deposit");
             setActiveContributionOrderId(null);
         }
     }, [canShowMembershipFeePaymentOption, loanRepaymentSelfServiceEnabled, paymentFlowPurpose, savingsDepositSelfServiceEnabled, shareContributionSelfServiceEnabled]);
 
     useEffect(() => {
         if (!canShowLoanRepaymentOption && paymentFlowPurpose === "loan_repayment") {
-            setPaymentFlowPurpose(shareContributionSelfServiceEnabled ? "share_contribution" : savingsDepositSelfServiceEnabled ? "savings_deposit" : canShowMembershipFeePaymentOption ? "membership_fee" : "share_contribution");
+            setPaymentFlowPurpose(savingsDepositSelfServiceEnabled ? "savings_deposit" : canShowMembershipFeePaymentOption ? "membership_fee" : "savings_deposit");
             setActiveContributionOrderId(null);
         }
     }, [canShowLoanRepaymentOption, canShowMembershipFeePaymentOption, paymentFlowPurpose, savingsDepositSelfServiceEnabled, shareContributionSelfServiceEnabled]);
@@ -2992,7 +2959,13 @@ export function MemberPortalPage() {
         [guarantorRequests]
     );
     const visiblePortalSections = useMemo(
-        () => portalSections.filter((section) => (canUsePortalPayments || paymentOrders.length > 0) || section.id !== "member-payments"),
+        () => portalSections.filter((section) => {
+            if (section.id === "member-contributions") {
+                return false;
+            }
+
+            return (canUsePortalPayments || paymentOrders.length > 0) || section.id !== "member-payments";
+        }),
         [canUsePortalPayments, paymentOrders.length]
     );
     const financialYearPeriod = useMemo(() => resolveFinancialYearPeriod(financialYearSettings), [financialYearSettings]);
@@ -3000,7 +2973,7 @@ export function MemberPortalPage() {
     const balanceTrend = groupBalances(statements);
     const monthlySavingsTrend = useMemo(() => groupSavingsByMonth(statements), [statements]);
     const currentView = visiblePortalSections.find((section) => section.id === activeSection) || visiblePortalSections[0];
-    const totalVisibleCapital = totalSavings + totalShareCapital;
+    const totalVisibleCapital = totalSavings;
     const netPosition = totalVisibleCapital - totalOutstandingLoans;
     const hasOverdueLoan = useMemo(() => loans.some((loan) => loan.status === "in_arrears"), [loans]);
     const drawerWidth = sidebarOpen ? 296 : 96;
@@ -4311,11 +4284,11 @@ export function MemberPortalPage() {
             </Box>
             <Box sx={{ minWidth: 0 }}>
                 <MetricCard
-                    icon={SavingsRoundedIcon}
-                    label="Shares"
-                    value={formatCurrency(totalShareCapital)}
-                    helper={`Dividends posted ${formatCurrency(totalDividends)}`}
-                    tone="warning"
+                    icon={TrendingUpRoundedIcon}
+                    label="Dividends"
+                    value={formatCurrency(totalDividends)}
+                    helper="Posted dividend allocations"
+                    tone="success"
                     delta={totalDividends > 0 ? "Credited" : "Building"}
                 />
             </Box>
@@ -4452,7 +4425,6 @@ export function MemberPortalPage() {
             { label: "Needed now", value: savingsTargetNextRequired > 0 ? formatCurrency(savingsTargetNextRequired) : "Clear" }
         ];
         const positionRows = [
-            { icon: AccountBalanceWalletRoundedIcon, label: "Shares", value: formatCurrency(totalShareCapital), tone: "warning" as const },
             { icon: TrendingUpRoundedIcon, label: "Dividends", value: formatCurrency(totalDividends), tone: "success" as const },
             { icon: CreditScoreRoundedIcon, label: "Loan exposure", value: formatCurrency(totalOutstandingLoans), tone: "danger" as const },
             { icon: EventRoundedIcon, label: "Next loan due", value: nextPaymentDue ? `${formatDate(nextPaymentDue)} · ${formatCurrency(monthlyInstallment)}` : "No due installment", tone: "primary" as const }
@@ -4690,11 +4662,9 @@ export function MemberPortalPage() {
                                     const Icon = item.icon;
                                     const toneColor = item.tone === "success"
                                         ? brandColors.success
-                                        : item.tone === "warning"
-                                            ? "#B45309"
-                                            : item.tone === "danger"
-                                                ? brandColors.danger
-                                                : memberAccent;
+                                        : item.tone === "danger"
+                                            ? brandColors.danger
+                                            : memberAccent;
 
                                     return (
                                         <Stack
@@ -4841,7 +4811,7 @@ export function MemberPortalPage() {
                                 overflowWrap: "anywhere"
                             }}
                         >
-                            Savings {formatCurrency(totalSavings)} · shares {formatCurrency(totalShareCapital)} · dividends {formatCurrency(totalDividends)} · loan exposure {formatCurrency(totalOutstandingLoans)}.
+                            Savings {formatCurrency(totalSavings)} · dividends {formatCurrency(totalDividends)} · loan exposure {formatCurrency(totalOutstandingLoans)}.
                         </Typography>
                     </Box>
 
@@ -4959,7 +4929,7 @@ export function MemberPortalPage() {
         <MemberOverview
             summary={{
                 totalSavings,
-                totalShareCapital,
+                totalShareCapital: 0,
                 totalDividends,
                 outstandingLoan: totalOutstandingLoans,
                 availableToWithdraw: availableSavings,
@@ -4978,11 +4948,6 @@ export function MemberPortalPage() {
                 totalSavings,
                 availableBalance: availableSavings,
                 lockedAmount: lockedSavings
-            }}
-            shareCard={{
-                totalShares: totalShareCapital,
-                dividendEarned: totalDividends,
-                lastContributionDate: lastContribution?.transaction_date || null
             }}
             loanExposure={{
                 outstandingAmount: totalOutstandingLoans,
@@ -5028,19 +4993,10 @@ export function MemberPortalPage() {
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6, lg: 4 }}>
                     <AccountSummaryCard
-                        icon={AccountBalanceWalletRoundedIcon}
-                        label="Share Capital"
-                        value={formatCurrency(totalShareCapital)}
-                        helper="Visible paid-in shares and capital contributions."
-                        tone="warning"
-                    />
-                </Grid>
-                <Grid size={{ xs: 12, sm: 6, lg: 4 }}>
-                    <AccountSummaryCard
                         icon={WalletRoundedIcon}
                         label="Visible Accounts"
                         value={filteredAccounts.length}
-                        helper="Savings and share products in selected range."
+                        helper="Savings products in selected range."
                         tone="success"
                     />
                 </Grid>
@@ -5056,30 +5012,19 @@ export function MemberPortalPage() {
                                         Mobile Money Deposit
                                     </Typography>
                                     <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: "-0.02em" }}>
-                                        {savingsDepositSelfServiceEnabled && shareContributionSelfServiceEnabled
-                                            ? "Deposit into savings or contributions from one portal flow."
-                                            : savingsDepositSelfServiceEnabled
-                                                ? "Deposit into savings from the member portal."
-                                                : "Post share contributions from the member portal."}
+                                        Deposit into savings from the member portal.
                                     </Typography>
                                     <Typography variant="body2" color="text.secondary">
-                                        {savingsDepositSelfServiceEnabled && shareContributionSelfServiceEnabled
-                                            ? "Start one Mobile Money deposit request, choose whether it goes to savings or share contributions, approve it on your phone, and the backend will post it automatically after confirmation."
-                                            : savingsDepositSelfServiceEnabled
-                                                ? "Start a Mobile Money savings deposit, approve it on your phone, and let the backend post it automatically after confirmation."
-                                                : "Start a Mobile Money share contribution, approve it on your phone, and let the backend post it automatically after confirmation."}
+                                        Start a Mobile Money savings deposit, approve it on your phone, and let the backend post it automatically after confirmation.
                                     </Typography>
                                     <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
                                         {savingsDepositSelfServiceEnabled ? (
                                             <Chip label={`${savingsAccounts.length} savings account(s)`} variant="outlined" />
                                         ) : null}
-                                        {shareContributionSelfServiceEnabled ? (
-                                            <Chip label={`${shareAccounts.length} share account(s)`} variant="outlined" />
-                                        ) : null}
                                         <Chip
                                             label={
-                                                latestSavingsPaymentOrder || latestSharePaymentOrder
-                                                    ? `Latest activity ${(latestSavingsPaymentOrder || latestSharePaymentOrder)?.status.replace(/_/g, " ")}`
+                                                latestSavingsPaymentOrder
+                                                    ? `Latest activity ${latestSavingsPaymentOrder.status.replace(/_/g, " ")}`
                                                     : "No active deposit"
                                             }
                                             variant="outlined"
@@ -5091,7 +5036,7 @@ export function MemberPortalPage() {
                                 <Stack spacing={1.1} alignItems={{ xs: "stretch", md: "flex-end" }}>
                                     <Button
                                         variant="contained"
-                                        onClick={() => openDepositDialog(savingsDepositSelfServiceEnabled ? "savings_deposit" : "share_contribution")}
+                                        onClick={() => openDepositDialog("savings_deposit")}
                                         disabled={submittingContribution}
                                         sx={
                                             isDarkMode
@@ -5099,7 +5044,7 @@ export function MemberPortalPage() {
                                                 : undefined
                                         }
                                     >
-                                        {savingsDepositSelfServiceEnabled ? "Make Deposit" : "Contribute Now"}
+                                        Make Deposit
                                     </Button>
                                     {latestAccountsDepositPaymentOrder?.status === "paid" && !latestAccountsDepositPaymentOrder.posted_at ? (
                                         <Button
@@ -5113,9 +5058,9 @@ export function MemberPortalPage() {
                                 </Stack>
                             </Grid>
                         </Grid>
-                        {!savingsAccounts.length && !shareAccounts.length ? (
+                        {!savingsAccounts.length ? (
                             <Alert severity="info" variant="outlined" sx={{ mt: 2 }}>
-                                A branch manager must provision at least one savings or share account before this portal can start member deposits.
+                                A branch manager must provision at least one savings account before this portal can start member deposits.
                             </Alert>
                         ) : null}
                         {latestAccountsDepositPaymentOrder ? (
@@ -5135,9 +5080,7 @@ export function MemberPortalPage() {
                                 <Stack spacing={0.5}>
                                     <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
                                         {latestAccountsDepositPaymentOrder.status === "posted"
-                                            ? savingsDepositSelfServiceEnabled
-                                                ? "Savings deposit completed"
-                                                : "Contribution completed"
+                                            ? "Savings deposit completed"
                                             : latestAccountsDepositPaymentOrder.status === "paid"
                                                 ? "Payment received, posting in progress"
                                                 : latestAccountsDepositPaymentOrder.status === "pending"
@@ -5164,7 +5107,7 @@ export function MemberPortalPage() {
                 </MotionCard>
             ) : (
                 <Alert severity="info" variant="outlined">
-                    Tenant super admin has turned off self-service savings deposits and share contributions for members.
+                    Tenant super admin has turned off self-service savings deposits for members.
                 </Alert>
             )}
 
@@ -7408,7 +7351,7 @@ export function MemberPortalPage() {
                         ) : null}
                         {hasNoVisibleFinancialData ? (
                             <Alert severity="info" sx={{ borderRadius: 2 }}>
-                                No posted member financial activity is visible yet for this login. The dashboard will populate after this member has linked accounts with deposits, share contributions, loans, or statement activity.
+                                No posted member financial activity is visible yet for this login. The dashboard will populate after this member has linked savings accounts, deposits, loans, or statement activity.
                             </Alert>
                         ) : null}
                         {memberApplication && (!memberRecord || memberApplication.status === "approved_pending_payment") ? (
@@ -7719,9 +7662,6 @@ export function MemberPortalPage() {
                                                     }
                                                 }}
                                             >
-                                                {shareContributionSelfServiceEnabled ? (
-                                                    <MenuItem value="share_contribution">Contribution</MenuItem>
-                                                ) : null}
                                                 {savingsDepositSelfServiceEnabled ? (
                                                     <MenuItem value="savings_deposit">Savings</MenuItem>
                                                 ) : null}

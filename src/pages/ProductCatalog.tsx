@@ -1810,7 +1810,7 @@ export function ProductCatalogPage() {
                         {kind === "posting-rules" ? (
                             <>
                                 <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth label="Operation code" {...form.register("operation_code")} /></Grid>
-                                <Grid size={{ xs: 12, md: 4 }}><TextField select fullWidth label="Scope" defaultValue={form.getValues("scope") || "general"} {...form.register("scope")}><MenuItem value="general">General</MenuItem><MenuItem value="savings">Savings</MenuItem><MenuItem value="shares">Shares</MenuItem><MenuItem value="loans">Loans</MenuItem><MenuItem value="dividends">Dividends</MenuItem><MenuItem value="membership">Membership</MenuItem></TextField></Grid>
+                                <Grid size={{ xs: 12, md: 4 }}><TextField select fullWidth label="Scope" defaultValue={form.getValues("scope") || "general"} {...form.register("scope")}><MenuItem value="general">General</MenuItem><MenuItem value="savings">Savings</MenuItem><MenuItem value="loans">Loans</MenuItem><MenuItem value="dividends">Dividends</MenuItem><MenuItem value="membership">Membership</MenuItem></TextField></Grid>
                                 <Grid size={{ xs: 12, md: 4 }}><TextField select fullWidth label="Active" defaultValue={String(form.getValues("is_active") ?? true)} {...form.register("is_active")}><MenuItem value="true">Active</MenuItem><MenuItem value="false">Inactive</MenuItem></TextField></Grid>
                                 <Grid size={{ xs: 12 }}><TextField fullWidth label="Description" {...form.register("description")} /></Grid>
                                 <Grid size={{ xs: 12, md: 6 }}>{accountSelect("debit_account_id", "Debit account")}</Grid>
@@ -2161,25 +2161,6 @@ export function ProductCatalogPage() {
                                 { key: "account", header: "Liability GL", render: (row) => accountLabel.get(row.liability_account_id) || row.liability_account_id }
                             ]}
                             emptyMessage={loading ? "Loading savings products..." : "No savings products configured."}
-                        />
-                    </SectionCard>
-                </Grid>
-                <Grid size={{ xs: 12, xl: 6 }}>
-                    <SectionCard
-                        title="Share products"
-                        helper="Share capital structures and refund restrictions for ownership balances."
-                        icon={<ShareRoundedIcon color="primary" />}
-                        action={<Button startIcon={<AddRoundedIcon />} variant="contained" sx={{ whiteSpace: "nowrap" }} onClick={() => openDialog("shares")}>Add share product</Button>}
-                    >
-                        <DataTable
-                            rows={payload.share_products}
-                            columns={[
-                                { key: "name", header: "Product", render: (row) => <Button onClick={() => openDialog("shares", row)}>{row.name}</Button> },
-                                { key: "code", header: "Code", render: (row) => row.code },
-                                { key: "limits", header: "Limits", render: (row) => `Min ${formatCurrency(row.minimum_shares)} · Max ${row.maximum_shares ? formatCurrency(row.maximum_shares) : "Open"}` },
-                                { key: "account", header: "Equity GL", render: (row) => accountLabel.get(row.equity_account_id) || row.equity_account_id }
-                            ]}
-                            emptyMessage={loading ? "Loading share products..." : "No share products configured."}
                         />
                     </SectionCard>
                 </Grid>

@@ -823,7 +823,7 @@ export function MemberImportPage() {
                                 ) : null}
 
                                 <Alert severity="info">
-                                    The current template accepts dated activity fields too: <strong>opening_savings_date</strong>, <strong>opening_shares_date</strong>, <strong>withdrawal_date</strong>, <strong>loan_disbursed_at</strong>, and <strong>repayment_date</strong>. Leave <strong>branch_code</strong> blank for a single-branch tenant and use the dates to spread imported activity across past months so dashboards and trends look realistic.
+                                    The current template accepts dated activity fields too: <strong>opening_savings_date</strong>, <strong>withdrawal_date</strong>, <strong>loan_disbursed_at</strong>, and <strong>repayment_date</strong>. Leave <strong>branch_code</strong> blank for a single-branch tenant and use the dates to spread imported activity across past months so dashboards and trends look realistic.
                                 </Alert>
 
                                 {submitting ? (
@@ -1137,123 +1137,6 @@ export function MemberImportPage() {
                                 ) : (
                                     <Alert severity="success">
                                         Savings deposit history posted to accounting and member statements successfully.
-                                    </Alert>
-                                )}
-                            </Stack>
-                        ) : null}
-                    </Stack>
-                </CardContent>
-            </MotionCard>
-
-            <MotionCard variant="outlined" sx={{ borderRadius: 2 }}>
-                <CardContent sx={{ p: 3 }}>
-                    <Stack spacing={2.5}>
-                        <Box>
-                            <Typography variant="h6" fontWeight={700}>
-                                Member share history
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
-                                Select an existing member and upload dated share contributions. Each row posts through the share contribution ledger, then running balances and the share account balance are recalculated.
-                            </Typography>
-                        </Box>
-
-                        <Alert severity="info">
-                            CSV columns: <strong>date</strong>, <strong>amount</strong>, optional <strong>cumulative</strong>, <strong>reference</strong>, and <strong>description</strong>. Use this for historical share capital so branch performance and member balances reflect the workbook.
-                        </Alert>
-
-                        <Grid container spacing={2}>
-                            <Grid size={{ xs: 12, md: 5 }}>
-                                <TextField
-                                    select
-                                    fullWidth
-                                    label="Member"
-                                    value={shareMemberId}
-                                    disabled={loadingMembers || shareSubmitting}
-                                    onChange={(event) => {
-                                        setShareMemberId(event.target.value);
-                                        setShareResult(null);
-                                    }}
-                                    helperText={selectedShareMember?.member_no ? `Member no: ${selectedShareMember.member_no}` : "Choose the member whose shares are in the file."}
-                                >
-                                    <MenuItem value="">Select member</MenuItem>
-                                    {members.map((member) => (
-                                        <MenuItem key={member.id} value={member.id}>
-                                            {member.full_name}{member.member_no ? ` (${member.member_no})` : ""}
-                                        </MenuItem>
-                                    ))}
-                                </TextField>
-                            </Grid>
-
-                            <Grid size={{ xs: 12, md: 7 }}>
-                                <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ xs: "stretch", sm: "center" }}>
-                                    <Button
-                                        variant="outlined"
-                                        component="label"
-                                        startIcon={<UploadFileRoundedIcon />}
-                                        disabled={shareSubmitting}
-                                    >
-                                        {shareFile?.name || "Select share history CSV"}
-                                        <input
-                                            hidden
-                                            type="file"
-                                            accept=".csv,text/csv"
-                                            onChange={(event) => {
-                                                setShareFile(event.target.files?.item(0) || null);
-                                                setShareResult(null);
-                                            }}
-                                        />
-                                    </Button>
-                                    <Button
-                                        type="button"
-                                        variant="text"
-                                        startIcon={<DownloadRoundedIcon />}
-                                        onClick={() => window.open("/member-share-history-template.csv", "_blank", "noopener,noreferrer")}
-                                    >
-                                        Download share template
-                                    </Button>
-                                </Stack>
-                            </Grid>
-                        </Grid>
-
-                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ xs: "stretch", sm: "center" }}>
-                            <Button
-                                variant="contained"
-                                disabled={shareSubmitting || !shareMemberId || !shareFile}
-                                startIcon={<CloudUploadRoundedIcon />}
-                                onClick={() => void submitShareHistory()}
-                            >
-                                {shareSubmitting ? "Posting shares..." : "Post share history"}
-                            </Button>
-                            {shareSubmitting ? (
-                                <Box sx={{ minWidth: 220, flex: 1 }}>
-                                    <LinearProgress sx={{ height: 8, borderRadius: 999 }} />
-                                </Box>
-                            ) : null}
-                        </Stack>
-
-                        {shareResult ? (
-                            <Stack spacing={1.25}>
-                                <Stack direction="row" spacing={1} flexWrap="wrap">
-                                    <Chip label={`Member ${shareResult.member.member_no || shareResult.member.full_name}`} />
-                                    <Chip color="success" label={`${shareResult.posted_rows} posted`} />
-                                    <Chip color={shareResult.failed_rows ? "warning" : "default"} label={`${shareResult.failed_rows} failed`} />
-                                    <Chip label={`Total ${Number(shareResult.total_amount || 0).toLocaleString("en-US")}`} />
-                                    {shareResult.latest_balance !== null ? (
-                                        <Chip label={`Latest shares ${Number(shareResult.latest_balance || 0).toLocaleString("en-US")}`} />
-                                    ) : null}
-                                </Stack>
-
-                                {shareResult.failed_rows ? (
-                                    <Alert severity="warning">
-                                        {shareResult.failures.slice(0, 3).map((failure) => (
-                                            <Box key={failure.row_number}>
-                                                Row {failure.row_number}: {failure.error}
-                                            </Box>
-                                        ))}
-                                    </Alert>
-                                ) : (
-                                    <Alert severity="success">
-                                        Share history posted to accounting and member statements successfully.
                                     </Alert>
                                 )}
                             </Stack>

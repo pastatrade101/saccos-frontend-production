@@ -2,6 +2,7 @@ import type { Member, MemberAccount, SaccoPerformanceTargetSettings } from "../t
 
 export type PerformanceTargetLevelColor = "success" | "info" | "warning" | "error" | "default";
 export type PerformanceTargetTone = "success" | "neutral" | "warning" | "danger";
+export type PerformanceTargetStatusId = "target_disabled" | "target_met" | "on_track" | "building" | "needs_top_up" | "no_activity";
 
 export const DEFAULT_SACCO_PERFORMANCE_TARGET_SETTINGS: SaccoPerformanceTargetSettings = {
     tenant_id: null,
@@ -15,6 +16,8 @@ export const DEFAULT_SACCO_PERFORMANCE_TARGET_SETTINGS: SaccoPerformanceTargetSe
     performance_target_configured_by: null,
     updated_at: null
 };
+
+const SAVINGS_ONLY_ACTUAL_SOURCES = new Set(["savings_balance", "available_savings"]);
 
 export interface MemberPerformanceTargetPosition {
     actualDetailAmount: number;
@@ -68,9 +71,15 @@ function parsePerformanceTargetFromNotes(notes?: string | null) {
 export function normalizeSaccoPerformanceTargetSettings(
     settings?: Partial<SaccoPerformanceTargetSettings> | null
 ): SaccoPerformanceTargetSettings {
+    const requestedActualSource = settings?.performance_target_actual_source;
+    const actualSource: SaccoPerformanceTargetSettings["performance_target_actual_source"] = SAVINGS_ONLY_ACTUAL_SOURCES.has(String(requestedActualSource || ""))
+        ? requestedActualSource as SaccoPerformanceTargetSettings["performance_target_actual_source"]
+        : DEFAULT_SACCO_PERFORMANCE_TARGET_SETTINGS.performance_target_actual_source;
+
     return {
         ...DEFAULT_SACCO_PERFORMANCE_TARGET_SETTINGS,
         ...(settings || {}),
+        performance_target_actual_source: actualSource,
         performance_target_enabled: settings?.performance_target_enabled ?? DEFAULT_SACCO_PERFORMANCE_TARGET_SETTINGS.performance_target_enabled,
         performance_target_default_annual_amount: toMoney(
             settings?.performance_target_default_annual_amount,
@@ -133,10 +142,6 @@ export function summarizePerformanceTargetAccounts(accounts: MemberAccount[], se
                 summary.availableSavings += available;
             }
 
-            if (account.product_type === "shares") {
-                summary.shareBalance += total;
-            }
-
             return summary;
         },
         {
@@ -149,11 +154,7 @@ export function summarizePerformanceTargetAccounts(accounts: MemberAccount[], se
     const normalized = normalizeSaccoPerformanceTargetSettings(settings);
     const actualAmount = normalized.performance_target_actual_source === "available_savings"
         ? balances.availableSavings
-        : normalized.performance_target_actual_source === "share_balance"
-            ? balances.shareBalance
-            : normalized.performance_target_actual_source === "savings_plus_shares"
-                ? balances.savingsBalance + balances.shareBalance
-                : balances.savingsBalance;
+        : balances.savingsBalance;
 
     return {
         ...balances,
@@ -166,29 +167,59 @@ export function resolvePerformanceTargetLevel(
     actualAmount: number,
     settings: SaccoPerformanceTargetSettings
 ): { label: string; color: PerformanceTargetLevelColor; tone: PerformanceTargetTone } {
-    const normalized = normalizeSaccoPerformanceTargetSettings(settings);
+    const status = resolvePerformanceTargetStatusId(reachPercent, actualAmount, settings);
 
-    if (!normalized.performance_target_enabled) {
+    if (status === "target_disabled") {
         return { label: "Target disabled", color: "default", tone: "neutral" };
     }
 
-    if (reachPercent >= 100) {
+    if (status === "target_met") {
         return { label: "Target met", color: "success", tone: "success" };
     }
 
-    if (reachPercent >= normalized.performance_target_on_track_percent) {
+    if (status === "on_track") {
         return { label: "On track", color: "info", tone: "neutral" };
     }
 
-    if (reachPercent >= 40) {
+    if (status === "building") {
         return { label: "Building", color: "warning", tone: "warning" };
     }
 
-    if (actualAmount > 0) {
+    if (status === "needs_top_up") {
         return { label: "Needs top-up", color: "error", tone: "danger" };
     }
 
     return { label: "No activity", color: "default", tone: "neutral" };
+}
+
+export function resolvePerformanceTargetStatusId(
+    reachPercent: number,
+    actualAmount: number,
+    settings: SaccoPerformanceTargetSettings
+): PerformanceTargetStatusId {
+    const normalized = normalizeSaccoPerformanceTargetSettings(settings);
+
+    if (!normalized.performance_target_enabled) {
+        return "target_disabled";
+    }
+
+    if (reachPercent >= 100) {
+        return "target_met";
+    }
+
+    if (reachPercent >= normalized.performance_target_on_track_percent) {
+        return "on_track";
+    }
+
+    if (reachPercent >= 40) {
+        return "building";
+    }
+
+    if (actualAmount > 0) {
+        return "needs_top_up";
+    }
+
+    return "no_activity";
 }
 
 export function calculateMemberPerformanceTarget(
