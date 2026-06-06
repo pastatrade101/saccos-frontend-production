@@ -1167,11 +1167,43 @@ export function MemberPortalPage() {
         () => loanProducts.find((product) => product.id === selectedLoanProductId) || null,
         [loanProducts, selectedLoanProductId]
     );
+    const dashboardReferenceLoan = useMemo(
+        () =>
+            loans
+                .filter((loan) => ["active", "in_arrears"].includes(loan.status))
+                .slice()
+                .sort((left, right) => new Date(right.disbursed_at || right.created_at).getTime() - new Date(left.disbursed_at || left.created_at).getTime())[0] || null,
+        [loans]
+    );
     const dashboardLoanProduct = useMemo(
-        () => loanProducts.find((product) => product.status === "active" && product.is_default)
-            || loanProducts.find((product) => product.status === "active")
-            || null,
-        [loanProducts]
+        () => {
+            const activeProducts = loanProducts.filter((product) => product.status === "active");
+
+            if (dashboardReferenceLoan) {
+                const matchingRateAndRangeProduct = activeProducts.find((product) =>
+                    Math.abs(Number(product.annual_interest_rate || 0) - Number(dashboardReferenceLoan.annual_interest_rate || 0)) < 0.0001 &&
+                    Number(dashboardReferenceLoan.principal_amount || 0) >= Number(product.min_amount || 0) &&
+                    (!product.max_amount || Number(dashboardReferenceLoan.principal_amount || 0) <= Number(product.max_amount))
+                );
+
+                if (matchingRateAndRangeProduct) {
+                    return matchingRateAndRangeProduct;
+                }
+
+                const matchingRateProduct = activeProducts.find((product) =>
+                    Math.abs(Number(product.annual_interest_rate || 0) - Number(dashboardReferenceLoan.annual_interest_rate || 0)) < 0.0001
+                );
+
+                if (matchingRateProduct) {
+                    return matchingRateProduct;
+                }
+            }
+
+            return activeProducts.find((product) => product.is_default)
+                || activeProducts[0]
+                || null;
+        },
+        [dashboardReferenceLoan, loanProducts]
     );
     const selectedLoanBranchId = memberRecord?.branch_id || profile?.branch_id || "";
     const selectedLoanPolicy = useMemo(
@@ -1294,6 +1326,11 @@ export function MemberPortalPage() {
     );
     const isEditingDraftLoanApplication = editingLoanApplication?.status === "draft";
     const isEditingRejectedLoanApplication = editingLoanApplication?.status === "rejected";
+    const isDeletingActiveLoanApplicationDraft = Boolean(
+        deletingLoanApplicationId &&
+        editingLoanApplicationId &&
+        deletingLoanApplicationId === editingLoanApplicationId
+    );
     const memberHasProblemLoan = useMemo(
         () => loans.some((loan) => ["in_arrears", "written_off"].includes(loan.status)),
         [loans]
@@ -1324,6 +1361,23 @@ export function MemberPortalPage() {
         selectedLoanConflict,
         selectedLoanProduct
     ]);
+    const loanCapacityLimitingFactor = useMemo(() => {
+        if (!loanCapacity) {
+            return null;
+        }
+
+        const limits = [
+            { label: "member savings", value: Number(loanCapacity.contribution_limit || 0) },
+            { label: "loan product cap", value: Number(loanCapacity.product_limit || 0) },
+            { label: "SACCO liquidity", value: Number(loanCapacity.liquidity_limit || 0) }
+        ].filter((entry) => Number.isFinite(entry.value));
+
+        if (!limits.length) {
+            return null;
+        }
+
+        return limits.reduce((lowest, entry) => (entry.value < lowest.value ? entry : lowest), limits[0]);
+    }, [loanCapacity]);
     const loanCapacityWarnings = useMemo(() => {
         const warnings: string[] = [];
 
@@ -1336,13 +1390,17 @@ export function MemberPortalPage() {
         }
 
         if (selectedLoanProduct && loanCapacity && selectedLoanBorrowLimit < selectedLoanMinimumAmount) {
-            warnings.push(`Your current maximum borrow limit of ${formatCurrency(selectedLoanBorrowLimit)} is below this product minimum of ${formatCurrency(selectedLoanMinimumAmount)}.`);
+            const limitingCopy = loanCapacityLimitingFactor
+                ? ` Current limiting factor: ${loanCapacityLimitingFactor.label} (${formatCurrency(loanCapacityLimitingFactor.value)}).`
+                : "";
+            warnings.push(`Your current maximum borrow limit of ${formatCurrency(selectedLoanBorrowLimit)} is below this product minimum of ${formatCurrency(selectedLoanMinimumAmount)}.${limitingCopy}`);
         }
 
         return warnings;
     }, [
         loanCapacity,
         loanCapacityError,
+        loanCapacityLimitingFactor,
         selectedLoanBorrowLimit,
         selectedLoanMinimumAmount,
         selectedLoanPoolFrozen,
@@ -8121,7 +8179,7 @@ export function MemberPortalPage() {
 
             <MotionModal
                 open={showApplyDialog}
-                onClose={submittingApplication || deletingLoanApplicationId === editingLoanApplicationId ? undefined : closeLoanApplicationDialog}
+                onClose={submittingApplication || isDeletingActiveLoanApplicationDraft ? undefined : closeLoanApplicationDialog}
                 maxWidth="md"
                 fullWidth
                 PaperProps={{
@@ -8742,14 +8800,14 @@ export function MemberPortalPage() {
                         <Button
                             color="error"
                             onClick={() => editingLoanApplication && setPendingDraftDeletion(editingLoanApplication)}
-                            disabled={submittingApplication || deletingLoanApplicationId === editingLoanApplicationId}
+                            disabled={submittingApplication || isDeletingActiveLoanApplicationDraft}
                         >
-                            {deletingLoanApplicationId === editingLoanApplicationId ? "Deleting Draft..." : "Delete Draft"}
+                            {isDeletingActiveLoanApplicationDraft ? "Deleting Draft..." : "Delete Draft"}
                         </Button>
                     ) : null}
                     <Button
                         onClick={closeLoanApplicationDialog}
-                        disabled={deletingLoanApplicationId === editingLoanApplicationId}
+                        disabled={isDeletingActiveLoanApplicationDraft}
                     >
                         Cancel
                     </Button>
@@ -8757,7 +8815,7 @@ export function MemberPortalPage() {
                         <Button
                             onClick={handleRetreatLoanFormStep}
                             startIcon={<ChevronLeftRoundedIcon />}
-                            disabled={deletingLoanApplicationId === editingLoanApplicationId}
+                            disabled={isDeletingActiveLoanApplicationDraft}
                         >
                             Back
                         </Button>
@@ -8768,7 +8826,7 @@ export function MemberPortalPage() {
                                 <Button
                                     variant="outlined"
                                     onClick={() => void saveLoanApplicationDraft()}
-                                    disabled={submittingApplication || deletingLoanApplicationId === editingLoanApplicationId}
+                                    disabled={submittingApplication || isDeletingActiveLoanApplicationDraft}
                                     fullWidth={isMobile}
                                 >
                                     {submittingApplication ? "Saving..." : "Save Draft Changes"}
@@ -8778,7 +8836,7 @@ export function MemberPortalPage() {
                                 variant="contained"
                                 type="submit"
                                 form="member-loan-application-form"
-                                disabled={submittingApplication || deletingLoanApplicationId === editingLoanApplicationId || loanSubmissionLocks.length > 0}
+                                disabled={submittingApplication || isDeletingActiveLoanApplicationDraft || loanSubmissionLocks.length > 0}
                                 fullWidth={isMobile}
                                 sx={
                                     isDarkMode
@@ -8797,7 +8855,7 @@ export function MemberPortalPage() {
                         <Button
                             variant="contained"
                             onClick={() => void handleAdvanceLoanFormStep()}
-                            disabled={submittingApplication || deletingLoanApplicationId === editingLoanApplicationId || (isLoanProductStep && !selectedLoanProduct)}
+                            disabled={submittingApplication || isDeletingActiveLoanApplicationDraft || (isLoanProductStep && !selectedLoanProduct)}
                             fullWidth={isMobile}
                             sx={
                                 isDarkMode

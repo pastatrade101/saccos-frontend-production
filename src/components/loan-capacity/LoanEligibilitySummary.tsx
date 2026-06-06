@@ -58,7 +58,7 @@ export function LoanEligibilitySummary({
     loading = false,
     error = null,
     title = "Loan Eligibility",
-    helperText = "These indicators are calculated from your contributions, the selected product rules, and current SACCO branch liquidity.",
+    helperText = "These indicators are calculated from your savings balance, the selected product rules, and current SACCO branch liquidity.",
     compact = false
 }: LoanEligibilitySummaryProps) {
     const theme = useTheme();
@@ -105,10 +105,10 @@ export function LoanEligibilitySummary({
                         ) : null}
                         <Grid container spacing={1.5}>
                             <Grid size={{ xs: 12, md: 6 }}>
-                                <MetricCard label="Member Contributions" value={formatCurrency(summary.total_contributions)} compact={compact} />
+                                <MetricCard label="Member Savings Balance" value={formatCurrency(summary.total_contributions)} compact={compact} />
                             </Grid>
                             <Grid size={{ xs: 12, md: 6 }}>
-                                <MetricCard label="Contribution Borrow Limit" value={formatCurrency(summary.contribution_limit)} compact={compact} />
+                                <MetricCard label="Savings Borrow Limit" value={formatCurrency(summary.contribution_limit)} compact={compact} />
                             </Grid>
                             <Grid size={{ xs: 12, md: 6 }}>
                                 <MetricCard label="Loan Product Limit" value={formatCurrency(summary.product_limit)} compact={compact} />
@@ -143,7 +143,7 @@ export function LoanEligibilitySummary({
                                         {formatCurrency(summary.borrow_limit)}
                                     </Typography>
                                     <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                                        Based on your contributions, product rules, and current SACCO liquidity.
+                                        Based on your savings balance, product rules, and current SACCO liquidity.
                                     </Typography>
                                 </Box>
                             </Grid>
@@ -184,7 +184,7 @@ export function LoanEligibilitySummary({
                                 i
                             </Box>
                             <Typography variant="body2" color="text.secondary">
-                                Applying within your borrowing capacity improves approval chances.
+                                Applying within your borrowing capacity improves approval chances. Final approval still follows branch appraisal.
                             </Typography>
                         </Stack>
                         <Typography variant="caption" color="text.secondary">
