@@ -200,6 +200,7 @@ const routeMap = {
         memberSavingsHistory: "/imports/members/savings-history",
         memberShareHistory: "/imports/members/share-history",
         memberLoanHistory: "/imports/members/loan-history",
+        memberLoanRepayments: "/imports/members/loan-repayments",
         memberDividendHistory: "/imports/members/dividend-history",
         memberPerformanceTargets: "/imports/members/performance-targets",
         memberJob: (jobId: string) => `/imports/members/${jobId}`,
@@ -453,6 +454,7 @@ export const endpoints = {
         memberSavingsHistory: () => routeMap.imports.memberSavingsHistory,
         memberShareHistory: () => routeMap.imports.memberShareHistory,
         memberLoanHistory: () => routeMap.imports.memberLoanHistory,
+        memberLoanRepayments: () => routeMap.imports.memberLoanRepayments,
         memberDividendHistory: () => routeMap.imports.memberDividendHistory,
         memberPerformanceTargets: () => routeMap.imports.memberPerformanceTargets,
         memberJob: (jobId: string) => routeMap.imports.memberJob(jobId),
@@ -1204,6 +1206,7 @@ export interface MemberHistoryBulkMemberSummary {
     account_id?: string;
     resolved: boolean;
     posted_rows: number;
+    skipped_rows?: number;
     failed_rows: number;
     total_amount: number;
     latest_balance?: number | null;
@@ -1251,11 +1254,14 @@ export interface MemberShareHistoryImportResponseData extends MemberSavingsHisto
 
 export type MemberShareHistoryImportResponse = ApiEnvelope<MemberShareHistoryImportResponseData>;
 export interface MemberLoanHistoryImportResponseData {
-    member: {
+    mode?: "single" | "bulk";
+    member?: {
         id: string;
         full_name: string;
         member_no?: string | null;
     };
+    members_in_file?: number;
+    members?: MemberHistoryBulkMemberSummary[];
     total_rows: number;
     posted_rows: number;
     skipped_rows: number;
@@ -1293,12 +1299,36 @@ export interface MemberLoanHistoryImportResponseData {
     }>;
     failures: Array<{
         row_number: number;
+        member_no?: string | null;
         error: string;
         raw: Record<string, string>;
     }>;
 }
 
 export type MemberLoanHistoryImportResponse = ApiEnvelope<MemberLoanHistoryImportResponseData>;
+export interface MemberLoanRepaymentImportResponseData {
+    mode?: "bulk";
+    total_rows: number;
+    posted_rows: number;
+    failed_rows: number;
+    total_amount: number;
+    posted: Array<{
+        row_number: number;
+        loan_reference: string;
+        member_no?: string | null;
+        loan_id: string;
+        journal_id: string | null;
+        amount: number;
+        occurred_at: string;
+    }>;
+    failures: Array<{
+        row_number: number;
+        member_no?: string | null;
+        error: string;
+        raw: Record<string, string>;
+    }>;
+}
+export type MemberLoanRepaymentImportResponse = ApiEnvelope<MemberLoanRepaymentImportResponseData>;
 export interface MemberDividendHistoryImportResponseData extends Omit<MemberSavingsHistoryImportResponseData, "posted"> {
     latest_balance: number | null;
     running_balance_rows_updated: number;

@@ -1,0 +1,4 @@
+member_no,date,principal_amount,monthly_interest_rate,term_months,first_due_date,repayment_frequency,reference,description
+ILS24-F00037,2025-12-12,20000000,5,1,2026-01-12,monthly,MIKOPO-001,Historical loan (Ilboru MIKOPO)
+ILS24-F00002,2026-01-05,30000000,5,1,2026-02-05,monthly,MIKOPO-002,Historical loan (Ilboru MIKOPO)
+ILS24-F00003,2026-02-03,10000000,5,1,2026-03-03,monthly,MIKOPO-003,Historical loan (Ilboru MIKOPO)

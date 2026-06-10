@@ -1,0 +1,3 @@
+member_no,date,amount,source,reference,description
+ILS24-F00001,2024-12-31,32705,utt,DIV-ILS24-F00001-01,DIVIDENT 1 UTT (Year 1)
+ILS24-F00001,2025-12-15,73905,loan,DIV-ILS24-F00001-03,DIVIDENT 3 (Loan 1)
