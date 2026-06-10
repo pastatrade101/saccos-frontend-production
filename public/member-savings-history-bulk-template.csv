@@ -1,0 +1,5 @@
+member_no,date,amount,source,reference,description
+ILS24-F00001,2024-03-04,170000,mkoba,SAV-ILS24-F00001-0001,Historical savings deposit
+ILS24-F00001,2025-08-15,1000000,nmb,SAV-ILS24-F00001-0007,Historical savings deposit
+ILS24-F00003,2024-02-29,170000,mkoba,SAV-ILS24-F00003-0001,Historical savings deposit
+ILS24-F00003,2025-03-11,100000,nmb,SAV-ILS24-F00003-0007,Historical savings deposit

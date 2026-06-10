@@ -1197,27 +1197,47 @@ export interface ImportMembersResponseData {
 }
 
 export type ImportMembersResponse = ApiEnvelope<ImportMembersResponseData>;
+export interface MemberHistoryBulkMemberSummary {
+    member_id?: string;
+    member_no: string | null;
+    full_name?: string;
+    account_id?: string;
+    resolved: boolean;
+    posted_rows: number;
+    failed_rows: number;
+    total_amount: number;
+    latest_balance?: number | null;
+}
+
 export interface MemberSavingsHistoryImportResponseData {
-    member: {
+    // "single" when targeting one member by id, "bulk" when keyed by member_no.
+    mode?: "single" | "bulk";
+    member?: {
         id: string;
         full_name: string;
         member_no?: string | null;
     };
-    account_id: string;
+    account_id?: string;
+    // Bulk-only roll-up fields.
+    members_in_file?: number;
+    members?: MemberHistoryBulkMemberSummary[];
     total_rows: number;
     posted_rows: number;
     failed_rows: number;
     total_amount: number;
-    posted: Array<{
+    posted?: Array<{
         row_number: number;
+        member_no?: string | null;
         journal_id: string | null;
         reference: string;
         amount: number;
         occurred_at: string;
+        funding_source?: string | null;
         cumulative: number | null;
     }>;
     failures: Array<{
         row_number: number;
+        member_no?: string | null;
         error: string;
         raw: Record<string, string>;
     }>;
@@ -1225,8 +1245,8 @@ export interface MemberSavingsHistoryImportResponseData {
 
 export type MemberSavingsHistoryImportResponse = ApiEnvelope<MemberSavingsHistoryImportResponseData>;
 export interface MemberShareHistoryImportResponseData extends MemberSavingsHistoryImportResponseData {
-    latest_balance: number | null;
-    running_balance_rows_updated: number;
+    latest_balance?: number | null;
+    running_balance_rows_updated?: number;
 }
 
 export type MemberShareHistoryImportResponse = ApiEnvelope<MemberShareHistoryImportResponseData>;

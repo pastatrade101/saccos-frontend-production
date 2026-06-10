@@ -118,10 +118,12 @@ export function MemberImportPage() {
     const [submitting, setSubmitting] = useState(false);
     const [historySubmitting, setHistorySubmitting] = useState(false);
     const [historyMemberId, setHistoryMemberId] = useState("");
+    const [historyBulk, setHistoryBulk] = useState(false);
     const [historyFile, setHistoryFile] = useState<File | null>(null);
     const [historyResult, setHistoryResult] = useState<MemberSavingsHistoryImportResponse["data"] | null>(null);
     const [shareSubmitting, setShareSubmitting] = useState(false);
     const [shareMemberId, setShareMemberId] = useState("");
+    const [shareBulk, setShareBulk] = useState(false);
     const [shareFile, setShareFile] = useState<File | null>(null);
     const [shareResult, setShareResult] = useState<MemberShareHistoryImportResponse["data"] | null>(null);
     const [loanSubmitting, setLoanSubmitting] = useState(false);
@@ -498,11 +500,11 @@ export function MemberImportPage() {
     };
 
     const submitSavingsHistory = async () => {
-        if (!historyMemberId) {
+        if (!historyBulk && !historyMemberId) {
             pushToast({
                 type: "error",
                 title: "Choose member",
-                message: "Select the member who owns this savings history file."
+                message: "Select the member who owns this savings history file, or switch on bulk mode."
             });
             return;
         }
@@ -521,7 +523,10 @@ export function MemberImportPage() {
 
         try {
             const body = new FormData();
-            body.append("member_id", historyMemberId);
+            // Bulk mode omits member_id; the backend then keys rows by member_no.
+            if (!historyBulk) {
+                body.append("member_id", historyMemberId);
+            }
             body.append("file", historyFile);
 
             const { data } = await api.post<MemberSavingsHistoryImportResponse>(
@@ -553,11 +558,11 @@ export function MemberImportPage() {
     };
 
     const submitShareHistory = async () => {
-        if (!shareMemberId) {
+        if (!shareBulk && !shareMemberId) {
             pushToast({
                 type: "error",
                 title: "Choose member",
-                message: "Select the member who owns this share history file."
+                message: "Select the member who owns this share history file, or switch on bulk mode."
             });
             return;
         }
@@ -576,7 +581,10 @@ export function MemberImportPage() {
 
         try {
             const body = new FormData();
-            body.append("member_id", shareMemberId);
+            // Bulk mode omits member_id; the backend then keys rows by member_no.
+            if (!shareBulk) {
+                body.append("member_id", shareMemberId);
+            }
             body.append("file", shareFile);
 
             const { data } = await api.post<MemberShareHistoryImportResponse>(
@@ -1044,8 +1052,22 @@ export function MemberImportPage() {
                         </Box>
 
                         <Alert severity="info">
-                            CSV columns: <strong>date</strong>, <strong>amount</strong>, optional <strong>cumulative</strong>, <strong>reference</strong>, and <strong>description</strong>. Dates like <strong>3/4/2024</strong> are treated as month/day/year.
+                            CSV columns: <strong>date</strong>, <strong>amount</strong>, optional <strong>source</strong> (e.g. mkoba, nmb), <strong>cumulative</strong>, <strong>reference</strong>, and <strong>description</strong>. Dates like <strong>3/4/2024</strong> are treated as month/day/year. In bulk mode add a <strong>member_no</strong> column to cover every member in one file.
                         </Alert>
+
+                        <FormControlLabel
+                            control={(
+                                <Switch
+                                    checked={historyBulk}
+                                    disabled={historySubmitting}
+                                    onChange={(event) => {
+                                        setHistoryBulk(event.target.checked);
+                                        setHistoryResult(null);
+                                    }}
+                                />
+                            )}
+                            label="Bulk import for all members (CSV keyed by member_no)"
+                        />
 
                         <Grid container spacing={2}>
                             <Grid size={{ xs: 12, md: 5 }}>
@@ -1054,12 +1076,14 @@ export function MemberImportPage() {
                                     fullWidth
                                     label="Member"
                                     value={historyMemberId}
-                                    disabled={loadingMembers || historySubmitting}
+                                    disabled={loadingMembers || historySubmitting || historyBulk}
                                     onChange={(event) => {
                                         setHistoryMemberId(event.target.value);
                                         setHistoryResult(null);
                                     }}
-                                    helperText={selectedHistoryMember?.member_no ? `Member no: ${selectedHistoryMember.member_no}` : "Choose the member whose deposits are in the file."}
+                                    helperText={historyBulk
+                                        ? "Bulk mode: member is taken from each row's member_no column."
+                                        : selectedHistoryMember?.member_no ? `Member no: ${selectedHistoryMember.member_no}` : "Choose the member whose deposits are in the file."}
                                 >
                                     <MenuItem value="">Select member</MenuItem>
                                     {members.map((member) => (
@@ -1093,9 +1117,17 @@ export function MemberImportPage() {
                                         type="button"
                                         variant="text"
                                         startIcon={<DownloadRoundedIcon />}
-                                        onClick={() => window.open("/member-savings-history-template.csv", "_blank", "noopener,noreferrer")}
+                                        onClick={() => window.open(historyBulk ? "/member-savings-history-bulk-template.csv" : "/member-savings-history-template.csv", "_blank", "noopener,noreferrer")}
                                     >
-                                        Download history template
+                                        Download {historyBulk ? "bulk " : ""}template
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        variant="text"
+                                        startIcon={<DownloadRoundedIcon />}
+                                        onClick={() => window.open(historyBulk ? "/member-savings-history-ilboru-91.csv" : "/member-savings-history-sample.csv", "_blank", "noopener,noreferrer")}
+                                    >
+                                        Download {historyBulk ? "Ilboru 91-member data" : "single-member sample"}
                                     </Button>
                                 </Stack>
                             </Grid>
@@ -1104,7 +1136,7 @@ export function MemberImportPage() {
                         <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ xs: "stretch", sm: "center" }}>
                             <Button
                                 variant="contained"
-                                disabled={historySubmitting || !historyMemberId || !historyFile}
+                                disabled={historySubmitting || (!historyBulk && !historyMemberId) || !historyFile}
                                 startIcon={<CloudUploadRoundedIcon />}
                                 onClick={() => void submitSavingsHistory()}
                             >
@@ -1120,7 +1152,9 @@ export function MemberImportPage() {
                         {historyResult ? (
                             <Stack spacing={1.25}>
                                 <Stack direction="row" spacing={1} flexWrap="wrap">
-                                    <Chip label={`Member ${historyResult.member.member_no || historyResult.member.full_name}`} />
+                                    {historyResult.mode === "bulk"
+                                        ? <Chip label={`${historyResult.members_in_file ?? historyResult.members?.length ?? 0} members in file`} />
+                                        : <Chip label={`Member ${historyResult.member?.member_no || historyResult.member?.full_name || ""}`} />}
                                     <Chip color="success" label={`${historyResult.posted_rows} posted`} />
                                     <Chip color={historyResult.failed_rows ? "warning" : "default"} label={`${historyResult.failed_rows} failed`} />
                                     <Chip label={`Total ${Number(historyResult.total_amount || 0).toLocaleString("en-US")}`} />
@@ -1128,15 +1162,157 @@ export function MemberImportPage() {
 
                                 {historyResult.failed_rows ? (
                                     <Alert severity="warning">
-                                        {historyResult.failures.slice(0, 3).map((failure) => (
-                                            <Box key={failure.row_number}>
-                                                Row {failure.row_number}: {failure.error}
+                                        {historyResult.failures.slice(0, 5).map((failure) => (
+                                            <Box key={`${failure.member_no || "row"}-${failure.row_number}`}>
+                                                Row {failure.row_number}{failure.member_no ? ` (${failure.member_no})` : ""}: {failure.error}
                                             </Box>
                                         ))}
+                                        {historyResult.failures.length > 5 ? <Box>…and {historyResult.failures.length - 5} more.</Box> : null}
                                     </Alert>
                                 ) : (
                                     <Alert severity="success">
                                         Savings deposit history posted to accounting and member statements successfully.
+                                    </Alert>
+                                )}
+                            </Stack>
+                        ) : null}
+                    </Stack>
+                </CardContent>
+            </MotionCard>
+
+            <MotionCard variant="outlined" sx={{ borderRadius: 2 }}>
+                <CardContent sx={{ p: 3 }}>
+                    <Stack spacing={2.5}>
+                        <Box>
+                            <Typography variant="h6" fontWeight={700}>
+                                Member share history
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+                                Upload dated share-capital contributions with their funding source. Each row posts a share contribution through the finance ledger, then the journal and member statement transaction are backdated to the CSV date and tagged with the source.
+                            </Typography>
+                        </Box>
+
+                        <Alert severity="info">
+                            CSV columns: <strong>date</strong>, <strong>amount</strong>, optional <strong>source</strong> (e.g. mkoba, nmb, opening), <strong>cumulative</strong>, <strong>reference</strong>, and <strong>description</strong>. In bulk mode add a <strong>member_no</strong> column to cover every member in one file.
+                        </Alert>
+
+                        <FormControlLabel
+                            control={(
+                                <Switch
+                                    checked={shareBulk}
+                                    disabled={shareSubmitting}
+                                    onChange={(event) => {
+                                        setShareBulk(event.target.checked);
+                                        setShareResult(null);
+                                    }}
+                                />
+                            )}
+                            label="Bulk import for all members (CSV keyed by member_no)"
+                        />
+
+                        <Grid container spacing={2}>
+                            <Grid size={{ xs: 12, md: 5 }}>
+                                <TextField
+                                    select
+                                    fullWidth
+                                    label="Member"
+                                    value={shareMemberId}
+                                    disabled={loadingMembers || shareSubmitting || shareBulk}
+                                    onChange={(event) => {
+                                        setShareMemberId(event.target.value);
+                                        setShareResult(null);
+                                    }}
+                                    helperText={shareBulk
+                                        ? "Bulk mode: member is taken from each row's member_no column."
+                                        : selectedShareMember?.member_no ? `Member no: ${selectedShareMember.member_no}` : "Choose the member whose share contributions are in the file."}
+                                >
+                                    <MenuItem value="">Select member</MenuItem>
+                                    {members.map((member) => (
+                                        <MenuItem key={member.id} value={member.id}>
+                                            {member.full_name}{member.member_no ? ` (${member.member_no})` : ""}
+                                        </MenuItem>
+                                    ))}
+                                </TextField>
+                            </Grid>
+
+                            <Grid size={{ xs: 12, md: 7 }}>
+                                <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ xs: "stretch", sm: "center" }}>
+                                    <Button
+                                        variant="outlined"
+                                        component="label"
+                                        startIcon={<UploadFileRoundedIcon />}
+                                        disabled={shareSubmitting}
+                                    >
+                                        {shareFile?.name || "Select share history CSV"}
+                                        <input
+                                            hidden
+                                            type="file"
+                                            accept=".csv,text/csv"
+                                            onChange={(event) => {
+                                                setShareFile(event.target.files?.item(0) || null);
+                                                setShareResult(null);
+                                            }}
+                                        />
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        variant="text"
+                                        startIcon={<DownloadRoundedIcon />}
+                                        onClick={() => window.open(shareBulk ? "/member-share-history-bulk-template.csv" : "/member-share-history-template.csv", "_blank", "noopener,noreferrer")}
+                                    >
+                                        Download {shareBulk ? "bulk " : ""}template
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        variant="text"
+                                        startIcon={<DownloadRoundedIcon />}
+                                        onClick={() => window.open(shareBulk ? "/member-share-history-ilboru.csv" : "/member-share-history-sample.csv", "_blank", "noopener,noreferrer")}
+                                    >
+                                        Download {shareBulk ? "Ilboru share data" : "single-member sample"}
+                                    </Button>
+                                </Stack>
+                            </Grid>
+                        </Grid>
+
+                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ xs: "stretch", sm: "center" }}>
+                            <Button
+                                variant="contained"
+                                disabled={shareSubmitting || (!shareBulk && !shareMemberId) || !shareFile}
+                                startIcon={<CloudUploadRoundedIcon />}
+                                onClick={() => void submitShareHistory()}
+                            >
+                                {shareSubmitting ? "Posting shares..." : "Post share history"}
+                            </Button>
+                            {shareSubmitting ? (
+                                <Box sx={{ minWidth: 220, flex: 1 }}>
+                                    <LinearProgress sx={{ height: 8, borderRadius: 999 }} />
+                                </Box>
+                            ) : null}
+                        </Stack>
+
+                        {shareResult ? (
+                            <Stack spacing={1.25}>
+                                <Stack direction="row" spacing={1} flexWrap="wrap">
+                                    {shareResult.mode === "bulk"
+                                        ? <Chip label={`${shareResult.members_in_file ?? shareResult.members?.length ?? 0} members in file`} />
+                                        : <Chip label={`Member ${shareResult.member?.member_no || shareResult.member?.full_name || ""}`} />}
+                                    <Chip color="success" label={`${shareResult.posted_rows} posted`} />
+                                    <Chip color={shareResult.failed_rows ? "warning" : "default"} label={`${shareResult.failed_rows} failed`} />
+                                    <Chip label={`Total ${Number(shareResult.total_amount || 0).toLocaleString("en-US")}`} />
+                                </Stack>
+
+                                {shareResult.failed_rows ? (
+                                    <Alert severity="warning">
+                                        {shareResult.failures.slice(0, 5).map((failure) => (
+                                            <Box key={`${failure.member_no || "row"}-${failure.row_number}`}>
+                                                Row {failure.row_number}{failure.member_no ? ` (${failure.member_no})` : ""}: {failure.error}
+                                            </Box>
+                                        ))}
+                                        {shareResult.failures.length > 5 ? <Box>…and {shareResult.failures.length - 5} more.</Box> : null}
+                                    </Alert>
+                                ) : (
+                                    <Alert severity="success">
+                                        Share contribution history posted to accounting and member statements successfully.
                                     </Alert>
                                 )}
                             </Stack>
@@ -1353,7 +1529,7 @@ export function MemberImportPage() {
                         {dividendResult ? (
                             <Stack spacing={1.25}>
                                 <Stack direction="row" spacing={1} flexWrap="wrap">
-                                    <Chip label={`Member ${dividendResult.member.member_no || dividendResult.member.full_name}`} />
+                                    <Chip label={`Member ${dividendResult.member?.member_no || dividendResult.member?.full_name || ""}`} />
                                     <Chip color="success" label={`${dividendResult.posted_rows} posted`} />
                                     <Chip color={dividendResult.failed_rows ? "warning" : "default"} label={`${dividendResult.failed_rows} failed`} />
                                     <Chip label={`Total ${Number(dividendResult.total_amount || 0).toLocaleString("en-US")}`} />
