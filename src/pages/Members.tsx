@@ -418,9 +418,12 @@ export function MembersPage() {
     const [operationalFilter, setOperationalFilter] = useState<MemberOperationalFilter>("all");
     const [branchFilter, setBranchFilter] = useState<string>("all");
     const [page, setPage] = useState(1);
+    const [viewAll, setViewAll] = useState(false);
     const [serverTotalMembers, setServerTotalMembers] = useState(0);
     const deferredSearch = useDeferredValue(search);
     const pageSize = 8;
+    // "View all" loads every member in one page so the count can be eyeballed.
+    const effectivePageSize = viewAll ? 1000 : pageSize;
 
     const canCreateMembers = Boolean(
         profile && ["branch_manager"].includes(profile.role)
@@ -731,8 +734,8 @@ export function MembersPage() {
                 api.get<MembersResponse>(endpoints.members.list(), {
                     params: {
                         tenant_id: selectedTenantId,
-                        page,
-                        limit: pageSize,
+                        page: viewAll ? 1 : page,
+                        limit: effectivePageSize,
                         search: deferredSearch.trim() || undefined,
                         status: statusFilter === "all" ? undefined : statusFilter,
                         branch_id: branchFilter === "all" ? undefined : branchFilter
@@ -785,7 +788,7 @@ export function MembersPage() {
         setAccountsLoaded(false);
         setAccountsLoading(false);
         void loadMembers();
-    }, [branchFilter, deferredSearch, page, selectedTenantId, statusFilter]);
+    }, [branchFilter, deferredSearch, page, selectedTenantId, statusFilter, viewAll]);
 
     useEffect(() => {
         void loadProductBootstrap();
@@ -900,7 +903,7 @@ export function MembersPage() {
         });
     }, [accountsLoaded, members, operationalFilter]);
 
-    const totalPages = Math.max(1, Math.ceil((serverTotalMembers || 0) / pageSize));
+    const totalPages = Math.max(1, Math.ceil((serverTotalMembers || 0) / effectivePageSize));
     const paginatedMembers = filteredMembers;
     const selectedMemberIdSet = useMemo(() => new Set(selectedMemberIds), [selectedMemberIds]);
     const selectedMembers = useMemo(
@@ -2622,6 +2625,18 @@ export function MembersPage() {
                         </Stack>
                         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                             <Chip label={`${visibleResultCount} result${visibleResultCount === 1 ? "" : "s"}`} />
+                            {operationalFilter === "all" ? (
+                                <Button
+                                    size="small"
+                                    variant={viewAll ? "contained" : "outlined"}
+                                    onClick={() => {
+                                        setPage(1);
+                                        setViewAll((prev) => !prev);
+                                    }}
+                                >
+                                    {viewAll ? "Show pages" : "View all"}
+                                </Button>
+                            ) : null}
                             {canDeleteMembers ? (
                                 <Chip
                                     label={`${selectedMemberIds.length} selected`}
@@ -2752,7 +2767,7 @@ export function MembersPage() {
                     ) : (
                         <Stack spacing={2}>
                             <DataTable rows={paginatedMembers} columns={columns} emptyMessage={directoryEmptyMessage} />
-                            {operationalFilter === "all" && serverTotalMembers > pageSize ? (
+                            {operationalFilter === "all" && !viewAll && serverTotalMembers > pageSize ? (
                                 <Stack direction="row" justifyContent="flex-end">
                                     <Pagination
                                         count={totalPages}

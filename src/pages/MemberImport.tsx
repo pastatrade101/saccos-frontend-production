@@ -1131,6 +1131,25 @@ export function MemberImportPage() {
                             </Grid>
                         </Grid>
 
+                        {historyBulk ? (
+                            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
+                                <Typography variant="caption" color="text.secondary">
+                                    Large import? Upload these one at a time to avoid timeouts (≤150 rows each):
+                                </Typography>
+                                {[1, 2, 3, 4, 5, 6].map((n) => (
+                                    <Button
+                                        key={n}
+                                        size="small"
+                                        variant="outlined"
+                                        startIcon={<DownloadRoundedIcon />}
+                                        onClick={() => window.open(`/member-savings-history-ilboru-batch${n}.csv`, "_blank", "noopener,noreferrer")}
+                                    >
+                                        Batch {n}
+                                    </Button>
+                                ))}
+                            </Stack>
+                        ) : null}
+
                         <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ xs: "stretch", sm: "center" }}>
                             <Button
                                 variant="contained"
