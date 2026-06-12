@@ -59,6 +59,8 @@ import {
     type CreateMemberResponse,
     type MemberAccountsResponse,
     type MembersResponse,
+    type MembersSummaryData,
+    type MembersSummaryResponse,
     type ProvisionMemberAccountRequest,
     type ProvisionMemberAccountResponse,
     type ProductBootstrapResponse,
@@ -420,6 +422,7 @@ export function MembersPage() {
     const [page, setPage] = useState(1);
     const [viewAll, setViewAll] = useState(false);
     const [serverTotalMembers, setServerTotalMembers] = useState(0);
+    const [serverSummary, setServerSummary] = useState<MembersSummaryData | null>(null);
     const deferredSearch = useDeferredValue(search);
     const pageSize = 8;
     // "View all" loads every member in one page so the count can be eyeballed.
@@ -765,6 +768,11 @@ export function MembersPage() {
             setBranches(nextBranches);
             setMembers(nextMembers);
             setServerTotalMembers(totalMembers);
+            // Tenant/branch-wide totals for the header cards (not just the visible page).
+            void api
+                .get<MembersSummaryResponse>(endpoints.members.summary())
+                .then(({ data }) => setServerSummary(data.data))
+                .catch(() => undefined);
             setSelectedMember((current) => {
                 if (!current) {
                     return null;
@@ -1315,13 +1323,17 @@ export function MembersPage() {
     };
 
     const memberCounts = useMemo(() => ({
-        total: serverTotalMembers,
-        active: members.filter((member) => member.status === "active").length,
-        linkedLogins: members.filter((member) => Boolean(member.user_id)).length,
-        totalSavings: accountsLoaded
-            ? members.reduce((sum, member) => sum + Number(member.account?.available_balance || 0), 0)
-            : 0
-    }), [accountsLoaded, members, serverTotalMembers]);
+        // Prefer tenant/branch-wide server totals; fall back to the loaded page only
+        // while the summary is still loading.
+        total: serverSummary?.total ?? serverTotalMembers,
+        active: serverSummary?.active ?? members.filter((member) => member.status === "active").length,
+        linkedLogins: serverSummary?.linked_logins ?? members.filter((member) => Boolean(member.user_id)).length,
+        totalSavings: serverSummary
+            ? serverSummary.total_savings
+            : accountsLoaded
+                ? members.reduce((sum, member) => sum + Number(member.account?.available_balance || 0), 0)
+                : 0
+    }), [accountsLoaded, members, serverSummary, serverTotalMembers]);
     const tellerReadyCount = useMemo(
         () => accountsLoaded
             ? members.filter((member) => member.status === "active" && Boolean(member.account?.id)).length
@@ -1783,9 +1795,9 @@ export function MembersPage() {
                 <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
                     <MetricCard
                         title={isTeller ? "Visible Savings Float" : "Savings Balance"}
-                        value={accountsLoaded ? formatCurrency(memberCounts.totalSavings) : "Syncing..."}
-                        helper={accountsLoaded
-                            ? (isTeller ? "Current visible balances across teller-served accounts." : "Visible savings across primary accounts.")
+                        value={(serverSummary || accountsLoaded) ? formatCurrency(memberCounts.totalSavings) : "Syncing..."}
+                        helper={(serverSummary || accountsLoaded)
+                            ? (isTeller ? "Current visible balances across teller-served accounts." : "Total savings across all members in scope.")
                             : "Account balances are loading in the background."}
                         icon={<AccountBalanceWalletRoundedIcon fontSize="small" />}
                         tone="warning"

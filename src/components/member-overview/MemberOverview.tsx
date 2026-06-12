@@ -7,7 +7,7 @@ import { LoanCard } from "./LoanCard";
 import { LoanRepaymentProgress } from "./LoanRepaymentProgress";
 import { RecentActivityCard } from "./RecentActivityCard";
 import { SavingsCard } from "./SavingsCard";
-import { SavingsTrendChart } from "./SavingsTrendChart";
+import { SavingsTrendChart, type SavingsTrendPoint } from "./SavingsTrendChart";
 import { TransactionsPreview } from "./TransactionsPreview";
 import type { FinancialStanding, FinancialSummaryData, LoanExposureData, MemberAlertItem, RecentActivityData } from "./types";
 
@@ -23,6 +23,7 @@ interface MemberOverviewProps {
     recentActivity: RecentActivityData;
     alerts: MemberAlertItem[];
     savingsTrend: {
+        series: SavingsTrendPoint[];
         labels: string[];
         values: number[];
     };
@@ -72,10 +73,14 @@ export function MemberOverview({
             <Alerts alerts={alerts} />
 
             <Grid container spacing={2} sx={{ width: "100%", minWidth: 0 }}>
-                <Grid size={{ xs: 12, lg: 8 }} sx={{ minWidth: 0 }}>
-                    <SavingsTrendChart labels={savingsTrend.labels} values={savingsTrend.values} />
+                <Grid size={{ xs: 12 }} sx={{ minWidth: 0 }} data-tour="member-portal-savings-trend">
+                    <SavingsTrendChart
+                        series={savingsTrend.series}
+                        fallbackLabels={savingsTrend.labels}
+                        fallbackValues={savingsTrend.values}
+                    />
                 </Grid>
-                <Grid size={{ xs: 12, lg: 4 }} sx={{ minWidth: 0 }}>
+                <Grid size={{ xs: 12 }} sx={{ minWidth: 0 }}>
                     <LoanRepaymentProgress progressPercent={loanExposure.loanProgressPercent} />
                 </Grid>
             </Grid>

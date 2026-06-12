@@ -144,6 +144,7 @@ const routeMap = {
     },
     members: {
         list: "/members",
+        summary: "/members/summary",
         accounts: "/members/accounts",
         create: "/members",
         profileCompletion: "/members/me/profile-completion",
@@ -276,6 +277,7 @@ const routeMap = {
         balanceSheet: "/reports/balance-sheet/export",
         incomeStatement: "/reports/income-statement/export",
         chargeRevenueSummary: "/reports/revenue/summary",
+        fundingSources: "/reports/funding-sources",
         memberStatements: "/reports/member-statements/export",
         par: "/reports/par/export",
         loanAging: "/reports/loan-aging/export",
@@ -397,6 +399,7 @@ export const endpoints = {
     },
     members: {
         list: () => routeMap.members.list,
+        summary: () => routeMap.members.summary,
         accounts: () => routeMap.members.accounts,
         create: () => routeMap.members.create,
         profileCompletion: () => routeMap.members.profileCompletion,
@@ -530,6 +533,7 @@ export const endpoints = {
         balanceSheet: () => routeMap.reports.balanceSheet,
         incomeStatement: () => routeMap.reports.incomeStatement,
         chargeRevenueSummary: () => routeMap.reports.chargeRevenueSummary,
+        fundingSources: () => routeMap.reports.fundingSources,
         memberStatements: () => routeMap.reports.memberStatements,
         par: () => routeMap.reports.par,
         loanAging: () => routeMap.reports.loanAging,
@@ -837,6 +841,13 @@ export interface ProvisionMemberAccountRequest {
 }
 
 export type MembersResponse = ApiEnvelope<Member[]>;
+export interface MembersSummaryData {
+    total: number;
+    active: number;
+    linked_logins: number;
+    total_savings: number;
+}
+export type MembersSummaryResponse = ApiEnvelope<MembersSummaryData>;
 export type MemberAccountsResponse = ApiEnvelope<import("../types/api").MemberAccount[]>;
 export type CreateMemberResponse = ApiEnvelope<{
     member: Member;
@@ -1465,6 +1476,19 @@ export interface ChargeRevenueSummaryQuery {
 }
 
 export type ChargeRevenueSummaryResponse = ApiEnvelope<import("../types/api").ChargeRevenueSummary>;
+export interface FundingSourceSummaryData {
+    available: boolean;
+    total: number;
+    untagged_total: number;
+    sources: Array<{
+        code: string;
+        label: string;
+        total: number;
+        count: number;
+        percent: number;
+    }>;
+}
+export type FundingSourceSummaryResponse = ApiEnvelope<FundingSourceSummaryData>;
 export type PaymentOrderStatusResponse = ApiEnvelope<{
     order: PaymentOrder;
     order_id?: string;

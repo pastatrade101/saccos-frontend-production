@@ -555,6 +555,8 @@ export function LoansPage() {
     const [loanProducts, setLoanProducts] = useState<LoanProduct[]>([]);
     const [applications, setApplications] = useState<LoanApplication[]>([]);
     const [loans, setLoans] = useState<Loan[]>([]);
+    // Full portfolio (not just the visible page) so the metric cards are accurate.
+    const [allLoans, setAllLoans] = useState<Loan[]>([]);
     const [schedules, setSchedules] = useState<LoanSchedule[]>([]);
     const [transactions, setTransactions] = useState<LoanTransaction[]>([]);
     const [defaultCases, setDefaultCases] = useState<CreditRiskDefaultCase[]>([]);
@@ -753,7 +755,7 @@ export function LoansPage() {
 
         setLoading(true);
         try {
-            const [{ data: applicationsResponse }, { data: loansResponse }, { data: schedulesResponse }] = await Promise.all([
+            const [{ data: applicationsResponse }, { data: loansResponse }, { data: schedulesResponse }, { data: allLoansResponse }] = await Promise.all([
                 api.get<LoanApplicationsResponse>(endpoints.loanApplications.list(), {
                     params: { tenant_id: selectedTenantId, page: applicationPage, limit: pageSize }
                 }),
@@ -762,11 +764,15 @@ export function LoansPage() {
                 }),
                 api.get<LoanSchedulesResponse>(endpoints.finance.loanSchedules(), {
                     params: { tenant_id: selectedTenantId, page: 1, limit: 100 }
+                }),
+                api.get<LoansResponse>(endpoints.finance.loanPortfolio(), {
+                    params: { tenant_id: selectedTenantId, page: 1, limit: 100 }
                 })
             ]);
 
             setApplications(applicationsResponse.data || []);
             setLoans(loansResponse.data || []);
+            setAllLoans(allLoansResponse.data || []);
             setApplicationTotal(
                 Number((applicationsResponse as unknown as { pagination?: { total?: number } }).pagination?.total || 0) ||
                 (applicationsResponse.data || []).length
@@ -979,6 +985,12 @@ export function LoansPage() {
         }
 
         void loadWorkspace();
+        // Load member names up front so the portfolio table shows borrower names
+        // (not "Unknown member") on first view, before any modal/Activity tab opens.
+        void loadReferenceData({ silent: true });
+        // Load loan activity up front so the Activity tab badge shows the real
+        // transaction count instead of 0 until the tab is opened.
+        void loadActivityData({ silent: true });
     }, [applicationPage, loanPage, selectedTenantId]);
 
     useEffect(() => {
@@ -1341,9 +1353,11 @@ export function LoansPage() {
     }, [schedules]);
 
     const metrics = useMemo(() => {
-        const outstandingPrincipal = loans.reduce((sum, loan) => sum + loan.outstanding_principal, 0);
-        const activeLoans = loans.filter((loan) => loan.status === "active").length;
-        const arrearsLoans = loans.filter((loan) => loan.status === "in_arrears").length;
+        // Portfolio metrics are computed across ALL loans, not just the visible page.
+        const portfolio = allLoans.length ? allLoans : loans;
+        const outstandingPrincipal = portfolio.reduce((sum, loan) => sum + loan.outstanding_principal, 0);
+        const activeLoans = portfolio.filter((loan) => loan.status === "active").length;
+        const arrearsLoans = portfolio.filter((loan) => loan.status === "in_arrears").length;
         const awaitingAppraisal = role === "branch_manager"
             ? 0
             : applications.filter((application) => application.status === "submitted").length;
@@ -1358,7 +1372,7 @@ export function LoansPage() {
             awaitingApproval,
             readyToDisburse
         };
-    }, [applications, loans, role]);
+    }, [applications, loans, allLoans, role]);
 
     const trackedLoanDisbursementStatus = trackedLoanDisbursementOrder?.status || null;
     const loanDisbursementProgressValue = trackedLoanDisbursementStatus === "posted"
@@ -1410,7 +1424,8 @@ export function LoansPage() {
             "& .MuiAlert-icon": { color: dashboardAccentStrong }
         }
         : undefined;
-    const arrearsRate = loans.length ? (metrics.arrearsLoans / loans.length) * 100 : 0;
+    const portfolioLoanCount = allLoans.length || loans.length;
+    const arrearsRate = portfolioLoanCount ? (metrics.arrearsLoans / portfolioLoanCount) * 100 : 0;
     const overdueScheduleCount = useMemo(
         () => schedules.filter((schedule) => schedule.status === "overdue").length,
         [schedules]
@@ -1523,13 +1538,14 @@ export function LoansPage() {
             movementByLoan.set(entry.loan_id, (movementByLoan.get(entry.loan_id) || 0) + Math.abs(entry.amount));
         });
         const totalMovementVolume = [...movementByLoan.values()].reduce((sum, amount) => sum + amount, 0);
+        const portfolio = allLoans.length ? allLoans : loans;
         const topLoans = [...movementByLoan.entries()]
             .map(([loanId, totalAmount]) => {
-                const loan = loans.find((entry) => entry.id === loanId);
+                const loan = portfolio.find((entry) => entry.id === loanId);
                 const borrower = loan ? members.find((entry) => entry.id === loan.member_id)?.full_name : null;
                 return {
                     loanId,
-                    loanNumber: loan?.loan_number || loanId,
+                    loanNumber: loan?.loan_number || `Loan ${loanId.slice(0, 8)}`,
                     borrower: borrower || "Unknown member",
                     totalAmount
                 };
@@ -1549,7 +1565,7 @@ export function LoansPage() {
             totalMovementVolume,
             topLoans
         };
-    }, [loans, members, orderedTransactions]);
+    }, [loans, allLoans, members, orderedTransactions]);
     const workspaceTabs = useMemo(
         () =>
             ["loan_officer", "branch_manager"].includes(role)
@@ -2616,7 +2632,7 @@ export function LoansPage() {
             key: "loan",
             header: "Loan",
             render: (row) => {
-                const loan = loans.find((entry) => entry.id === row.loan_id);
+                const loan = (allLoans.length ? allLoans : loans).find((entry) => entry.id === row.loan_id);
                 const borrower = loan ? members.find((entry) => entry.id === loan.member_id)?.full_name : null;
 
                 return (
@@ -2627,7 +2643,7 @@ export function LoansPage() {
                             onClick={() => navigate(`/loans/${row.loan_id}`)}
                             sx={{ p: 0, minWidth: 0, justifyContent: "flex-start", fontWeight: 700, textTransform: "none" }}
                         >
-                            {loan?.loan_number || row.loan_id}
+                            {loan?.loan_number || `Loan ${row.loan_id.slice(0, 8)}`}
                         </Button>
                         <Typography variant="caption" color="text.secondary">
                             {borrower || "Unknown member"}
@@ -3133,7 +3149,7 @@ export function LoansPage() {
 
             {activeTab === "portfolio" ? (
                 <Grid container spacing={2}>
-                    <Grid size={{ xs: 12, lg: 8 }}>
+                    <Grid size={{ xs: 12 }}>
                         <MotionCard variant="outlined">
                             <CardContent>
                                 <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={2} sx={{ mb: 2 }}>
@@ -3161,7 +3177,7 @@ export function LoansPage() {
                             </CardContent>
                         </MotionCard>
                     </Grid>
-                    <Grid size={{ xs: 12, lg: 4 }}>
+                    <Grid size={{ xs: 12 }}>
                         <MotionCard variant="outlined" sx={{ height: "100%" }}>
                             <CardContent>
                                 {role === "loan_officer" ? (
@@ -3400,7 +3416,7 @@ export function LoansPage() {
                     </Grid>
 
                     <Grid container spacing={2}>
-                        <Grid size={{ xs: 12, lg: 8 }}>
+                        <Grid size={{ xs: 12 }}>
                             <MotionCard variant="outlined">
                                 <CardContent>
                                     <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={1.5} sx={{ mb: 2 }}>
@@ -3424,7 +3440,7 @@ export function LoansPage() {
                                 </CardContent>
                             </MotionCard>
                         </Grid>
-                        <Grid size={{ xs: 12, lg: 4 }}>
+                        <Grid size={{ xs: 12 }}>
                             <MotionCard variant="outlined" sx={{ height: "100%" }}>
                                 <CardContent>
                                     <Stack spacing={2}>
@@ -3439,7 +3455,7 @@ export function LoansPage() {
                                             <Chip label={`Top concentration ${topMovementShare.toFixed(1)}%`} variant="outlined" sx={darkAccentChipSx} />
                                         </Stack>
                                         <Grid container spacing={1.25}>
-                                            <Grid size={{ xs: 12, sm: 6, lg: 12 }}>
+                                            <Grid size={{ xs: 12, md: 6 }}>
                                                 <Box
                                                     sx={{
                                                         p: 1.4,
@@ -3457,7 +3473,7 @@ export function LoansPage() {
                                                     </Typography>
                                                 </Box>
                                             </Grid>
-                                            <Grid size={{ xs: 12, sm: 6, lg: 12 }}>
+                                            <Grid size={{ xs: 12, md: 6 }}>
                                                 <Box
                                                     sx={{
                                                         p: 1.4,

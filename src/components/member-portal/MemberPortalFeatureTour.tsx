@@ -4,7 +4,13 @@ import { useTheme } from "@mui/material/styles";
 
 import { brandColors } from "../../theme/colors";
 
-type MemberPortalTourSection = "member-overview" | "member-loans" | "member-contributions" | "member-payments";
+type MemberPortalTourSection =
+    | "member-overview"
+    | "member-accounts"
+    | "member-loans"
+    | "member-transactions"
+    | "member-contributions"
+    | "member-payments";
 
 interface MemberPortalFeatureTourProps {
     run: boolean;
@@ -37,49 +43,79 @@ export function MemberPortalFeatureTour({
     const steps = useMemo<Array<Step>>(() => {
         const baseSteps: Array<Step> = [
             {
-                id: "workspace-header",
-                target: "[data-tour='member-portal-header']",
-                title: "Member workspace",
-                content: "This top bar keeps navigation, alerts, and account controls close by wherever you are in the portal.",
-                placement: "bottom-start",
+                id: "welcome",
+                target: "body",
+                placement: "center",
+                title: "Welcome to your member workspace 👋",
+                content: "This is your home for everything in the SACCO — savings, loans, dividends and statements. Here's a quick 60-second tour of the main features. You can skip anytime.",
                 before: waitForSectionTransition("member-overview", onNavigateSection)
+            },
+            {
+                id: "workspace-nav",
+                target: "[data-tour='member-portal-nav']",
+                title: "Find your way around",
+                content: "Jump between Overview, Accounts, Loans and Transactions from here. Your current section always stays highlighted.",
+                placement: "right"
             },
             {
                 id: "overview-hero",
                 target: "[data-tour='member-portal-hero']",
-                title: "Your main summary",
-                content: "This hero card gives you the live picture of your savings, loans, and overall member position in the SACCO.",
+                title: "Your financial snapshot",
+                content: "A live picture of your total savings, dividends and loan exposure — plus how far you've reached toward your annual savings target.",
                 placement: "bottom-start",
                 before: waitForSectionTransition("member-overview", onNavigateSection)
             },
             {
                 id: "overview-actions",
                 target: "[data-tour='member-portal-overview-actions']",
-                title: "Quick actions",
-                content: "Use these shortcuts to start a loan application, make a contribution, or export your statement without leaving the overview.",
+                title: "Get things done fast",
+                content: "Apply for a loan, make a contribution, or download your statement — right here, without leaving the overview.",
                 placement: "bottom"
             },
             {
                 id: "stat-grid",
                 target: "[data-tour='member-portal-stat-grid']",
-                title: "Live financial metrics",
-                content: "These cards summarize your visible accounts, balances, share capital, and loan exposure from posted member activity.",
+                title: "Key numbers at a glance",
+                content: "Savings, dividends and active loans — each drawn from activity that's actually been posted to your account.",
+                placement: "top"
+            },
+            {
+                id: "savings-trend",
+                target: "[data-tour='member-portal-savings-trend']",
+                title: "Watch your savings grow",
+                content: "See how your balance has moved over time. Switch the view between monthly, quarterly, or the full SACCO year.",
                 placement: "top"
             },
             {
                 id: "borrowing-capacity",
                 target: "[data-tour='member-portal-borrowing-capacity']",
-                title: "Borrowing capacity",
-                content: "This section shows the current lending position and the amount available before branch appraisal and approval.",
+                title: "Know what you can borrow",
+                content: "Your maximum loan, current exposure and remaining capacity — all before you apply. Final approval still goes through branch appraisal.",
                 placement: "top"
+            },
+            {
+                id: "accounts",
+                target: "[data-tour='member-portal-accounts']",
+                title: "Your savings & share accounts",
+                content: "Every account linked to your membership, with live balances you can inspect any time.",
+                placement: "top",
+                before: waitForSectionTransition("member-accounts", onNavigateSection)
             },
             {
                 id: "loan-workspace",
                 target: "[data-tour='member-portal-loan-workspace']",
-                title: "Loan workspace",
-                content: "Review active facilities, repayment schedules, and loan application progress from this lending section.",
+                title: "Manage your loans",
+                content: "Track active loans, repayment schedules and due dates, and follow new applications through appraisal and approval — all in one place.",
                 placement: "bottom-start",
                 before: waitForSectionTransition("member-loans", onNavigateSection)
+            },
+            {
+                id: "transactions",
+                target: "[data-tour='member-portal-transactions']",
+                title: "Every transaction, verified",
+                content: "Your full posting history with running balances, search and filters — and an automatic balance check that confirms the ledger ties out.",
+                placement: "top",
+                before: waitForSectionTransition("member-transactions", onNavigateSection)
             }
         ];
 
@@ -88,21 +124,30 @@ export function MemberPortalFeatureTour({
                 {
                     id: "contribution-flow",
                     target: "[data-tour='member-portal-contribution-flow']",
-                    title: "Contribution deposit flow",
-                    content: "This card starts the mobile-money contribution flow. Approve on your phone and the backend posts the result after provider confirmation.",
+                    title: "Pay by mobile money",
+                    content: "Start a contribution here, approve it on your phone, and the system posts it automatically once the provider confirms.",
                     placement: "bottom-start",
                     before: waitForSectionTransition("member-contributions", onNavigateSection)
                 },
                 {
                     id: "payments-ledger",
                     target: "[data-tour='member-portal-payments-ledger']",
-                    title: "Payment receipts",
-                    content: "This is your receipt ledger for posted, pending, failed, and expired mobile-money requests, including provider references and receipts.",
+                    title: "Your payment receipts",
+                    content: "A clear ledger of every mobile-money request — posted, pending, failed or expired — with provider references and receipts.",
                     placement: "top",
                     before: waitForSectionTransition("member-payments", onNavigateSection)
                 }
             );
         }
+
+        baseSteps.push({
+            id: "tour-complete",
+            target: "body",
+            placement: "center",
+            title: "You're all set 🎉",
+            content: "That's the tour! Explore at your own pace — and you can replay it anytime from the 💡 tips button in the top bar.",
+            before: waitForSectionTransition("member-overview", onNavigateSection)
+        });
 
         return baseSteps;
     }, [canUsePortalPayments, onNavigateSection]);

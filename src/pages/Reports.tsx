@@ -209,62 +209,26 @@ export function ReportsPage() {
         url: string,
         params: Record<string, string | undefined>
     ) => {
-        const start = await api.get<ReportExportJobCreateResponse>(url, {
-            params: {
-                ...params,
-                async: "true"
-            }
+        // Synchronous export: when `async` is not set, the endpoint generates and
+        // returns the file inline. This needs no background worker, so a report can't
+        // get stuck on "Preparing..." waiting for a job that nothing is processing.
+        const response = await api.get(url, {
+            params,
+            responseType: "blob",
+            timeout: 0
         });
 
-        const jobId = start.data?.data?.job_id;
-        if (!jobId) {
-            throw new Error("Report export job could not be created.");
+        const payload = response.data as Blob;
+        if (!payload || payload.size <= 0) {
+            throw new Error("The report file is empty.");
         }
 
-        for (let attempt = 0; attempt < REPORT_EXPORT_MAX_POLLS; attempt += 1) {
-            const statusResponse = await api.get<ReportExportJobResponse>(
-                endpoints.reports.exportJob(jobId)
-            );
-            const job = statusResponse.data?.data;
-
-            if (!job?.status) {
-                throw new Error("Report export job status is unavailable.");
-            }
-
-            if (job.status === "completed") {
-                const downloadResponse = await api.get<ReportExportJobDownloadResponse>(
-                    endpoints.reports.exportJobDownload(jobId)
-                );
-                const downloadData = downloadResponse.data?.data;
-
-                if (!downloadData?.signed_url) {
-                    throw new Error("Report file URL is missing.");
-                }
-
-                const fileResponse = await fetch(downloadData.signed_url);
-                if (!fileResponse.ok) {
-                    throw new Error("Unable to download generated report file.");
-                }
-
-                const payload = await fileResponse.blob();
-                if (payload.size <= 0) {
-                    throw new Error("The report file is empty.");
-                }
-
-                const preferredExtension = params.format === "pdf" ? "pdf" : "csv";
-                const filename = downloadData.filename || `${key}.${preferredExtension}`;
-                downloadFile(payload, filename);
-                return filename;
-            }
-
-            if (job.status === "failed") {
-                throw new Error(job.error_message || "Report export failed.");
-            }
-
-            await wait(REPORT_EXPORT_POLL_INTERVAL_MS);
-        }
-
-        throw new Error("Report export timed out. Please try again.");
+        const disposition = String(response.headers?.["content-disposition"] || "");
+        const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition);
+        const preferredExtension = params.format === "pdf" ? "pdf" : "csv";
+        const filename = (match?.[1] ? decodeURIComponent(match[1]) : "") || `${key}.${preferredExtension}`;
+        downloadFile(payload, filename);
+        return filename;
     };
 
     const runDownload = async (
@@ -430,24 +394,6 @@ export function ReportsPage() {
                     { fileKey: "trial-balance", url: endpoints.reports.trialBalance(), params: asOfReportParams },
                     { fileKey: "member-statements", url: endpoints.reports.memberStatements(), params: { tenant_id: selectedTenantId || undefined, from_date: yearStartIso, to_date: todayIso, format: "pdf" } }
                 ]
-            },
-            {
-                key: "statutory-pack",
-                label: "Statutory Pack",
-                helper: "Balance Sheet + Income Statement for period governance review.",
-                icon: <BalanceRoundedIcon fontSize="small" />,
-                jobs: [
-                    {
-                        fileKey: "balance-sheet",
-                        url: endpoints.reports.balanceSheet(),
-                        params: { tenant_id: selectedTenantId || undefined, as_of_date: todayIso, format: "pdf" }
-                    },
-                    {
-                        fileKey: "income-statement",
-                        url: endpoints.reports.incomeStatement(),
-                        params: { tenant_id: selectedTenantId || undefined, from_date: yearStartIso, to_date: todayIso, format: "pdf" }
-                    }
-                ]
             }
         ],
         [asOfReportParams, selectedTenantId, todayIso, yearStartIso]
@@ -462,8 +408,8 @@ export function ReportsPage() {
         },
         {
             label: "Core exports",
-            value: "5",
-            helper: "Trial Balance, Balance Sheet, Income Statement, PAR, and Loan Aging.",
+            value: "4",
+            helper: "Trial Balance, Loan Aging, PAR, and Member Statements.",
             icon: <AssessmentRoundedIcon fontSize="small" />
         },
         {
@@ -719,74 +665,6 @@ export function ReportsPage() {
                                     >
                                         {downloading === "par" ? "Preparing PAR..." : "Download PAR PDF"}
                                     </Button>
-                                </Stack>
-                                <Divider />
-                                <Stack spacing={1}>
-                                    <Typography variant="subtitle2">Balance Sheet Export</Typography>
-                                    <form className={pageStyles.form} onSubmit={exportBalanceSheet}>
-                                        <div className="grid-2">
-                                            <FormField label="As of date">
-                                                <input type="date" {...financialForm.register("balance_as_of_date")} />
-                                            </FormField>
-                                            <FormField label="Comparative as of date (optional)">
-                                                <input type="date" {...financialForm.register("balance_compare_as_of_date")} />
-                                            </FormField>
-                                        </div>
-                                        <Box sx={{ mt: 0.5 }}>
-                                            <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                                                <input type="checkbox" {...financialForm.register("include_zero_balances")} />
-                                                <Typography variant="body2" color="text.secondary">
-                                                    Include zero-balance accounts
-                                                </Typography>
-                                            </label>
-                                        </Box>
-                                        <Button
-                                            variant="contained"
-                                            type="submit"
-                                            disabled={Boolean(downloading)}
-                                            startIcon={<BalanceRoundedIcon />}
-                                            sx={theme.palette.mode === "dark" ? darkContainedButtonSx : undefined}
-                                        >
-                                            {downloading === "balance-sheet" ? "Preparing Balance Sheet..." : "Download Balance Sheet PDF"}
-                                        </Button>
-                                    </form>
-                                </Stack>
-                                <Divider />
-                                <Stack spacing={1}>
-                                    <Typography variant="subtitle2">Income Statement Export</Typography>
-                                    <form className={pageStyles.form} onSubmit={exportIncomeStatement}>
-                                        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                                            <Chip label="This Month" variant="outlined" onClick={() => applyIncomeDatePreset("month")} sx={{ cursor: "pointer" }} />
-                                            <Chip label="This Quarter" variant="outlined" onClick={() => applyIncomeDatePreset("quarter")} sx={{ cursor: "pointer" }} />
-                                            <Chip label="SACCO YTD" variant="outlined" onClick={() => applyIncomeDatePreset("year")} sx={{ cursor: "pointer" }} />
-                                            <Chip label="Last 30 Days" variant="outlined" onClick={() => applyIncomeDatePreset("last30")} sx={{ cursor: "pointer" }} />
-                                        </Stack>
-                                        <div className="grid-2">
-                                            <FormField label="From date">
-                                                <input type="date" {...financialForm.register("income_from_date")} />
-                                            </FormField>
-                                            <FormField label="To date">
-                                                <input type="date" {...financialForm.register("income_to_date")} />
-                                            </FormField>
-                                        </div>
-                                        <div className="grid-2">
-                                            <FormField label="Comparative from (optional)">
-                                                <input type="date" {...financialForm.register("income_compare_from_date")} />
-                                            </FormField>
-                                            <FormField label="Comparative to (optional)">
-                                                <input type="date" {...financialForm.register("income_compare_to_date")} />
-                                            </FormField>
-                                        </div>
-                                        <Button
-                                            variant="contained"
-                                            type="submit"
-                                            disabled={Boolean(downloading)}
-                                            startIcon={<BalanceRoundedIcon />}
-                                            sx={theme.palette.mode === "dark" ? darkContainedButtonSx : undefined}
-                                        >
-                                            {downloading === "income-statement" ? "Preparing Income Statement..." : "Download Income Statement PDF"}
-                                        </Button>
-                                    </form>
                                 </Stack>
                             </Stack>
                         </CardContent>

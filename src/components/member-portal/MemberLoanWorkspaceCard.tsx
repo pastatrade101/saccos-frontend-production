@@ -44,12 +44,6 @@ interface MemberLoanWorkspaceCardProps {
     onRepay: () => void;
     onDownloadStatement: () => void;
     onPrint: () => void;
-    prepaymentAmount: number;
-    onPrepaymentAmountChange: (value: number) => void;
-    prepaymentProjection: {
-        newOutstanding: number;
-        termsReduced: number;
-    } | null;
     repayButtonSx?: SxProps<Theme>;
 }
 
@@ -183,9 +177,6 @@ export function MemberLoanWorkspaceCard({
     onRepay,
     onDownloadStatement,
     onPrint,
-    prepaymentAmount,
-    onPrepaymentAmountChange,
-    prepaymentProjection,
     repayButtonSx
 }: MemberLoanWorkspaceCardProps) {
     const theme = useTheme();
@@ -423,94 +414,43 @@ export function MemberLoanWorkspaceCard({
                                 </Stack>
                             </Box>
 
-                            <Grid container spacing={1.5}>
-                                <Grid size={{ xs: 12, md: 6 }}>
-                                    <Box
-                                        sx={{
-                                            height: "100%",
-                                            p: 2,
-                                            borderRadius: 1.75,
-                                            border: `1px solid ${alpha(theme.palette.divider, 0.9)}`,
-                                            bgcolor: theme.palette.mode === "dark" ? alpha("#FFFFFF", 0.03) : alpha("#FFFFFF", 0.85)
-                                        }}
-                                    >
-                                        <Stack spacing={1}>
-                                            <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="baseline">
-                                                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                                                    Principal repayment progress
-                                                </Typography>
-                                                <Typography variant="caption" sx={{ fontWeight: 800, color: brandColors.primary[700] }}>
-                                                    {Math.max(Math.min(principalProgressPercent, 100), 0).toFixed(0)}%
-                                                </Typography>
-                                            </Stack>
-                                            <LinearProgress
-                                                variant="determinate"
-                                                value={Math.max(Math.min(principalProgressPercent, 100), 0)}
-                                                sx={{
-                                                    height: 8,
-                                                    borderRadius: 999,
-                                                    bgcolor: alpha(brandColors.primary[500], 0.12),
-                                                    "& .MuiLinearProgress-bar": {
-                                                        borderRadius: 999,
-                                                        bgcolor: brandColors.primary[700]
-                                                    }
-                                                }}
-                                            />
-                                            <Typography variant="body2" color="text.secondary">
-                                                {selectedLoan
-                                                    ? `${formatCurrency(Math.max(selectedLoan.principal_amount - selectedLoan.outstanding_principal, 0))} of principal has been cleared.`
-                                                    : "Select a loan to see repayment progress."}
-                                            </Typography>
-                                        </Stack>
-                                    </Box>
-                                </Grid>
-                                <Grid size={{ xs: 12, md: 6 }}>
-                                    <Box
-                                        sx={{
-                                            height: "100%",
-                                            p: 2,
-                                            borderRadius: 1.75,
-                                            border: `1px solid ${alpha(theme.palette.divider, 0.9)}`,
-                                            bgcolor: theme.palette.mode === "dark" ? alpha("#FFFFFF", 0.03) : alpha("#FFFFFF", 0.85)
-                                        }}
-                                    >
+                            <Box
+                                sx={{
+                                    p: 2,
+                                    borderRadius: 1.75,
+                                    border: `1px solid ${alpha(theme.palette.divider, 0.9)}`,
+                                    bgcolor: theme.palette.mode === "dark" ? alpha("#FFFFFF", 0.03) : alpha("#FFFFFF", 0.85)
+                                }}
+                            >
+                                <Stack spacing={1}>
+                                    <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="baseline">
                                         <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                                            Prepayment simulation
+                                            Principal repayment progress
                                         </Typography>
-                                        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                                            Test how an extra principal payment would change the remaining balance before repayment.
+                                        <Typography variant="caption" sx={{ fontWeight: 800, color: brandColors.primary[700] }}>
+                                            {Math.max(Math.min(principalProgressPercent, 100), 0).toFixed(0)}%
                                         </Typography>
-                                        <TextField
-                                            size="small"
-                                            type="number"
-                                            label="Prepay amount"
-                                            value={prepaymentAmount}
-                                            onChange={(event) => onPrepaymentAmountChange(Number(event.target.value) || 0)}
-                                            fullWidth
-                                            sx={{ mt: 1.5 }}
-                                        />
-                                        <Divider sx={{ my: 1.5 }} />
-                                        <Stack spacing={0.75}>
-                                            <Stack direction="row" justifyContent="space-between" spacing={1}>
-                                                <Typography variant="body2" color="text.secondary">
-                                                    Projected outstanding
-                                                </Typography>
-                                                <Typography variant="body2" sx={{ fontWeight: 800 }}>
-                                                    {formatCurrency(prepaymentProjection?.newOutstanding || (selectedLoan?.outstanding_principal || 0))}
-                                                </Typography>
-                                            </Stack>
-                                            <Stack direction="row" justifyContent="space-between" spacing={1}>
-                                                <Typography variant="body2" color="text.secondary">
-                                                    Estimated term reduction
-                                                </Typography>
-                                                <Typography variant="body2" sx={{ fontWeight: 800 }}>
-                                                    {prepaymentProjection?.termsReduced || 0} installment(s)
-                                                </Typography>
-                                            </Stack>
-                                        </Stack>
-                                    </Box>
-                                </Grid>
-                            </Grid>
+                                    </Stack>
+                                    <LinearProgress
+                                        variant="determinate"
+                                        value={Math.max(Math.min(principalProgressPercent, 100), 0)}
+                                        sx={{
+                                            height: 8,
+                                            borderRadius: 999,
+                                            bgcolor: alpha(brandColors.primary[500], 0.12),
+                                            "& .MuiLinearProgress-bar": {
+                                                borderRadius: 999,
+                                                bgcolor: brandColors.primary[700]
+                                            }
+                                        }}
+                                    />
+                                    <Typography variant="body2" color="text.secondary">
+                                        {selectedLoan
+                                            ? `${formatCurrency(Math.max(selectedLoan.principal_amount - selectedLoan.outstanding_principal, 0))} of principal has been cleared. Principal is cleared in full on the final installment.`
+                                            : "Select a loan to see repayment progress."}
+                                    </Typography>
+                                </Stack>
+                            </Box>
                         </Stack>
                     </Grid>
 

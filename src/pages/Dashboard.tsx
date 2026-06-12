@@ -138,6 +138,7 @@ interface BranchAlertItem {
 interface FollowUpItem {
     id: string;
     loanId: string;
+    label: string;
     dueDate: string;
     principalDue: number;
     interestDue: number;
@@ -585,29 +586,37 @@ function BranchManagerTopCard({
     );
 }
 
-function buildFollowUpItems(schedules: LoanSchedule[]) {
+function buildFollowUpItems(schedules: LoanSchedule[], labelByLoanId?: Map<string, string>) {
+    const todayMs = Date.now();
     return schedules.slice(0, 6).map((schedule) => {
         const principalDue = Math.max(schedule.principal_due - schedule.principal_paid, 0);
         const interestDue = Math.max(schedule.interest_due - schedule.interest_paid, 0);
+        const daysToDue = Math.floor((new Date(schedule.due_date).getTime() - todayMs) / (1000 * 60 * 60 * 24));
+
+        // Classify by the actual due date vs today (and partial payment), not the raw
+        // schedule.status — so a past date never reads as "Upcoming due".
+        let severity: FollowUpItem["severity"] = "normal";
+        let statusLabel = "Upcoming due";
+        if (daysToDue < 0) {
+            severity = "critical";
+            statusLabel = `Overdue ${Math.abs(daysToDue)}d`;
+        } else if (schedule.status === "partial") {
+            severity = "warning";
+            statusLabel = "Partially settled";
+        } else if (daysToDue <= 7) {
+            severity = "warning";
+            statusLabel = daysToDue === 0 ? "Due today" : `Due in ${daysToDue}d`;
+        }
 
         return {
             id: schedule.id,
             loanId: schedule.loan_id,
+            label: labelByLoanId?.get(schedule.loan_id) || `Loan ${schedule.loan_id.slice(0, 8)}`,
             dueDate: schedule.due_date,
             principalDue,
             interestDue,
-            severity:
-                schedule.status === "overdue"
-                    ? "critical"
-                    : schedule.status === "partial"
-                        ? "warning"
-                        : "normal",
-            statusLabel:
-                schedule.status === "overdue"
-                    ? "Immediate action"
-                    : schedule.status === "partial"
-                        ? "Partially settled"
-                        : "Upcoming due"
+            severity,
+            statusLabel
         } satisfies FollowUpItem;
     });
 }
@@ -674,7 +683,7 @@ function FollowUpPanel({
                                         <Stack spacing={0.5}>
                                             <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
                                                 <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                                                    {item.loanId}
+                                                    {item.label}
                                                 </Typography>
                                                 <Chip
                                                     size="small"
@@ -968,7 +977,9 @@ function BranchActivityPanel({
     window,
     onViewChange,
     onFilterChange,
-    onWindowChange
+    onWindowChange,
+    title = "Recent Branch Activity",
+    subtitle = "Daily branch movement from visible statements. Filter by posting type, switch the period, or inspect the same data as a table."
 }: {
     statements: StatementRow[];
     view: BranchActivityView;
@@ -977,6 +988,8 @@ function BranchActivityPanel({
     onViewChange: (value: BranchActivityView) => void;
     onFilterChange: (value: BranchActivityFilter) => void;
     onWindowChange: (value: BranchActivityWindow) => void;
+    title?: string;
+    subtitle?: string;
 }) {
     const theme = useTheme();
     const windowedStatements = useMemo(
@@ -1088,9 +1101,9 @@ function BranchActivityPanel({
                 <Stack spacing={2}>
                     <Stack direction={{ xs: "column", lg: "row" }} justifyContent="space-between" alignItems={{ xs: "stretch", lg: "flex-start" }} spacing={2}>
                         <Box>
-                            <Typography variant="h6">Recent Branch Activity</Typography>
+                            <Typography variant="h6">{title}</Typography>
                             <Typography variant="body2" color="text.secondary">
-                                Daily branch movement from visible statements. Filter by posting type, switch the period, or inspect the same data as a table.
+                                {subtitle}
                             </Typography>
                         </Box>
                         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap justifyContent={{ xs: "flex-start", lg: "flex-end" }}>
@@ -1425,6 +1438,7 @@ export function DashboardPage() {
         manualDividendBatches: [],
         dailyCashSummary: []
     });
+    const [fundingSources, setFundingSources] = useState<import("../lib/endpoints").FundingSourceSummaryData | null>(null);
     const [financialYearSettings, setFinancialYearSettings] = useState<SaccoFinancialYearSettings>(DEFAULT_SACCO_FINANCIAL_YEAR_SETTINGS);
     const [performanceTargetSettings, setPerformanceTargetSettings] = useState<SaccoPerformanceTargetSettings>(DEFAULT_SACCO_PERFORMANCE_TARGET_SETTINGS);
     const [targetWatchFilter, setTargetWatchFilter] = useState<TargetWatchFilter>("needs_action");
@@ -1748,6 +1762,33 @@ export function DashboardPage() {
         };
     }, [branchScopeKey, isInternalOps, profile?.role, selectedTenantId]);
 
+    // Funding-source breakdown (M-KOBA / NMB / UTT / Loan ...). Self-contained and
+    // failure-tolerant so it never blocks the rest of the dashboard.
+    useEffect(() => {
+        let isActive = true;
+        if (!selectedTenantId || profile?.role === "member") {
+            setFundingSources(null);
+            return;
+        }
+        (async () => {
+            try {
+                const { data } = await api.get<import("../lib/endpoints").FundingSourceSummaryResponse>(
+                    endpoints.reports.fundingSources()
+                );
+                if (isActive) {
+                    setFundingSources(data.data);
+                }
+            } catch {
+                if (isActive) {
+                    setFundingSources(null);
+                }
+            }
+        })();
+        return () => {
+            isActive = false;
+        };
+    }, [branchScopeKey, profile?.role, selectedTenantId]);
+
     const financialYearPeriod = useMemo(() => resolveFinancialYearPeriod(financialYearSettings), [financialYearSettings]);
 
     const metrics = useMemo(() => {
@@ -2028,8 +2069,17 @@ export function DashboardPage() {
         metrics.branchOverdueSchedules,
         metrics.branchWithdrawalOutflow
     ]);
-    const branchFollowUps = useMemo(() => buildFollowUpItems(metrics.branchSchedules), [metrics.branchSchedules]);
-    const generalFollowUps = useMemo(() => buildFollowUpItems(state.schedules), [state.schedules]);
+    const loanLabelById = useMemo(() => {
+        const memberNameById = new Map(state.members.map((member) => [member.id, member.full_name]));
+        const map = new Map<string, string>();
+        state.loans.forEach((loan) => {
+            const name = memberNameById.get(loan.member_id);
+            map.set(loan.id, name ? `${name} · ${loan.loan_number}` : loan.loan_number);
+        });
+        return map;
+    }, [state.loans, state.members]);
+    const branchFollowUps = useMemo(() => buildFollowUpItems(metrics.branchSchedules, loanLabelById), [metrics.branchSchedules, loanLabelById]);
+    const generalFollowUps = useMemo(() => buildFollowUpItems(state.schedules, loanLabelById), [state.schedules, loanLabelById]);
     const branchLoanAging = useMemo(() => calculateAgingSummary(metrics.branchSchedules), [metrics.branchSchedules]);
     const branchScopedLoanApplications = useMemo(
         () =>
@@ -2066,13 +2116,20 @@ export function DashboardPage() {
     const pendingWithdrawalRequests = 0;
     const hasCashImbalance = metrics.branchNetToday < 0;
     const signOffTasks = pendingLoanApprovals + pendingMemberApprovals + (hasCashImbalance ? 1 : 0);
-    const par30Percent = Number.isFinite(branchLoanAging.parPercent) ? branchLoanAging.parPercent : 0;
+    // PAR is driven by the loan's FORMAL arrears classification (the same basis as the
+    // Overdue Mix donut and Overdue Exposure), not raw schedule due-dates — otherwise
+    // imported loans with a backdated single installment and no repayment history all
+    // read as "overdue" and produce a misleading 90%+ PAR that contradicts the rest of
+    // the dashboard. Once default-detection flags a loan in_arrears, it counts here.
+    const par30Percent = metrics.branchOutstanding > 0
+        ? (metrics.branchOverdueOutstanding / metrics.branchOutstanding) * 100
+        : 0;
     const branchRiskStrip = [
         {
             id: "par30",
             label: "Portfolio at Risk (PAR 30)",
             value: `${par30Percent.toFixed(1)}%`,
-            helper: `${branchLoanAging.d1_30 + branchLoanAging.d31_60 + branchLoanAging.d60Plus} overdue schedule items.`,
+            helper: `${metrics.branchOverdueLoans} loan(s) in arrears.`,
             tone: par30Percent >= 15 ? "red" : par30Percent >= 8 ? "yellow" : "green"
         },
         {
@@ -2099,13 +2156,14 @@ export function DashboardPage() {
             tone: hasCashImbalance ? "red" : "green"
         }
     ] as const;
-    const overdueScheduleCount = branchLoanAging.d1_30 + branchLoanAging.d31_60 + branchLoanAging.d60Plus;
+    // Count loans formally in arrears (consistent with PAR + the Overdue Mix donut).
+    const overdueScheduleCount = metrics.branchOverdueLoans;
     const loanOfficerRiskStrip = [
         {
             id: "officer-par30",
             label: "Portfolio at Risk (PAR 30)",
             value: `${par30Percent.toFixed(1)}%`,
-            helper: `${overdueScheduleCount} delinquent schedule item(s) in your book.`,
+            helper: `${overdueScheduleCount} loan(s) in arrears in your book.`,
             tone: par30Percent >= 15 ? "red" : par30Percent >= 8 ? "yellow" : "green"
         },
         {
@@ -3020,8 +3078,8 @@ export function DashboardPage() {
                             <BranchManagerTopCard
                                 label="Repayment Pressure"
                                 value={formatCurrency(metrics.branchOverdueOutstanding)}
-                                helper="Aggregate overdue amount requiring borrower repayment alignment."
-                                status={`${overdueScheduleCount} overdue schedule(s)`}
+                                helper="Outstanding from loans formally in arrears that need collection."
+                                status={`${overdueScheduleCount} loan(s) in arrears`}
                                 tone={overdueScheduleCount > 0 ? "negative" : "positive"}
                                 icon={<PieChartRoundedIcon fontSize="small" />}
                             />
@@ -3235,6 +3293,59 @@ export function DashboardPage() {
                             />
                         </Grid>
                     </Grid>
+
+                    <MotionCard variant="outlined" sx={{ borderRadius: 2 }}>
+                        <CardContent sx={{ p: 3 }}>
+                            <Stack spacing={2}>
+                                <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" useFlexGap>
+                                    <Box>
+                                        <Typography variant="h6" fontWeight={700}>Funding sources</Typography>
+                                        <Typography variant="body2" color="text.secondary">
+                                            Where member money came in — M-KOBA, NMB, UTT, loan interest and more.
+                                        </Typography>
+                                    </Box>
+                                    {fundingSources?.available && fundingSources.total > 0 ? (
+                                        <Chip color="primary" label={formatCurrency(fundingSources.total)} />
+                                    ) : null}
+                                </Stack>
+
+                                {!fundingSources ? (
+                                    <Typography variant="body2" color="text.secondary">Loading funding sources…</Typography>
+                                ) : !fundingSources.available ? (
+                                    <Alert severity="info">
+                                        Source tracking isn't enabled yet. Apply migration 104 and re-import history with the <strong>source</strong> column to see the M-KOBA / NMB / UTT / loan breakdown here.
+                                    </Alert>
+                                ) : fundingSources.sources.length === 0 ? (
+                                    <Alert severity="info">
+                                        No source-tagged movements yet{fundingSources.untagged_total > 0 ? ` — ${formatCurrency(fundingSources.untagged_total)} posted without a source.` : "."}
+                                    </Alert>
+                                ) : (
+                                    <Stack spacing={1.75}>
+                                        {fundingSources.sources.map((s) => (
+                                            <Box key={s.code}>
+                                                <Stack direction="row" justifyContent="space-between" alignItems="baseline" flexWrap="wrap" useFlexGap>
+                                                    <Typography variant="body2" fontWeight={600}>{s.label}</Typography>
+                                                    <Typography variant="body2" color="text.secondary">
+                                                        {formatCurrency(s.total)} · {s.percent}% · {s.count} txn
+                                                    </Typography>
+                                                </Stack>
+                                                <LinearProgress
+                                                    variant="determinate"
+                                                    value={Math.min(s.percent, 100)}
+                                                    sx={{ height: 8, borderRadius: 999, mt: 0.5 }}
+                                                />
+                                            </Box>
+                                        ))}
+                                        {fundingSources.untagged_total > 0 ? (
+                                            <Typography variant="caption" color="text.secondary">
+                                                {formatCurrency(fundingSources.untagged_total)} posted without a source tag (imported before source tracking was enabled).
+                                            </Typography>
+                                        ) : null}
+                                    </Stack>
+                                )}
+                            </Stack>
+                        </CardContent>
+                    </MotionCard>
 
                     <Grid container spacing={2}>
                         {branchRiskStrip.map((item) => (
@@ -3728,32 +3839,20 @@ export function DashboardPage() {
             ) : role === "loan_officer" ? (
                 <MotionSection inView>
                 <Grid container spacing={2}>
-                    <Grid size={{ xs: 12, lg: 7 }}>
-                        <ChartPanel
+                    <Grid size={{ xs: 12 }}>
+                        <BranchActivityPanel
                             title="Recent Borrower Activity"
-                            subtitle="Latest member postings tied to your supervised branch loan and savings movement."
-                            type="bar"
-                            data={{
-                                labels: metrics.branchStatements.filter((entry) => !isShareBranchActivity(entry)).slice(0, 8).map((entry) => entry.member_name),
-                                datasets: [{
-                                    label: "Amount",
-                                    data: metrics.branchStatements.filter((entry) => !isShareBranchActivity(entry)).slice(0, 8).map((entry) => entry.amount),
-                                    backgroundColor: metrics.branchStatements.filter((entry) => !isShareBranchActivity(entry)).slice(0, 8).map((entry) => {
-                                        return entry.direction === "in"
-                                            ? alpha(theme.palette.primary.main, 0.72)
-                                            : alpha(theme.palette.error.main, 0.72);
-                                    })
-                                }]
-                            }}
-                            options={{
-                                responsive: true,
-                                maintainAspectRatio: false,
-                                plugins: { legend: { display: false } }
-                            }}
-                            height={250}
+                            subtitle="Borrower loan and savings movement across your supervised branch. Filter by posting type, switch the period, or view the same data as a table."
+                            statements={metrics.branchStatements}
+                            view={branchActivityView}
+                            filter={branchActivityFilter}
+                            window={branchActivityWindow}
+                            onViewChange={setBranchActivityView}
+                            onFilterChange={setBranchActivityFilter}
+                            onWindowChange={setBranchActivityWindow}
                         />
                     </Grid>
-                    <Grid size={{ xs: 12, lg: 5 }}>
+                    <Grid size={{ xs: 12 }}>
                         <FollowUpPanel
                             title="Collections Priority Board"
                             subtitle="Loans at highest repayment risk so you can drive daily borrower follow-up."

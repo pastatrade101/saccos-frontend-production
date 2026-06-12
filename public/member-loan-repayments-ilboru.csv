@@ -1,2 +1,4 @@
 member_no,loan_reference,amount,date,description
-ILS24-F00037,MIKOPO-001,22000000,2026-01-12,Settlement: loan paid in full (workbook status Paid)
+ILS24-F00037,MIKOPO-001,22000000,2026-01-12,Settlement: loan paid in full (workbook)
+ILS24-F00054,MIKOPO-006,5250000,2026-05-09,Settlement: loan paid in full (workbook)
+ILS24-F00054,MIKOPO-010,15225000,2026-05-29,Settlement: loan paid in full (workbook)

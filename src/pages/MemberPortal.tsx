@@ -1028,7 +1028,6 @@ export function MemberPortalPage() {
     const [loanSchedulePage, setLoanSchedulePage] = useState(0);
     const [loanScheduleRowsPerPage, setLoanScheduleRowsPerPage] = useState(10);
     const [loanDetailId, setLoanDetailId] = useState<string>("");
-    const [prepaymentAmount, setPrepaymentAmount] = useState<number>(0);
     const [requestedAmountInput, setRequestedAmountInput] = useState("");
     const loanApplicationForm = useForm<LoanApplicationValues>({
         resolver: zodResolver(loanApplicationSchema),
@@ -3030,6 +3029,16 @@ export function MemberPortalPage() {
     const transactionCount = statements.length;
     const balanceTrend = groupBalances(statements);
     const monthlySavingsTrend = useMemo(() => groupSavingsByMonth(statements), [statements]);
+    const savingsTrendSeries = useMemo(
+        () =>
+            statements
+                .map((entry) => ({
+                    date: new Date(entry.created_at || entry.transaction_date).getTime(),
+                    balance: Number(entry.running_balance)
+                }))
+                .filter((point) => Number.isFinite(point.date) && Number.isFinite(point.balance)),
+        [statements]
+    );
     const currentView = visiblePortalSections.find((section) => section.id === activeSection) || visiblePortalSections[0];
     const totalVisibleCapital = totalSavings;
     const netPosition = totalVisibleCapital - totalOutstandingLoans;
@@ -3163,37 +3172,85 @@ export function MemberPortalPage() {
         });
     }, [sortedStatements, transactionSearch, transactionTypeFilter, transactionsRange]);
     const runningBalanceMismatches = useMemo(() => {
-        const grouped = new Map<string, StatementRow[]>();
+        // Ledger-health check. Runs on the full transaction set (NOT the filtered view) so
+        // hiding rows with a filter never breaks the chain and raises phantom mismatches.
+        const TOLERANCE = 1;
+        const signedOf = (row: StatementRow) => (row.direction === "in" ? row.amount : -row.amount);
+        const timestampOf = (row: StatementRow) => new Date(row.created_at || row.transaction_date).getTime();
 
-        filteredTransactions
-            .slice()
-            .sort((left, right) => new Date(left.created_at || left.transaction_date).getTime() - new Date(right.created_at || right.transaction_date).getTime())
-            .forEach((row) => {
-                const key = row.account_id || "global";
-                const list = grouped.get(key) || [];
-                list.push(row);
-                grouped.set(key, list);
-            });
+        const grouped = new Map<string, StatementRow[]>();
+        statements.forEach((row) => {
+            const key = row.account_id || "global";
+            const list = grouped.get(key) || [];
+            list.push(row);
+            grouped.set(key, list);
+        });
 
         let mismatches = 0;
+
         grouped.forEach((rows) => {
+            const ordered = rows.slice().sort((left, right) => timestampOf(left) - timestampOf(right));
+
+            // Bucket rows that share the same timestamp. The stored ledger ordered same-instant
+            // rows by an internal sequence we can't see here, so we validate each bucket by
+            // reconstructing a consistent chain rather than trusting display order.
+            const ticks: StatementRow[][] = [];
+            let currentKey: number | null = null;
+            ordered.forEach((row) => {
+                const ts = timestampOf(row);
+                if (currentKey === null || ts !== currentKey) {
+                    ticks.push([row]);
+                    currentKey = ts;
+                } else {
+                    ticks[ticks.length - 1].push(row);
+                }
+            });
+
             let previousBalance: number | null = null;
-            rows.forEach((row) => {
-                if (previousBalance === null) {
-                    previousBalance = row.running_balance;
-                    return;
+
+            ticks.forEach((tick) => {
+                let entry: number;
+                if (previousBalance !== null) {
+                    entry = previousBalance;
+                } else {
+                    // First tick of the account: opening balance is whichever row is not
+                    // preceded by another row in the same instant.
+                    const opener = tick.find((candidate) => {
+                        const candidateEntry = candidate.running_balance - signedOf(candidate);
+                        return !tick.some(
+                            (other) => other !== candidate
+                                && Math.abs(other.running_balance - candidateEntry) <= TOLERANCE
+                        );
+                    }) || tick[0];
+                    entry = opener.running_balance - signedOf(opener);
                 }
-                const signedAmount = row.direction === "in" ? row.amount : -row.amount;
-                const expected = Number((previousBalance + signedAmount).toFixed(2));
-                if (Math.abs(expected - row.running_balance) > 1) {
-                    mismatches += 1;
+
+                // Greedily rebuild the chain: repeatedly consume the row whose stored balance
+                // equals current + its signed amount. Order-independent within the instant.
+                let current = entry;
+                const remaining = tick.slice();
+                while (remaining.length) {
+                    const index = remaining.findIndex(
+                        (row) => Math.abs(row.running_balance - (current + signedOf(row))) <= TOLERANCE
+                    );
+                    if (index === -1) {
+                        // No row fits — a genuine break in the ledger.
+                        mismatches += remaining.length;
+                        current = Number(
+                            (current + remaining.reduce((sum, row) => sum + signedOf(row), 0)).toFixed(2)
+                        );
+                        break;
+                    }
+                    current = remaining[index].running_balance;
+                    remaining.splice(index, 1);
                 }
-                previousBalance = row.running_balance;
+
+                previousBalance = current;
             });
         });
 
         return mismatches;
-    }, [filteredTransactions]);
+    }, [statements]);
     const paginatedTransactions = useMemo(
         () =>
             filteredTransactions.slice(
@@ -3545,19 +3602,6 @@ export function MemberPortalPage() {
         () => filteredLoanSchedules.find(hasMeaningfulLoanScheduleOutstanding) || null,
         [filteredLoanSchedules]
     );
-    const prepaymentProjection = useMemo(() => {
-        if (!selectedLoan) {
-            return null;
-        }
-        const newOutstanding = Math.max(selectedLoan.outstanding_principal - prepaymentAmount, 0);
-        const installment = selectedLoan.term_count ? selectedLoan.principal_amount / selectedLoan.term_count : 0;
-        const termsReduced = installment > 0 ? Math.floor(prepaymentAmount / installment) : 0;
-        return {
-            newOutstanding,
-            termsReduced
-        };
-    }, [prepaymentAmount, selectedLoan]);
-
     const accountColumns: Column<MemberAccount>[] = [
         { key: "account", header: "Account", render: (row) => row.account_number },
         { key: "product", header: "Product", render: (row) => row.product_type },
@@ -5021,6 +5065,7 @@ export function MemberPortalPage() {
             }}
             alerts={memberAlerts}
             savingsTrend={{
+                series: savingsTrendSeries,
                 labels: savingsTrendLabels.length ? savingsTrendLabels : chartLabels,
                 values: savingsTrendValues.length ? savingsTrendValues : chartValues
             }}
@@ -5038,7 +5083,7 @@ export function MemberPortalPage() {
     );
 
     const renderAccountsView = () => (
-        <Stack spacing={3}>
+        <Stack spacing={3} data-tour="member-portal-accounts">
             <Grid container spacing={2}>
                 <Grid size={{ xs: 12, sm: 6, lg: 4 }}>
                     <AccountSummaryCard
@@ -5393,89 +5438,78 @@ export function MemberPortalPage() {
                     boxShadow: `0 18px 38px ${alpha(memberAccentStrong, 0.22)}`
                 }}
             >
-                <CardContent sx={{ p: { xs: 2.1, sm: 2.5, md: 3.25 } }}>
-                    <Grid container spacing={2.5} alignItems="stretch">
-                        <Grid size={{ xs: 12, lg: 8 }}>
-                            <Stack spacing={1.5}>
-                                <Typography variant="overline" sx={{ color: alpha("#FFFFFF", 0.76), letterSpacing: 1.4 }}>
-                                    Lending workspace
-                                </Typography>
-                                <Typography variant="h4" sx={{ fontWeight: 800, lineHeight: 1.08, maxWidth: 680, fontSize: { xs: "2rem", sm: "2.35rem", md: undefined } }}>
-                                    Track applications, repayment exposure, and loan readiness from one member view.
-                                </Typography>
-                                <Typography variant="body2" sx={{ color: alpha("#FFFFFF", 0.78), maxWidth: 620 }}>
-                                    Review approved facilities, watch outstanding balances, and submit new borrowing requests into the SACCO approval workflow.
-                                </Typography>
-                                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ pt: 0.5 }}>
-                                    <Chip
-                                        label={filteredActiveLoanCount ? `${filteredActiveLoanCount} active loan(s)` : "No active loans"}
-                                        sx={{
-                                            borderRadius: 1.5,
-                                            bgcolor: alpha("#FFFFFF", 0.14),
-                                            color: "#fff",
-                                            border: `1px solid ${alpha("#FFFFFF", 0.2)}`
-                                        }}
-                                    />
-                                    <Chip
-                                        label={`${pendingLoanApplications.length} open application(s)`}
-                                        sx={{
-                                            borderRadius: 1.5,
-                                            bgcolor: alpha("#FFFFFF", 0.1),
-                                            color: "#fff",
-                                            border: `1px solid ${alpha("#FFFFFF", 0.16)}`
-                                        }}
-                                    />
-                                </Stack>
+                <CardContent sx={{ p: { xs: 2, sm: 2.25 }, "&:last-child": { pb: { xs: 2, sm: 2.25 } } }}>
+                    <Stack
+                        direction={{ xs: "column", md: "row" }}
+                        alignItems={{ xs: "stretch", md: "center" }}
+                        justifyContent="space-between"
+                        spacing={2}
+                    >
+                        <Stack spacing={1} sx={{ minWidth: 0 }}>
+                            <Typography variant="overline" sx={{ color: alpha("#FFFFFF", 0.76), letterSpacing: 1.4, lineHeight: 1.2 }}>
+                                Lending workspace
+                            </Typography>
+                            <Typography variant="h6" sx={{ fontWeight: 800, lineHeight: 1.2 }}>
+                                Track applications &amp; repayment in one view
+                            </Typography>
+                            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                                <Chip
+                                    size="small"
+                                    label={filteredActiveLoanCount ? `${filteredActiveLoanCount} active loan(s)` : "No active loans"}
+                                    sx={{
+                                        borderRadius: 1.5,
+                                        bgcolor: alpha("#FFFFFF", 0.14),
+                                        color: "#fff",
+                                        border: `1px solid ${alpha("#FFFFFF", 0.2)}`
+                                    }}
+                                />
+                                <Chip
+                                    size="small"
+                                    label={`${pendingLoanApplications.length} open application(s)`}
+                                    sx={{
+                                        borderRadius: 1.5,
+                                        bgcolor: alpha("#FFFFFF", 0.1),
+                                        color: "#fff",
+                                        border: `1px solid ${alpha("#FFFFFF", 0.16)}`
+                                    }}
+                                />
                             </Stack>
-                        </Grid>
-                        <Grid size={{ xs: 12, lg: 4 }}>
-                            <Box
-                                sx={{
-                                    height: "100%",
-                                    p: 2.25,
-                                    borderRadius: 2,
-                                    bgcolor: alpha("#FFFFFF", theme.palette.mode === "dark" ? 0.05 : 0.12),
-                                    border: `1px solid ${alpha("#FFFFFF", 0.16)}`,
-                                    display: "flex",
-                                    flexDirection: "column",
-                                    justifyContent: "space-between",
-                                    gap: 2
-                                }}
+                        </Stack>
+                        {canApplyForLoan ? (
+                            <Stack
+                                direction={{ xs: "column", sm: "row" }}
+                                alignItems={{ xs: "stretch", sm: "center" }}
+                                spacing={1.25}
+                                sx={{ flexShrink: 0 }}
                             >
-                                <Stack spacing={1}>
-                                    <Typography variant="subtitle2" sx={{ color: alpha("#FFFFFF", 0.72) }}>
-                                        Application access
-                                    </Typography>
-                                    <Typography variant="h6" sx={{ fontWeight: 700 }}>
-                                        {canApplyForLoan ? "Apply for a new facility" : "Applications unavailable"}
-                                    </Typography>
-                                    <Typography variant="body2" sx={{ color: alpha("#FFFFFF", 0.72) }}>
-                                        {canApplyForLoan
-                                            ? "Your request will move through appraisal, approval, and controlled disbursement."
-                                            : "Loan applications are currently unavailable."}
-                                    </Typography>
-                                </Stack>
-                                {canApplyForLoan ? (
-                                    <Button
-                                        variant="contained"
-                                        onClick={openLoanApplicationDraft}
-                                        sx={{
-                                            alignSelf: "flex-start",
-                                            width: { xs: "100%", sm: "auto" },
-                                            bgcolor: "#fff",
-                                            color: memberAccentStrong,
-                                            fontWeight: 700,
-                                            "&:hover": {
-                                                bgcolor: alpha("#FFFFFF", 0.92)
-                                            }
-                                        }}
-                                    >
-                                        {selectedLoanDraft ? "Continue Draft Application" : "Apply for Loan"}
-                                    </Button>
-                                ) : null}
-                            </Box>
-                        </Grid>
-                    </Grid>
+                                <Typography
+                                    variant="caption"
+                                    sx={{ color: alpha("#FFFFFF", 0.74), maxWidth: 230, display: { xs: "none", lg: "block" } }}
+                                >
+                                    Moves through appraisal, approval, and controlled disbursement.
+                                </Typography>
+                                <Button
+                                    variant="contained"
+                                    onClick={openLoanApplicationDraft}
+                                    sx={{
+                                        flexShrink: 0,
+                                        bgcolor: "#fff",
+                                        color: memberAccentStrong,
+                                        fontWeight: 700,
+                                        "&:hover": {
+                                            bgcolor: alpha("#FFFFFF", 0.92)
+                                        }
+                                    }}
+                                >
+                                    {selectedLoanDraft ? "Continue Draft Application" : "Apply for Loan"}
+                                </Button>
+                            </Stack>
+                        ) : (
+                            <Typography variant="caption" sx={{ color: alpha("#FFFFFF", 0.72), flexShrink: 0 }}>
+                                Loan applications are currently unavailable.
+                            </Typography>
+                        )}
+                    </Stack>
                 </CardContent>
             </MotionCard>
 
@@ -5642,9 +5676,6 @@ export function MemberPortalPage() {
                 onRepay={() => openDepositDialog("loan_repayment", selectedLoan?.id || portalRepaymentLoans[0]?.id || null)}
                 onDownloadStatement={handleDownloadLoanStatement}
                 onPrint={() => window.print()}
-                prepaymentAmount={prepaymentAmount}
-                onPrepaymentAmountChange={setPrepaymentAmount}
-                prepaymentProjection={prepaymentProjection}
                 repayButtonSx={
                     isDarkMode
                         ? { bgcolor: memberAccent, color: "#1a1a1a", "&:hover": { bgcolor: memberAccentAlt } }
@@ -5787,7 +5818,7 @@ export function MemberPortalPage() {
     );
 
     const renderTransactionsView = () => (
-        <Stack spacing={3}>
+        <Stack spacing={3} data-tour="member-portal-transactions">
             <MotionCard variant="outlined" sx={contentCardSx}>
                 <CardContent sx={{ p: 2.25 }}>
                     <Stack spacing={1.5}>
@@ -5923,7 +5954,7 @@ export function MemberPortalPage() {
                                 <Typography variant="body2" color="text.secondary">
                                     {runningBalanceMismatches
                                         ? `${runningBalanceMismatches} mismatch(es) detected`
-                                        : "No mismatches detected in current filter."}
+                                        : "All posted balances reconcile across the full ledger."}
                                 </Typography>
                                 <Box sx={{ mt: "auto", height: 4, borderRadius: 999, bgcolor: alpha(runningBalanceMismatches ? brandColors.warning : brandColors.success, 0.16) }}>
                                     <Box
@@ -6825,6 +6856,7 @@ export function MemberPortalPage() {
                     </Typography>
                 ) : null}
                 <Paper
+                    {...(!mobile ? { "data-tour": "member-portal-nav" } : {})}
                     sx={{
                         p: collapsed ? 0.65 : 0.85,
                         borderRadius: 3.2,
