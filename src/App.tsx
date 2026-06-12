@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import type { ReactNode } from "react";
 
@@ -5,47 +6,51 @@ import { useAuth } from "./auth/AuthContext";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
 import { AppLayout } from "./components/Layout";
 import { AppLoader } from "./components/AppLoader";
-import { LandingPage } from "./pages/LandingPage";
-import { SignInPage } from "./pages/SignIn";
-import { SignupPage } from "./pages/Signup";
-import { SetupSuperAdminPage } from "./pages/SetupSuperAdmin";
-import { DashboardPage } from "./pages/Dashboard";
-import { AuditorDashboardPage } from "./pages/AuditorDashboard";
-import { AuditorWorkbenchPage } from "./pages/AuditorWorkbench";
-import { AuditorExceptionsPage } from "./pages/AuditorExceptions";
-import { AuditorJournalsPage } from "./pages/AuditorJournals";
-import { AuditorAuditLogsPage } from "./pages/AuditorAuditLogs";
-import { AuditorReportsPage } from "./pages/AuditorReports";
-import { AccessDeniedPage } from "./pages/AccessDenied";
-import { StaffUsersPage } from "./pages/StaffUsers";
-import { MembersPage } from "./pages/Members";
-import { MemberApplicationsPage } from "./pages/MemberApplications";
-import { CashPage } from "./pages/Cash";
-import { CashControlPage } from "./pages/CashControl";
-import { ContributionsPage } from "./pages/Contributions";
-import { PaymentsPage } from "./pages/Payments";
-import { DividendsPage } from "./pages/Dividends";
-import { SavingsPage } from "./pages/Savings";
-import { ChargeRevenuePage } from "./pages/ChargeRevenue";
-import { FollowUpsPage } from "./pages/FollowUps";
-import { ApprovalsPage } from "./pages/Approvals";
-import { LoansPage } from "./pages/Loans";
-import { LoanDetailPage } from "./pages/LoanDetail";
-import { ProductCatalogPage } from "./pages/ProductCatalog";
-import { ReportsPage } from "./pages/Reports";
-import { SaccoSettingsPage } from "./pages/SaccoSettings";
-import { PerformanceTargetsPage } from "./pages/PerformanceTargets";
-import { TreasuryPage } from "./pages/Treasury";
-import { TreasuryPolicySettingsPage } from "./pages/TreasuryPolicySettings";
-import { MemberPortalPage } from "./pages/MemberPortal";
-import { MemberImportPage } from "./pages/MemberImport";
-import { ChangePasswordPage } from "./pages/ChangePassword";
-import { SecuritySettingsPage } from "./pages/SecuritySettings";
-import { NotificationsPage } from "./pages/Notifications";
-import { ResetPasswordPage } from "./pages/ResetPassword";
-import { ServiceUnavailablePage } from "./pages/ServiceUnavailable";
-import { PrivacyPolicyPage, TermsAgreementPage } from "./pages/LegalPages";
 import { PwaInstallPrompt } from "./components/PwaInstallPrompt";
+
+// Route pages are code-split so each one is downloaded on demand instead of
+// shipping the entire app (admin + member portal + every page) in one bundle.
+const LandingPage = lazy(() => import("./pages/LandingPage").then((m) => ({ default: m.LandingPage })));
+const SignInPage = lazy(() => import("./pages/SignIn").then((m) => ({ default: m.SignInPage })));
+const SignupPage = lazy(() => import("./pages/Signup").then((m) => ({ default: m.SignupPage })));
+const SetupSuperAdminPage = lazy(() => import("./pages/SetupSuperAdmin").then((m) => ({ default: m.SetupSuperAdminPage })));
+const DashboardPage = lazy(() => import("./pages/Dashboard").then((m) => ({ default: m.DashboardPage })));
+const AuditorDashboardPage = lazy(() => import("./pages/AuditorDashboard").then((m) => ({ default: m.AuditorDashboardPage })));
+const AuditorWorkbenchPage = lazy(() => import("./pages/AuditorWorkbench").then((m) => ({ default: m.AuditorWorkbenchPage })));
+const AuditorExceptionsPage = lazy(() => import("./pages/AuditorExceptions").then((m) => ({ default: m.AuditorExceptionsPage })));
+const AuditorJournalsPage = lazy(() => import("./pages/AuditorJournals").then((m) => ({ default: m.AuditorJournalsPage })));
+const AuditorAuditLogsPage = lazy(() => import("./pages/AuditorAuditLogs").then((m) => ({ default: m.AuditorAuditLogsPage })));
+const AuditorReportsPage = lazy(() => import("./pages/AuditorReports").then((m) => ({ default: m.AuditorReportsPage })));
+const AccessDeniedPage = lazy(() => import("./pages/AccessDenied").then((m) => ({ default: m.AccessDeniedPage })));
+const StaffUsersPage = lazy(() => import("./pages/StaffUsers").then((m) => ({ default: m.StaffUsersPage })));
+const MembersPage = lazy(() => import("./pages/Members").then((m) => ({ default: m.MembersPage })));
+const MemberApplicationsPage = lazy(() => import("./pages/MemberApplications").then((m) => ({ default: m.MemberApplicationsPage })));
+const CashPage = lazy(() => import("./pages/Cash").then((m) => ({ default: m.CashPage })));
+const CashControlPage = lazy(() => import("./pages/CashControl").then((m) => ({ default: m.CashControlPage })));
+const ContributionsPage = lazy(() => import("./pages/Contributions").then((m) => ({ default: m.ContributionsPage })));
+const PaymentsPage = lazy(() => import("./pages/Payments").then((m) => ({ default: m.PaymentsPage })));
+const DividendsPage = lazy(() => import("./pages/Dividends").then((m) => ({ default: m.DividendsPage })));
+const SavingsPage = lazy(() => import("./pages/Savings").then((m) => ({ default: m.SavingsPage })));
+const ChargeRevenuePage = lazy(() => import("./pages/ChargeRevenue").then((m) => ({ default: m.ChargeRevenuePage })));
+const FollowUpsPage = lazy(() => import("./pages/FollowUps").then((m) => ({ default: m.FollowUpsPage })));
+const ApprovalsPage = lazy(() => import("./pages/Approvals").then((m) => ({ default: m.ApprovalsPage })));
+const LoansPage = lazy(() => import("./pages/Loans").then((m) => ({ default: m.LoansPage })));
+const LoanDetailPage = lazy(() => import("./pages/LoanDetail").then((m) => ({ default: m.LoanDetailPage })));
+const ProductCatalogPage = lazy(() => import("./pages/ProductCatalog").then((m) => ({ default: m.ProductCatalogPage })));
+const ReportsPage = lazy(() => import("./pages/Reports").then((m) => ({ default: m.ReportsPage })));
+const SaccoSettingsPage = lazy(() => import("./pages/SaccoSettings").then((m) => ({ default: m.SaccoSettingsPage })));
+const PerformanceTargetsPage = lazy(() => import("./pages/PerformanceTargets").then((m) => ({ default: m.PerformanceTargetsPage })));
+const TreasuryPage = lazy(() => import("./pages/Treasury").then((m) => ({ default: m.TreasuryPage })));
+const TreasuryPolicySettingsPage = lazy(() => import("./pages/TreasuryPolicySettings").then((m) => ({ default: m.TreasuryPolicySettingsPage })));
+const MemberPortalPage = lazy(() => import("./pages/MemberPortal").then((m) => ({ default: m.MemberPortalPage })));
+const MemberImportPage = lazy(() => import("./pages/MemberImport").then((m) => ({ default: m.MemberImportPage })));
+const ChangePasswordPage = lazy(() => import("./pages/ChangePassword").then((m) => ({ default: m.ChangePasswordPage })));
+const SecuritySettingsPage = lazy(() => import("./pages/SecuritySettings").then((m) => ({ default: m.SecuritySettingsPage })));
+const NotificationsPage = lazy(() => import("./pages/Notifications").then((m) => ({ default: m.NotificationsPage })));
+const ResetPasswordPage = lazy(() => import("./pages/ResetPassword").then((m) => ({ default: m.ResetPasswordPage })));
+const ServiceUnavailablePage = lazy(() => import("./pages/ServiceUnavailable").then((m) => ({ default: m.ServiceUnavailablePage })));
+const PrivacyPolicyPage = lazy(() => import("./pages/LegalPages").then((m) => ({ default: m.PrivacyPolicyPage })));
+const TermsAgreementPage = lazy(() => import("./pages/LegalPages").then((m) => ({ default: m.TermsAgreementPage })));
 
 function WorkspaceRedirect() {
     const { session, profile, backendUnavailable, isInternalOps, twoFactorSetupRequired, loading } = useAuth();
@@ -184,6 +189,7 @@ function SetupRouteGuard({ children }: { children: ReactNode }) {
 export default function App() {
     return (
         <>
+            <Suspense fallback={<AppLoader message="Loading workspace..." />}>
             <Routes>
                 <Route path="/" element={<PublicHomePage />} />
                 <Route path="/signin" element={<SignInRoute />} />
@@ -364,6 +370,7 @@ export default function App() {
 
                 <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
+            </Suspense>
             <PwaInstallPrompt />
         </>
     );
