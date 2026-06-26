@@ -9028,6 +9028,7 @@ export function MemberPortalPage() {
                                                 value={memberProfileCompletionForm.watch("region_id") || ""}
                                                 options={regionOptions}
                                                 label="Region"
+                                                loading={loadingRegions}
                                                 placeholder={loadingRegions ? "Loading regions..." : "Search region..."}
                                                 helperText="Select the member's region."
                                                 onChange={(value) => {
@@ -9046,6 +9047,8 @@ export function MemberPortalPage() {
                                                 value={memberProfileCompletionForm.watch("district_id") || ""}
                                                 options={districtOptions}
                                                 label="District"
+                                                disabled={!memberProfileRegionId}
+                                                loading={loadingDistricts}
                                                 placeholder={memberProfileRegionId ? (loadingDistricts ? "Loading districts..." : "Search district...") : "Select a region first"}
                                                 helperText="Districts are filtered by the selected region."
                                                 onChange={(value) => {
@@ -9062,6 +9065,8 @@ export function MemberPortalPage() {
                                                 value={memberProfileCompletionForm.watch("ward_id") || ""}
                                                 options={wardOptions}
                                                 label="Ward"
+                                                disabled={!memberProfileDistrictId}
+                                                loading={loadingWards}
                                                 placeholder={memberProfileDistrictId ? (loadingWards ? "Loading wards..." : "Search ward...") : "Select a district first"}
                                                 helperText="Wards are filtered by the selected district."
                                                 onChange={(value) => {
@@ -9076,6 +9081,8 @@ export function MemberPortalPage() {
                                                 value={memberProfileCompletionForm.watch("village_id") || ""}
                                                 options={villageOptions}
                                                 label="Village / Mtaa"
+                                                disabled={!memberProfileWardId}
+                                                loading={loadingVillages}
                                                 placeholder={memberProfileWardId ? (loadingVillages ? "Loading villages..." : "Search village or mtaa...") : "Select a ward first"}
                                                 helperText="Choose the official village or mtaa. Code omitted."
                                                 onChange={(value) => {
