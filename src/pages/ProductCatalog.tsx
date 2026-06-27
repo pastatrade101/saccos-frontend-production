@@ -721,15 +721,15 @@ export function ProductCatalogPage() {
 
             const minAmount = toNumber(normalized.min_amount);
             const maxAmount = toNumber(normalized.max_amount);
-            if (minAmount !== null && maxAmount !== null && minAmount >= maxAmount) {
-                showLoanError("Invalid loan range", "Minimum amount must be less than maximum amount.");
+            if (minAmount !== null && maxAmount !== null && minAmount > maxAmount) {
+                showLoanError("Invalid loan range", "Minimum amount cannot be greater than maximum amount.");
                 return;
             }
 
             const minTerm = toNumber(normalized.min_term_count);
             const maxTerm = toNumber(normalized.max_term_count);
-            if (minTerm !== null && maxTerm !== null && minTerm >= maxTerm) {
-                showLoanError("Invalid term", "Minimum term must be shorter than maximum term.");
+            if (minTerm !== null && maxTerm !== null && minTerm > maxTerm) {
+                showLoanError("Invalid term", "Minimum term cannot be greater than maximum term.");
                 return;
             }
 
