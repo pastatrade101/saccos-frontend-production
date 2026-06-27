@@ -684,7 +684,27 @@ export function LoansPage() {
             description: ""
         }
     });
-    const selectedDisbursementChannel = disburseForm.watch("disbursement_channel");
+    const disbursementPayoutInstructions = useMemo(() => {
+        if (!disbursementTarget) {
+            return "";
+        }
+        const methodLabel: Record<string, string> = {
+            cash: "Cash collected at the branch",
+            direct_deposit: "Direct deposit to the member's account",
+            bank_transfer: "Bank transfer (IFT/EFT/RTGS)"
+        };
+        const lines: string[] = [];
+        if (disbursementTarget.payout_method) {
+            lines.push(`Method: ${methodLabel[disbursementTarget.payout_method] || disbursementTarget.payout_method}`);
+        }
+        if (disbursementTarget.payout_bank_name) {
+            lines.push(`Bank: ${disbursementTarget.payout_bank_name}${disbursementTarget.payout_bank_branch ? ` (${disbursementTarget.payout_bank_branch})` : ""}`);
+        }
+        if (disbursementTarget.payout_account_name || disbursementTarget.payout_account_number) {
+            lines.push(`Account: ${disbursementTarget.payout_account_name || ""}${disbursementTarget.payout_account_number ? ` — ${disbursementTarget.payout_account_number}` : ""}`.trim());
+        }
+        return lines.join("\n");
+    }, [disbursementTarget]);
 
     const applyTrackedLoanDisbursementOrder = async (nextOrder: LoanDisbursementOrder, previousOrder: LoanDisbursementOrder | null = trackedLoanDisbursementOrder) => {
         setTrackedLoanDisbursementOrder(nextOrder);
@@ -3889,6 +3909,54 @@ export function LoansPage() {
                 <DialogContent dividers>
                     <Box component="form" id="loan-appraisal-form" onSubmit={saveAppraisal} sx={{ display: "grid", gap: 2, pt: 0.5 }}>
                         <Paper variant="outlined" sx={{ p: 2, borderRadius: 2.5 }}>
+                            <Stack spacing={1}>
+                                <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+                                    Documents &amp; consent
+                                </Typography>
+                                {appraisalTarget?.payout_method ? (
+                                    <Typography variant="body2" color="text.secondary">
+                                        Payout: {appraisalTarget.payout_method === "cash" ? "Cash at branch" : appraisalTarget.payout_method === "direct_deposit" ? "Direct deposit" : "Bank transfer"}
+                                        {appraisalTarget.payout_bank_name ? ` · ${appraisalTarget.payout_bank_name}${appraisalTarget.payout_account_number ? ` (${appraisalTarget.payout_account_number})` : ""}` : ""}
+                                    </Typography>
+                                ) : null}
+                                <Typography variant="body2" color="text.secondary">
+                                    Repayment: {appraisalTarget?.repayment_mode === "standing_order" ? "Standing order" : appraisalTarget?.repayment_mode === "check_off" ? "Check-off (salary deduction)" : "—"}
+                                    {appraisalTarget?.loan_category === "top_up" ? " · Top-up of an existing loan" : " · New loan"}
+                                </Typography>
+                                {appraisalTarget?.deposit_purchase_amount ? (
+                                    <Typography variant="body2" color="text.secondary">
+                                        Deposit purchase: {formatCurrency(appraisalTarget.deposit_purchase_amount)}
+                                    </Typography>
+                                ) : null}
+                                <Typography variant="body2" sx={{ color: appraisalTarget?.application_fee_paid ? "success.main" : "text.secondary" }}>
+                                    Application fee: {appraisalTarget?.application_fee_paid ? "Paid (member declared)" : "Not confirmed"}
+                                </Typography>
+                                <Typography variant="body2" sx={{ color: appraisalTarget?.declaration_accepted ? "success.main" : "text.secondary" }}>
+                                    Borrower declaration / CRB consent: {appraisalTarget?.declaration_accepted ? "Accepted" : "Not recorded"}
+                                </Typography>
+                                {appraisalTarget?.attachments?.length ? (
+                                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                                        {appraisalTarget.attachments.map((doc) => (
+                                            <Button
+                                                key={doc.id}
+                                                size="small"
+                                                variant="outlined"
+                                                component="a"
+                                                href={doc.url || "#"}
+                                                target="_blank"
+                                                rel="noopener"
+                                                disabled={!doc.url}
+                                            >
+                                                {(doc.document_type || "document").replace(/_/g, " ")}: {doc.file_name}
+                                            </Button>
+                                        ))}
+                                    </Stack>
+                                ) : (
+                                    <Typography variant="caption" color="text.secondary">No documents attached.</Typography>
+                                )}
+                            </Stack>
+                        </Paper>
+                        <Paper variant="outlined" sx={{ p: 2, borderRadius: 2.5 }}>
                             <Stack spacing={1.5}>
                                 <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
                                     Borrowing Capacity Summary
@@ -4345,41 +4413,16 @@ export function LoansPage() {
                 <DialogTitle>Disburse Approved Application</DialogTitle>
                 <DialogContent dividers>
                     <Stack spacing={2} sx={{ pt: 0.5 }}>
-                        <Alert severity={selectedDisbursementChannel === "mobile_money" ? "info" : "warning"} variant="outlined">
-                            {selectedDisbursementChannel === "mobile_money"
-                                ? "The teller will trigger a mobile money payout to the member phone. The loan will only post after the provider confirms a successful payout."
-                                : "This is the money-posting step. A balanced journal, loan account, and repayment schedule will be created when you confirm."}
+                        <Alert severity="warning" variant="outlined">
+                            This is the money-posting step. The teller pays the member manually and records it here — a balanced journal, loan account, and repayment schedule are created when you confirm.
                         </Alert>
-                        {disbursementTarget?.members?.phone ? (
+                        {disbursementPayoutInstructions ? (
                             <Alert severity="info" variant="outlined" sx={darkAccentInfoAlertSx}>
-                                Member payout number on file: {disbursementTarget.members.phone}. Switch the channel to mobile money to send the loan through Snippe.
+                                <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>Payout instructions from the application</Typography>
+                                <Typography variant="body2" sx={{ whiteSpace: "pre-line" }}>{disbursementPayoutInstructions}</Typography>
                             </Alert>
                         ) : null}
                         <Box component="form" id="loan-disburse-application-form" onSubmit={launchDisbursement} sx={{ display: "grid", gap: 2 }}>
-                            <TextField
-                                select
-                                label="Disbursement channel"
-                                fullWidth
-                                defaultValue="cash"
-                                {...disburseForm.register("disbursement_channel")}
-                            >
-                                <MenuItem value="cash">Cash / teller posting</MenuItem>
-                                <MenuItem value="mobile_money">Mobile money payout</MenuItem>
-                            </TextField>
-                            <TextField
-                                label="Recipient mobile number"
-                                fullWidth
-                                placeholder="2557XXXXXXXX"
-                                disabled={selectedDisbursementChannel !== "mobile_money"}
-                                {...disburseForm.register("recipient_msisdn")}
-                                error={Boolean(disburseForm.formState.errors.recipient_msisdn)}
-                                helperText={
-                                    disburseForm.formState.errors.recipient_msisdn?.message
-                                    || (selectedDisbursementChannel === "mobile_money"
-                                        ? "Use the member number that should receive the loan payout."
-                                        : "Select Mobile money payout to enable Snippe disbursement to the member phone.")
-                                }
-                            />
                             <TextField label="Reference" fullWidth {...disburseForm.register("reference")} />
                             <TextField label="Description" fullWidth multiline minRows={3} {...disburseForm.register("description")} />
                         </Box>
@@ -4388,7 +4431,7 @@ export function LoansPage() {
                 <DialogActions>
                     <Button onClick={() => setDisbursementTarget(null)}>Cancel</Button>
                     <Button variant="contained" color="success" type="submit" form="loan-disburse-application-form" disabled={processing}>
-                        {selectedDisbursementChannel === "mobile_money" ? "Review Payout" : "Review Disbursement"}
+                        Review Disbursement
                     </Button>
                 </DialogActions>
             </MotionModal>

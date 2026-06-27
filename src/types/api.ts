@@ -811,6 +811,16 @@ export interface LoanDisbursementApprovalRequest {
     description?: string | null;
 }
 
+export interface LoanApplicationAttachment {
+    id: string;
+    document_type?: string | null;
+    file_name: string;
+    mime_type?: string | null;
+    file_size_bytes?: number | null;
+    created_at?: string | null;
+    url?: string | null;
+}
+
 export interface LoanApplication {
     id: string;
     tenant_id: string;
@@ -830,6 +840,19 @@ export interface LoanApplication {
     requested_term_count: number;
     requested_repayment_frequency: "daily" | "weekly" | "monthly";
     requested_interest_rate?: number | null;
+    payout_method?: "cash" | "direct_deposit" | "bank_transfer" | null;
+    payout_bank_name?: string | null;
+    payout_bank_branch?: string | null;
+    payout_account_name?: string | null;
+    payout_account_number?: string | null;
+    declaration_accepted?: boolean | null;
+    declaration_accepted_at?: string | null;
+    repayment_mode?: "check_off" | "standing_order" | null;
+    loan_category?: "new" | "top_up" | null;
+    top_up_of_loan_id?: string | null;
+    deposit_purchase_amount?: number | null;
+    application_fee_paid?: boolean | null;
+    attachments?: LoanApplicationAttachment[];
     created_via: "member_portal" | "staff";
     status: "draft" | "submitted" | "appraised" | "approved" | "rejected" | "disbursed" | "cancelled";
     requested_by: string;

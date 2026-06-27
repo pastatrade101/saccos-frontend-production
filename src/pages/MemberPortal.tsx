@@ -1,6 +1,8 @@
 import { MotionCard, MotionModal, easeOutFast, springSoft, useReducedMotionSafe } from "../ui/motion";
 import AccountBalanceWalletRoundedIcon from "@mui/icons-material/AccountBalanceWalletRounded";
 import ApartmentRoundedIcon from "@mui/icons-material/ApartmentRounded";
+import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
+import UploadFileRoundedIcon from "@mui/icons-material/UploadFileRounded";
 import ApprovalRoundedIcon from "@mui/icons-material/ApprovalRounded";
 import AutoGraphRoundedIcon from "@mui/icons-material/AutoGraphRounded";
 import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
@@ -367,8 +369,21 @@ const loanApplicationSchema = z.object({
         .refine((value) => !value || loanReferencePattern.test(value), "Reference may contain only letters, numbers, dashes, and underscores")
         .optional()
         .or(z.literal("")),
+    payout_method: z.enum(["cash", "direct_deposit", "bank_transfer"]).default("cash"),
+    repayment_mode: z.enum(["check_off", "standing_order"]).default("check_off"),
+    loan_category: z.enum(["new", "top_up"]).default("new"),
+    top_up_of_loan_id: z.string().optional().or(z.literal("")),
+    deposit_purchase_amount: z.coerce.number().min(0).default(0),
+    application_fee_paid: z.boolean().default(false),
+    payout_bank_name: z.string().trim().max(120).optional().or(z.literal("")),
+    payout_bank_branch: z.string().trim().max(120).optional().or(z.literal("")),
+    payout_account_name: z.string().trim().max(120).optional().or(z.literal("")),
+    payout_account_number: z.string().trim().max(50).optional().or(z.literal("")),
     confirmation_checked: z.boolean().refine((value) => value, {
         message: "Confirm the application details before submission."
+    }),
+    declaration_accepted: z.boolean().refine((value) => value, {
+        message: "You must accept the declaration and CRB consent to apply."
     })
 });
 
@@ -446,6 +461,46 @@ function groupBalances(statements: StatementRow[]) {
             balance: entry.running_balance,
             amount: entry.amount
         }));
+}
+
+function amountToWords(value: number): string {
+    const num = Math.floor(Math.max(0, Number(value) || 0));
+    if (num === 0) {
+        return "Zero";
+    }
+    const ones = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"];
+    const tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
+    const scales = ["", "Thousand", "Million", "Billion", "Trillion"];
+
+    const threeDigits = (n: number): string => {
+        let str = "";
+        if (n >= 100) {
+            str += `${ones[Math.floor(n / 100)]} Hundred`;
+            n %= 100;
+            if (n) str += " ";
+        }
+        if (n >= 20) {
+            str += tens[Math.floor(n / 10)];
+            if (n % 10) str += ` ${ones[n % 10]}`;
+        } else if (n > 0) {
+            str += ones[n];
+        }
+        return str;
+    };
+
+    const groups: number[] = [];
+    let remaining = num;
+    while (remaining > 0) {
+        groups.push(remaining % 1000);
+        remaining = Math.floor(remaining / 1000);
+    }
+
+    const parts: string[] = [];
+    for (let i = groups.length - 1; i >= 0; i -= 1) {
+        if (groups[i] === 0) continue;
+        parts.push(`${threeDigits(groups[i])}${scales[i] ? ` ${scales[i]}` : ""}`);
+    }
+    return parts.join(" ");
 }
 
 function groupSavingsByMonth(statements: StatementRow[]) {
@@ -984,6 +1039,11 @@ export function MemberPortalPage() {
     const [deletingLoanApplicationId, setDeletingLoanApplicationId] = useState<string | null>(null);
     const [pendingDraftDeletion, setPendingDraftDeletion] = useState<LoanApplication | null>(null);
     const [loanFormStep, setLoanFormStep] = useState(0);
+    const [loanDocuments, setLoanDocuments] = useState<{ national_id: File | null; supporting_document: File | null; guarantor_id: File | null }>({
+        national_id: null,
+        supporting_document: null,
+        guarantor_id: null
+    });
     const [loanCapacity, setLoanCapacity] = useState<LoanCapacitySummary | null>(null);
     const [loanCapacityLoading, setLoanCapacityLoading] = useState(false);
     const [loanCapacityError, setLoanCapacityError] = useState<string | null>(null);
@@ -1041,7 +1101,18 @@ export function MemberPortalPage() {
             requested_repayment_frequency: "monthly",
             requested_interest_rate: 0,
             external_reference: "",
-            confirmation_checked: false
+            payout_method: "cash",
+            repayment_mode: "check_off",
+            loan_category: "new",
+            top_up_of_loan_id: "",
+            deposit_purchase_amount: 0,
+            application_fee_paid: false,
+            payout_bank_name: "",
+            payout_bank_branch: "",
+            payout_account_name: "",
+            payout_account_number: "",
+            confirmation_checked: false,
+            declaration_accepted: false
         }
     });
     const contributionPaymentForm = useForm<ContributionPaymentValues>({
@@ -3921,6 +3992,7 @@ export function MemberPortalPage() {
 
     const openLoanApplicationEditor = (application?: LoanApplication | null) => {
         setLoanFormStep(0);
+        setLoanDocuments({ national_id: null, supporting_document: null, guarantor_id: null });
 
         if (application) {
             setEditingLoanApplicationId(application.id);
@@ -3933,7 +4005,18 @@ export function MemberPortalPage() {
                 requested_repayment_frequency: application.requested_repayment_frequency,
                 requested_interest_rate: annualToMonthlyRate(application.requested_interest_rate ?? 0),
                 external_reference: application.external_reference || "",
-                confirmation_checked: false
+                payout_method: application.payout_method || "cash",
+                repayment_mode: application.repayment_mode || "check_off",
+                loan_category: application.loan_category || "new",
+                top_up_of_loan_id: application.top_up_of_loan_id || "",
+                deposit_purchase_amount: application.deposit_purchase_amount || 0,
+                application_fee_paid: Boolean(application.application_fee_paid),
+                payout_bank_name: application.payout_bank_name || "",
+                payout_bank_branch: application.payout_bank_branch || "",
+                payout_account_name: application.payout_account_name || "",
+                payout_account_number: application.payout_account_number || "",
+                confirmation_checked: false,
+                declaration_accepted: Boolean(application.declaration_accepted)
             });
         } else {
             setEditingLoanApplicationId(null);
@@ -3946,7 +4029,18 @@ export function MemberPortalPage() {
                 requested_repayment_frequency: "monthly",
                 requested_interest_rate: 0,
                 external_reference: "",
-                confirmation_checked: false
+                payout_method: "cash",
+                repayment_mode: "check_off",
+                loan_category: "new",
+                top_up_of_loan_id: "",
+                deposit_purchase_amount: 0,
+                application_fee_paid: false,
+                payout_bank_name: "",
+                payout_bank_branch: "",
+                payout_account_name: "",
+                payout_account_number: "",
+                confirmation_checked: false,
+                declaration_accepted: false
             });
         }
 
@@ -4127,7 +4221,18 @@ export function MemberPortalPage() {
                 requested_amount: values.requested_amount,
                 requested_term_count: values.requested_term_count,
                 requested_repayment_frequency: values.requested_repayment_frequency,
-                requested_interest_rate: selectedProduct.annual_interest_rate
+                requested_interest_rate: selectedProduct.annual_interest_rate,
+                payout_method: values.payout_method,
+                payout_bank_name: values.payout_bank_name || undefined,
+                payout_bank_branch: values.payout_bank_branch || undefined,
+                payout_account_name: values.payout_account_name || undefined,
+                payout_account_number: values.payout_account_number || undefined,
+                declaration_accepted: values.declaration_accepted,
+                repayment_mode: values.repayment_mode,
+                loan_category: values.loan_category,
+                top_up_of_loan_id: values.loan_category === "top_up" ? (values.top_up_of_loan_id || null) : null,
+                deposit_purchase_amount: values.deposit_purchase_amount || 0,
+                application_fee_paid: values.application_fee_paid
             };
 
             const applicationId = editingLoanApplicationId
@@ -4140,6 +4245,26 @@ export function MemberPortalPage() {
                 : (
                     await api.post<LoanApplicationResponse>(endpoints.loanApplications.list(), payload)
                 ).data.data.id;
+
+            const hasDocuments = loanDocuments.national_id || loanDocuments.supporting_document || loanDocuments.guarantor_id;
+            if (hasDocuments) {
+                const documentBody = new FormData();
+                if (loanDocuments.national_id) documentBody.append("national_id", loanDocuments.national_id);
+                if (loanDocuments.supporting_document) documentBody.append("supporting_document", loanDocuments.supporting_document);
+                if (loanDocuments.guarantor_id) documentBody.append("guarantor_id", loanDocuments.guarantor_id);
+                try {
+                    await api.post(endpoints.loanApplications.attachments(applicationId), documentBody, {
+                        headers: { "Content-Type": "multipart/form-data" },
+                        timeout: 60000
+                    });
+                } catch (documentError) {
+                    pushToast({
+                        type: "info",
+                        title: "Application saved",
+                        message: "Your application was saved but the documents could not be uploaded. You can re-upload them by editing the application."
+                    });
+                }
+            }
 
             if (options.submitAfterSave) {
                 await api.post<LoanApplicationResponse>(endpoints.loanApplications.submit(applicationId), {});
@@ -8241,7 +8366,7 @@ export function MemberPortalPage() {
                         py: 1.5
                     }}
                 >
-                    <Stack spacing={1.25} sx={{ pt: 0.25, minHeight: 0 }}>
+                    <Stack spacing={1.25} sx={{ pt: 0.25, minHeight: 0, flex: 1 }}>
                         <Alert severity="info" variant="outlined" sx={{ py: 0.35 }}>
                             {isEditingDraftLoanApplication
                                 ? "Continue updating your saved draft. You can save draft changes now and submit later once any submission lock is cleared."
@@ -8311,7 +8436,7 @@ export function MemberPortalPage() {
                             component="form"
                             id="member-loan-application-form"
                             onSubmit={submitLoanApplication}
-                            sx={{ display: "grid", gap: 1.35, minHeight: 0 }}
+                            sx={{ display: "flex", flexDirection: "column", gap: 1.35, minHeight: 0, flex: 1 }}
                         >
                             <Paper
                                 variant="outlined"
@@ -8435,6 +8560,7 @@ export function MemberPortalPage() {
                                 </Stack>
                             </Paper>
 
+                            <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", mx: -0.5, px: 0.5 }}>
                             <AnimatePresence mode="wait" initial={false}>
                                 <Box
                                     key={loanFormStep}
@@ -8755,6 +8881,9 @@ export function MemberPortalPage() {
                                                 <Typography variant="body1" sx={{ fontWeight: 700, mt: 0.35 }}>
                                                     {formatCurrency(requestedLoanAmount || 0)}
                                                 </Typography>
+                                                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.25, fontStyle: "italic", overflowWrap: "anywhere" }}>
+                                                    {amountToWords(requestedLoanAmount || 0)} Tanzanian Shillings only
+                                                </Typography>
                                             </Grid>
                                             <Grid size={{ xs: 12, sm: 6 }}>
                                                 <Typography variant="caption" color="text.secondary">
@@ -8781,6 +8910,168 @@ export function MemberPortalPage() {
                                                 </Typography>
                                             </Grid>
                                         </Grid>
+                                    </Paper>
+                                    <Paper variant="outlined" sx={{ p: 1.75, borderRadius: 1.1 }}>
+                                        <Stack spacing={1.5}>
+                                            <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                                                Repayment &amp; loan type
+                                            </Typography>
+                                            <Grid container spacing={1.5}>
+                                                <Grid size={{ xs: 12, sm: 6 }}>
+                                                    <TextField
+                                                        select
+                                                        fullWidth
+                                                        label="Repayment mode"
+                                                        value={loanApplicationForm.watch("repayment_mode") || "check_off"}
+                                                        onChange={(event) =>
+                                                            loanApplicationForm.setValue("repayment_mode", event.target.value as "check_off" | "standing_order", { shouldDirty: true })
+                                                        }
+                                                    >
+                                                        <MenuItem value="check_off">Check-off (salary deduction)</MenuItem>
+                                                        <MenuItem value="standing_order">Standing order</MenuItem>
+                                                    </TextField>
+                                                </Grid>
+                                                <Grid size={{ xs: 12, sm: 6 }}>
+                                                    <TextField
+                                                        select
+                                                        fullWidth
+                                                        label="Loan type"
+                                                        value={loanApplicationForm.watch("loan_category") || "new"}
+                                                        onChange={(event) =>
+                                                            loanApplicationForm.setValue("loan_category", event.target.value as "new" | "top_up", { shouldDirty: true })
+                                                        }
+                                                    >
+                                                        <MenuItem value="new">New loan</MenuItem>
+                                                        <MenuItem value="top_up" disabled={!portalRepaymentLoans.length}>Top-up an existing loan</MenuItem>
+                                                    </TextField>
+                                                </Grid>
+                                                {loanApplicationForm.watch("loan_category") === "top_up" ? (
+                                                    <Grid size={{ xs: 12 }}>
+                                                        <TextField
+                                                            select
+                                                            fullWidth
+                                                            label="Loan to top up"
+                                                            value={loanApplicationForm.watch("top_up_of_loan_id") || ""}
+                                                            onChange={(event) =>
+                                                                loanApplicationForm.setValue("top_up_of_loan_id", event.target.value, { shouldDirty: true })
+                                                            }
+                                                            helperText="The existing loan this top-up adds to. The branch settles it manually."
+                                                        >
+                                                            <MenuItem value="">Select a loan</MenuItem>
+                                                            {portalRepaymentLoans.map((loan) => (
+                                                                <MenuItem key={loan.id} value={loan.id}>
+                                                                    {loan.loan_number || loan.id.slice(0, 8)} · {formatCurrency(loan.outstanding_principal + loan.accrued_interest)} outstanding
+                                                                </MenuItem>
+                                                            ))}
+                                                        </TextField>
+                                                    </Grid>
+                                                ) : null}
+                                                <Grid size={{ xs: 12, sm: 6 }}>
+                                                    <TextField
+                                                        fullWidth
+                                                        type="number"
+                                                        label="Deposit purchase amount (optional)"
+                                                        value={loanApplicationForm.watch("deposit_purchase_amount") || ""}
+                                                        onChange={(event) =>
+                                                            loanApplicationForm.setValue("deposit_purchase_amount", Number(event.target.value) || 0, { shouldDirty: true })
+                                                        }
+                                                        helperText="Extra deposits you commit to buy in for this loan, if any."
+                                                    />
+                                                </Grid>
+                                            </Grid>
+                                            <FormControlLabel
+                                                control={
+                                                    <Checkbox
+                                                        checked={loanApplicationForm.watch("application_fee_paid")}
+                                                        onChange={(event) =>
+                                                            loanApplicationForm.setValue("application_fee_paid", event.target.checked, { shouldDirty: true })
+                                                        }
+                                                    />
+                                                }
+                                                label="I have paid the loan application fee (attach the receipt under Supporting documents)."
+                                            />
+                                        </Stack>
+                                    </Paper>
+                                    <Paper variant="outlined" sx={{ p: 1.75, borderRadius: 1.1 }}>
+                                        <Stack spacing={1.5}>
+                                            <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                                                How should the loan be paid out?
+                                            </Typography>
+                                            <TextField
+                                                select
+                                                fullWidth
+                                                label="Payout method"
+                                                value={loanApplicationForm.watch("payout_method") || "cash"}
+                                                onChange={(event) =>
+                                                    loanApplicationForm.setValue("payout_method", event.target.value as "cash" | "direct_deposit" | "bank_transfer", { shouldDirty: true })
+                                                }
+                                            >
+                                                <MenuItem value="cash">Cash at the branch (teller)</MenuItem>
+                                                <MenuItem value="direct_deposit">Direct deposit to my account</MenuItem>
+                                                <MenuItem value="bank_transfer">Bank transfer (IFT / EFT / RTGS)</MenuItem>
+                                            </TextField>
+                                            {loanApplicationForm.watch("payout_method") !== "cash" ? (
+                                                <Grid container spacing={1.5}>
+                                                    <Grid size={{ xs: 12, sm: 6 }}>
+                                                        <TextField fullWidth label="Bank name" {...loanApplicationForm.register("payout_bank_name")} />
+                                                    </Grid>
+                                                    <Grid size={{ xs: 12, sm: 6 }}>
+                                                        <TextField fullWidth label="Branch" {...loanApplicationForm.register("payout_bank_branch")} />
+                                                    </Grid>
+                                                    <Grid size={{ xs: 12, sm: 6 }}>
+                                                        <TextField fullWidth label="Account name" {...loanApplicationForm.register("payout_account_name")} />
+                                                    </Grid>
+                                                    <Grid size={{ xs: 12, sm: 6 }}>
+                                                        <TextField fullWidth label="Account number" {...loanApplicationForm.register("payout_account_number")} />
+                                                    </Grid>
+                                                </Grid>
+                                            ) : null}
+                                            <Typography variant="caption" color="text.secondary">
+                                                Disbursement is processed manually by the teller — these details tell them how to pay you.
+                                            </Typography>
+                                        </Stack>
+                                    </Paper>
+                                    <Paper variant="outlined" sx={{ p: 1.75, borderRadius: 1.1 }}>
+                                        <Stack spacing={1}>
+                                            <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                                                Supporting documents (optional)
+                                            </Typography>
+                                            <Typography variant="caption" color="text.secondary">
+                                                Attach National ID, supporting docs, and guarantor IDs — JPG, PNG or PDF, up to 5MB each.
+                                            </Typography>
+                                            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                                                {([
+                                                    { key: "national_id", label: "National ID" },
+                                                    { key: "supporting_document", label: "Supporting doc" },
+                                                    { key: "guarantor_id", label: "Guarantor ID" }
+                                                ] as const).map((doc) => {
+                                                    const file = loanDocuments[doc.key];
+                                                    return (
+                                                        <Button
+                                                            key={doc.key}
+                                                            component="label"
+                                                            size="small"
+                                                            variant={file ? "contained" : "outlined"}
+                                                            color={file ? "success" : "primary"}
+                                                            startIcon={file ? <CheckRoundedIcon fontSize="small" /> : <UploadFileRoundedIcon fontSize="small" />}
+                                                            sx={{ textTransform: "none", maxWidth: 220, "& .MuiButton-startIcon": { mr: 0.5 } }}
+                                                        >
+                                                            <Box component="span" sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                                                {file ? file.name : doc.label}
+                                                            </Box>
+                                                            <input
+                                                                hidden
+                                                                type="file"
+                                                                accept="image/jpeg,image/png,application/pdf"
+                                                                onChange={(event) =>
+                                                                    setLoanDocuments((prev) => ({ ...prev, [doc.key]: event.target.files?.[0] || null }))
+                                                                }
+                                                            />
+                                                        </Button>
+                                                    );
+                                                })}
+                                            </Stack>
+                                        </Stack>
                                     </Paper>
                                     {!loanSubmissionLocks.length && visibleLoanFormErrors.length ? (
                                         <Alert severity="info" variant="outlined">
@@ -8812,10 +9103,27 @@ export function MemberPortalPage() {
                                             {loanApplicationForm.formState.errors.confirmation_checked.message}
                                         </Typography>
                                     ) : null}
+                                    <FormControlLabel
+                                        control={
+                                            <Checkbox
+                                                checked={loanApplicationForm.watch("declaration_accepted")}
+                                                onChange={(event) =>
+                                                    loanApplicationForm.setValue("declaration_accepted", event.target.checked, { shouldValidate: true, shouldDirty: true })
+                                                }
+                                            />
+                                        }
+                                        label="I authorize ILBORU Alumni SACCOS to verify my credit information with a Credit Reference Bureau (CRB) and to list defaults, I authorize repayment deductions (including interest) from my income or account, and I agree to abide by the Society's by-laws."
+                                    />
+                                    {loanApplicationForm.formState.errors.declaration_accepted ? (
+                                        <Typography variant="caption" color="error.main">
+                                            {loanApplicationForm.formState.errors.declaration_accepted.message}
+                                        </Typography>
+                                    ) : null}
                                         </Stack>
                                     ) : null}
                                 </Box>
                             </AnimatePresence>
+                            </Box>
                         </Box>
                     </Stack>
                 </DialogContent>

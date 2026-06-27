@@ -185,6 +185,7 @@ const routeMap = {
         approve: (applicationId: string) => `/loan-applications/${applicationId}/approve`,
         reject: (applicationId: string) => `/loan-applications/${applicationId}/reject`,
         disburse: (applicationId: string) => `/loan-applications/${applicationId}/disburse`,
+        attachments: (applicationId: string) => `/loan-applications/${applicationId}/attachments`,
         disbursementStatus: (orderId: string) => `/loan-applications/disbursements/${orderId}/status`,
         guarantorRequests: "/loan-applications/guarantor-requests",
         guarantorConsent: (applicationId: string) => `/loan-applications/${applicationId}/guarantor-consent`
@@ -441,6 +442,7 @@ export const endpoints = {
         approve: (applicationId: string) => routeMap.loanApplications.approve(applicationId),
         reject: (applicationId: string) => routeMap.loanApplications.reject(applicationId),
         disburse: (applicationId: string) => routeMap.loanApplications.disburse(applicationId),
+        attachments: (applicationId: string) => routeMap.loanApplications.attachments(applicationId),
         disbursementStatus: (orderId: string) => routeMap.loanApplications.disbursementStatus(orderId),
         guarantorRequests: () => routeMap.loanApplications.guarantorRequests,
         guarantorConsent: (applicationId: string) => routeMap.loanApplications.guarantorConsent(applicationId)
@@ -1079,6 +1081,17 @@ export interface CreateLoanApplicationRequest {
     requested_term_count: number;
     requested_repayment_frequency?: "daily" | "weekly" | "monthly";
     requested_interest_rate?: number | null;
+    payout_method?: "cash" | "direct_deposit" | "bank_transfer";
+    payout_bank_name?: string;
+    payout_bank_branch?: string;
+    payout_account_name?: string;
+    payout_account_number?: string;
+    declaration_accepted?: boolean;
+    repayment_mode?: "check_off" | "standing_order";
+    loan_category?: "new" | "top_up";
+    top_up_of_loan_id?: string | null;
+    deposit_purchase_amount?: number | null;
+    application_fee_paid?: boolean;
     guarantors?: LoanGuarantor[];
     collateral_items?: CollateralItem[];
 }

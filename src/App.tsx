@@ -10,7 +10,6 @@ import { PwaInstallPrompt } from "./components/PwaInstallPrompt";
 
 // Route pages are code-split so each one is downloaded on demand instead of
 // shipping the entire app (admin + member portal + every page) in one bundle.
-const LandingPage = lazy(() => import("./pages/LandingPage").then((m) => ({ default: m.LandingPage })));
 const SignInPage = lazy(() => import("./pages/SignIn").then((m) => ({ default: m.SignInPage })));
 const SignupPage = lazy(() => import("./pages/Signup").then((m) => ({ default: m.SignupPage })));
 const SetupSuperAdminPage = lazy(() => import("./pages/SetupSuperAdmin").then((m) => ({ default: m.SetupSuperAdminPage })));
@@ -125,7 +124,7 @@ function PublicHomePage() {
     }
 
     if (!session) {
-        return <LandingPage />;
+        return <Navigate to="/signin" replace />;
     }
 
     return <WorkspaceRedirect />;
