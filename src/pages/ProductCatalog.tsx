@@ -706,6 +706,10 @@ export function ProductCatalogPage() {
 
         if (dialog.kind === "loans") {
             const normalized = { ...values } as Record<string, string | number | boolean | null>;
+            // Only send terms when set, so product saves keep working before migration 110.
+            if (!normalized.terms_and_conditions) {
+                delete normalized.terms_and_conditions;
+            }
             const toNumber = (value: unknown): number | null => {
                 const parsed = Number(value);
                 return Number.isNaN(parsed) ? null : parsed;
@@ -1032,6 +1036,17 @@ export function ProductCatalogPage() {
                                             </Grid>
                                             <Grid size={{ xs: 12 }}>
                                                 <TextField fullWidth label="Description" {...form.register("description")} />
+                                            </Grid>
+                                            <Grid size={{ xs: 12 }}>
+                                                <TextField
+                                                    fullWidth
+                                                    multiline
+                                                    minRows={4}
+                                                    label="Terms & Conditions"
+                                                    placeholder="Loan terms and conditions members read and agree to before submitting an application for this product."
+                                                    helperText="Shown to the member for preview at the Review step. Leave blank to skip."
+                                                    {...form.register("terms_and_conditions")}
+                                                />
                                             </Grid>
                                         </Grid>
                                     </SectionCard>

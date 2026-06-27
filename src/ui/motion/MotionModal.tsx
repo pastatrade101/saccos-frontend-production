@@ -24,7 +24,10 @@ export function MotionModal({ open, children, ...props }: PropsWithChildren<Moti
                         initial="hidden"
                         animate="visible"
                         exit="exit"
-                        style={{ width: "100%" }}
+                        // Fill the dialog Paper as a flex column so DialogContent keeps its
+                        // flex:1 + scroll behaviour. Without this the wrapper breaks the
+                        // dialog's flex layout and tall content can't scroll.
+                        style={{ width: "100%", display: "flex", flexDirection: "column", minHeight: 0, flex: "1 1 auto", maxHeight: "100%" }}
                     >
                         {children}
                     </MotionContainer>

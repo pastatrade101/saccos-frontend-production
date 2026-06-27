@@ -384,7 +384,8 @@ const loanApplicationSchema = z.object({
     }),
     declaration_accepted: z.boolean().refine((value) => value, {
         message: "You must accept the declaration and CRB consent to apply."
-    })
+    }),
+    terms_accepted: z.boolean().default(false)
 });
 
 type LoanApplicationValues = z.infer<typeof loanApplicationSchema>;
@@ -1112,7 +1113,8 @@ export function MemberPortalPage() {
             payout_account_name: "",
             payout_account_number: "",
             confirmation_checked: false,
-            declaration_accepted: false
+            declaration_accepted: false,
+            terms_accepted: false
         }
     });
     const contributionPaymentForm = useForm<ContributionPaymentValues>({
@@ -4016,7 +4018,8 @@ export function MemberPortalPage() {
                 payout_account_name: application.payout_account_name || "",
                 payout_account_number: application.payout_account_number || "",
                 confirmation_checked: false,
-                declaration_accepted: Boolean(application.declaration_accepted)
+                declaration_accepted: Boolean(application.declaration_accepted),
+                terms_accepted: false
             });
         } else {
             setEditingLoanApplicationId(null);
@@ -4040,7 +4043,8 @@ export function MemberPortalPage() {
                 payout_account_name: "",
                 payout_account_number: "",
                 confirmation_checked: false,
-                declaration_accepted: false
+                declaration_accepted: false,
+                terms_accepted: false
             });
         }
 
@@ -4203,6 +4207,13 @@ export function MemberPortalPage() {
         if (!selectedFrequencies.includes(values.requested_repayment_frequency)) {
             loanApplicationForm.setError("requested_repayment_frequency", {
                 message: "Selected repayment frequency is not available for this loan product."
+            });
+            hasClientValidationError = true;
+        }
+
+        if (selectedLoanProduct?.terms_and_conditions && !values.terms_accepted) {
+            loanApplicationForm.setError("terms_accepted", {
+                message: "Please read and accept the Terms & Conditions."
             });
             hasClientValidationError = true;
         }
@@ -9086,6 +9097,45 @@ export function MemberPortalPage() {
                                                 ))}
                                             </Stack>
                                         </Alert>
+                                    ) : null}
+                                    {selectedLoanProduct?.terms_and_conditions ? (
+                                        <Paper variant="outlined" sx={{ p: 1.75, borderRadius: 1.1 }}>
+                                            <Stack spacing={1}>
+                                                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                                                    Terms &amp; Conditions
+                                                </Typography>
+                                                <Box
+                                                    sx={{
+                                                        maxHeight: 200,
+                                                        overflowY: "auto",
+                                                        p: 1.25,
+                                                        borderRadius: 1,
+                                                        border: `1px solid ${alpha(theme.palette.divider, 0.9)}`,
+                                                        bgcolor: isDarkMode ? alpha("#FFFFFF", 0.03) : alpha("#000000", 0.02),
+                                                        whiteSpace: "pre-wrap",
+                                                        fontSize: 13
+                                                    }}
+                                                >
+                                                    {selectedLoanProduct.terms_and_conditions}
+                                                </Box>
+                                                <FormControlLabel
+                                                    control={
+                                                        <Checkbox
+                                                            checked={loanApplicationForm.watch("terms_accepted")}
+                                                            onChange={(event) =>
+                                                                loanApplicationForm.setValue("terms_accepted", event.target.checked, { shouldValidate: true, shouldDirty: true })
+                                                            }
+                                                        />
+                                                    }
+                                                    label="I have read and agree to the Terms & Conditions."
+                                                />
+                                                {loanApplicationForm.formState.errors.terms_accepted ? (
+                                                    <Typography variant="caption" color="error.main">
+                                                        {loanApplicationForm.formState.errors.terms_accepted.message}
+                                                    </Typography>
+                                                ) : null}
+                                            </Stack>
+                                        </Paper>
                                     ) : null}
                                     <FormControlLabel
                                         control={

@@ -616,6 +616,7 @@ export interface LoanProduct {
     processing_fee_amount?: number | null;
     processing_fee_percent?: number | null;
     is_default: boolean;
+    terms_and_conditions?: string | null;
     status: "active" | "inactive";
     maximum_loan_multiple: number;
     minimum_membership_duration_months: number;
