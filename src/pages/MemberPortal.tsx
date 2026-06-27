@@ -7482,6 +7482,10 @@ export function MemberPortalPage() {
                                     <Switch
                                         edge="end"
                                         checked={Boolean(profile?.two_factor_enabled && profile?.two_factor_verified)}
+                                        disabled={
+                                            profile?.two_factor_workspace_enabled === false &&
+                                            !(profile?.two_factor_enabled && profile?.two_factor_verified)
+                                        }
                                         onChange={() =>
                                             handleProfileMenuAction(() =>
                                                 navigate(
@@ -7500,7 +7504,14 @@ export function MemberPortalPage() {
                                 </ListItemIcon>
                                 <ListItemText
                                     primary="Two-Factor Authentication"
-                                    secondary={Boolean(profile?.two_factor_enabled && profile?.two_factor_verified) ? "Enabled" : "Tap to enable"}
+                                    secondary={
+                                        profile?.two_factor_workspace_enabled === false &&
+                                        !(profile?.two_factor_enabled && profile?.two_factor_verified)
+                                            ? "Unavailable — disabled by workspace"
+                                            : Boolean(profile?.two_factor_enabled && profile?.two_factor_verified)
+                                                ? "Enabled"
+                                                : "Tap to enable"
+                                    }
                                 />
                             </ListItem>
                             <ListItemButton sx={{ borderRadius: 0.5, minHeight: 42 }} onClick={() => handleProfileMenuAction(() => navigate("/change-password"))}>

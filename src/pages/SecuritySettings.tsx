@@ -19,12 +19,12 @@ import {
     TextField,
     Typography
 } from "@mui/material";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext";
 import { useToast } from "../components/Toast";
-import { api, getApiErrorMessage } from "../lib/api";
+import { api, getApiErrorCode, getApiErrorMessage } from "../lib/api";
 import {
     endpoints,
     type MemberPortalPaymentControlsResponse,
@@ -58,6 +58,9 @@ export function SecuritySettingsPage() {
     const { pushToast } = useToast();
     const navigate = useNavigate();
     const location = useLocation();
+    // Guards the auto-setup effect so a failed setup (e.g. workspace 2FA disabled
+    // by an admin) shows one error instead of retrying forever.
+    const autoSetupTriedRef = useRef(false);
     const [setupData, setSetupData] = useState<TwoFactorSetupResponse | null>(null);
     const [setupCode, setSetupCode] = useState("");
     const [totpCode, setTotpCode] = useState("");
@@ -305,6 +308,12 @@ export function SecuritySettingsPage() {
                 title: "Unable to start 2FA setup",
                 message: getApiErrorMessage(error)
             });
+            // If an admin turned 2FA off workspace-wide after this member loaded the
+            // page, their cached profile is stale. Refresh it so the page reflects the
+            // disabled state instead of offering setup again.
+            if (getApiErrorCode(error) === "TWO_FACTOR_DISABLED_BY_WORKSPACE") {
+                await refreshProfile();
+            }
         } finally {
             setLoadingAction(null);
         }
@@ -427,10 +436,18 @@ export function SecuritySettingsPage() {
     };
 
     useEffect(() => {
-        if (setupIntent !== "setup" || !twoFactorWorkspaceEnabled || twoFactorEnabled || setupData || loadingAction) {
+        if (
+            setupIntent !== "setup" ||
+            !twoFactorWorkspaceEnabled ||
+            twoFactorEnabled ||
+            setupData ||
+            loadingAction ||
+            autoSetupTriedRef.current
+        ) {
             return;
         }
 
+        autoSetupTriedRef.current = true;
         void startSetup();
     }, [loadingAction, setupData, setupIntent, twoFactorEnabled, twoFactorWorkspaceEnabled]);
 
