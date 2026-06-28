@@ -74,9 +74,22 @@ const STRENGTH_LEVELS = [
 
 export function ChangePasswordPage() {
     const navigate = useNavigate();
-    const { profile, session, refreshProfile, markPasswordChanged } = useAuth();
+    const { profile, session, refreshProfile, markPasswordChanged, signOut } = useAuth();
     const { pushToast } = useToast();
     const [submitting, setSubmitting] = useState(false);
+    const [signingOut, setSigningOut] = useState(false);
+
+    // Escape hatch for the forced first-login screen: a user who doesn't want to
+    // set a password now can sign out instead of being stuck on this page.
+    const handleSignOut = async () => {
+        setSigningOut(true);
+        try {
+            await signOut();
+            // On success the session clears and this page redirects to /signin.
+        } catch {
+            setSigningOut(false);
+        }
+    };
     const [visible, setVisible] = useState({ current: false, next: false, confirm: false });
     const toggleVisible = (key: "current" | "next" | "confirm") =>
         setVisible((state) => ({ ...state, [key]: !state[key] }));
@@ -293,7 +306,7 @@ export function ChangePasswordPage() {
                             <Button
                                 type="submit"
                                 variant="contained"
-                                disabled={submitting || metCount < passwordChecks.length}
+                                disabled={submitting || signingOut || metCount < passwordChecks.length}
                             >
                                 {submitting ? "Saving password..." : isForced ? "Save new password" : "Update password"}
                             </Button>
@@ -301,7 +314,16 @@ export function ChangePasswordPage() {
                                 <Button variant="text" onClick={() => navigate(-1)} disabled={submitting}>
                                     Cancel
                                 </Button>
-                            ) : null}
+                            ) : (
+                                <Button
+                                    variant="text"
+                                    color="inherit"
+                                    onClick={handleSignOut}
+                                    disabled={submitting || signingOut}
+                                >
+                                    {signingOut ? "Signing out..." : "Not now — sign out"}
+                                </Button>
+                            )}
                         </Stack>
                     </Stack>
                 </CardContent>
