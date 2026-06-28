@@ -2795,7 +2795,7 @@ export function MembersPage() {
                             <TextField
                                 value={search}
                                 onChange={(event) => setSearch(event.target.value)}
-                                placeholder="Search members..."
+                                placeholder="Search by name, member no., ID/NIDA, phone, email..."
                                 size="small"
                                 sx={{
                                     width: { xs: "100%", md: 300 },
