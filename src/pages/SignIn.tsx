@@ -53,6 +53,10 @@ export function SignInPage() {
     const [recoveryCode, setRecoveryCode] = useState("");
     const [verifyingTwoFactor, setVerifyingTwoFactor] = useState(false);
     const [lastAutoSubmittedOtp, setLastAutoSubmittedOtp] = useState<string | null>(null);
+    // Whether an admin has enabled public self-registration. The public branches
+    // endpoint only returns branches when registration is on, so a non-empty list
+    // means the "Create an account" link should be shown.
+    const [registrationEnabled, setRegistrationEnabled] = useState(false);
     const otpInputRefs = useRef<Array<HTMLInputElement | null>>([]);
     const totpCode = useMemo(() => otpDigits.join(""), [otpDigits]);
 
@@ -63,6 +67,29 @@ export function SignInPage() {
             password: ""
         }
     });
+
+    useEffect(() => {
+        let isMounted = true;
+
+        // Public registration is enabled when at least one branch is open for it.
+        // Stay silent on failure so a backend hiccup never blocks sign-in.
+        void api
+            .get<{ data?: unknown[] }>(endpoints.public.branches())
+            .then((response) => {
+                if (isMounted) {
+                    setRegistrationEnabled((response.data?.data?.length ?? 0) > 0);
+                }
+            })
+            .catch(() => {
+                if (isMounted) {
+                    setRegistrationEnabled(false);
+                }
+            });
+
+        return () => {
+            isMounted = false;
+        };
+    }, []);
 
     const closeTwoFactorModal = () => {
         setTwoFactorModalOpen(false);
@@ -372,6 +399,11 @@ export function SignInPage() {
                         >
                             First-time user without password?
                         </button>
+                        {registrationEnabled ? (
+                            <RouterLink className={pageStyles.authForgotLink} to="/signup">
+                                New here? Create an account
+                            </RouterLink>
+                        ) : null}
                     </div>
 
                     <p className={pageStyles.authLegal}>

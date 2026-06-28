@@ -6960,7 +6960,9 @@ export function MemberPortalPage() {
                                     {profile?.full_name || "Member"}
                                 </Typography>
                                 <Typography variant="caption" color="text.secondary" noWrap>
-                                    {selectedBranchName || "Assigned branch"}
+                                    {memberRecord?.member_no
+                                        ? `Member No. ${memberRecord.member_no}`
+                                        : selectedBranchName || "Assigned branch"}
                                 </Typography>
                             </Box>
                         </Stack>
