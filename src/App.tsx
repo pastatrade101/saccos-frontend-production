@@ -7,6 +7,7 @@ import { ProtectedRoute } from "./auth/ProtectedRoute";
 import { AppLayout } from "./components/Layout";
 import { AppLoader } from "./components/AppLoader";
 import { PwaInstallPrompt } from "./components/PwaInstallPrompt";
+import { SessionTimeoutManager } from "./components/SessionTimeoutManager";
 
 // Route pages are code-split so each one is downloaded on demand instead of
 // shipping the entire app (admin + member portal + every page) in one bundle.
@@ -371,6 +372,7 @@ export default function App() {
             </Routes>
             </Suspense>
             <PwaInstallPrompt />
+            <SessionTimeoutManager />
         </>
     );
 }
