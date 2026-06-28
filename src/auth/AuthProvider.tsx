@@ -174,9 +174,18 @@ export function AuthProvider({ children }: PropsWithChildren) {
         const {
             data: { subscription: authSubscription }
         } = supabase.auth.onAuthStateChange((event, nextSession) => {
-            const hadSession = Boolean(sessionRef.current);
-            setSession(nextSession);
-            setUser(nextSession?.user ?? null);
+            const previousSession = sessionRef.current;
+            const hadSession = Boolean(previousSession);
+            const userChanged = (previousSession?.user?.id ?? null) !== (nextSession?.user?.id ?? null);
+            const tokenChanged = (previousSession?.access_token ?? null) !== (nextSession?.access_token ?? null);
+
+            // Only push session/user into state on a real change. Supabase re-emits
+            // SIGNED_IN / TOKEN_REFRESHED when the tab regains focus; reflecting an
+            // identical session on those events needlessly re-renders the whole app.
+            if (tokenChanged || userChanged) {
+                setSession(nextSession);
+                setUser(nextSession?.user ?? null);
+            }
 
             if (!nextSession) {
                 clearAuthState();
@@ -186,22 +195,26 @@ export function AuthProvider({ children }: PropsWithChildren) {
                 return;
             }
 
-            const shouldShowGlobalLoader =
+            // Refetch the profile only when it can actually differ: first bootstrap,
+            // the initial session, a genuinely new sign-in, or a different user.
+            // Without this, redundant focus/refresh events refetched /me and made
+            // the portal visibly reload its data on every tab switch.
+            const shouldRefreshProfile =
                 !authBootstrappedRef.current
                 || event === "INITIAL_SESSION"
+                || userChanged
                 || (event === "SIGNED_IN" && !hadSession);
 
-            if (shouldShowGlobalLoader) {
+            if (shouldRefreshProfile) {
                 setLoading(true);
-            }
-
-            void refreshProfile().finally(() => {
-                authBootstrappedRef.current = true;
-
-                if (shouldShowGlobalLoader) {
+                void refreshProfile().finally(() => {
+                    authBootstrappedRef.current = true;
                     setLoading(false);
-                }
-            });
+                });
+            } else {
+                authBootstrappedRef.current = true;
+                setLoading(false);
+            }
         });
 
         void supabase.auth.getSession().then(({ data }) => {
