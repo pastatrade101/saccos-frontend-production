@@ -55,6 +55,7 @@ export interface UserProfile {
     phone: string | null;
     role: Role;
     is_active: boolean;
+    avatar_url?: string | null;
     must_change_password?: boolean;
     two_factor_enabled?: boolean;
     two_factor_verified?: boolean;

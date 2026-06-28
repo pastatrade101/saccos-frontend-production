@@ -54,6 +54,7 @@ import { Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext";
 import { NotificationBell } from "./notifications/NotificationBell";
+import { ProfileAvatarUploader } from "./ProfileAvatarUploader";
 import { useUI } from "../ui/UIProvider";
 import { brandColors, darkThemeColors } from "../theme/colors";
 import { formatPlatformRole, formatRole } from "../utils/format";
@@ -770,7 +771,7 @@ export function AppLayout() {
                         {themeMode === "light" ? <DarkModeIconShim /> : <LightModeIconShim />}
                     </IconButton>
                     <IconButton onClick={(event) => setAccountMenuAnchor(event.currentTarget)} sx={{ color: "#ffffff" }}>
-                        <Avatar sx={{ width: 36, height: 36, bgcolor: alpha("#ffffff", 0.18), color: "#ffffff" }}>
+                        <Avatar src={profile?.avatar_url || undefined} sx={{ width: 36, height: 36, bgcolor: alpha("#ffffff", 0.18), color: "#ffffff" }}>
                             {(profile?.full_name || user?.email || "U").slice(0, 1).toUpperCase()}
                         </Avatar>
                     </IconButton>
@@ -826,10 +827,13 @@ export function AppLayout() {
                 PaperProps={{ sx: { width: 280, mt: 1.25, borderRadius: 2 } }}
             >
                 <Box sx={{ px: 2, py: 1.5 }}>
-                    <Stack direction="row" spacing={1.5} alignItems="center">
-                        <Avatar sx={{ width: 40, height: 40 }}>
-                            {(profile?.full_name || user?.email || "U").slice(0, 1).toUpperCase()}
-                        </Avatar>
+                    <Stack direction="row" spacing={1.7} alignItems="center">
+                        <ProfileAvatarUploader
+                            size={44}
+                            avatarUrl={profile?.avatar_url}
+                            fallback={(profile?.full_name || user?.email || "U").slice(0, 1).toUpperCase()}
+                            onUploaded={refreshProfile}
+                        />
                         <Box sx={{ minWidth: 0 }}>
                             <Typography variant="body2" fontWeight={700} noWrap>
                                 {profile?.full_name || user?.email || "Unknown user"}

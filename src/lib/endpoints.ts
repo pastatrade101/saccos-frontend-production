@@ -101,6 +101,7 @@ const routeMap = {
     users: {
         me: "/users/me",
         passwordChanged: "/users/me/password-changed",
+        avatar: "/users/me/avatar",
         list: "/users",
         create: "/users",
         update: (userId: string) => `/users/${userId}`,
@@ -357,6 +358,7 @@ export const endpoints = {
     users: {
         me: () => routeMap.users.me,
         passwordChanged: () => routeMap.users.passwordChanged,
+        avatar: () => routeMap.users.avatar,
         list: () => routeMap.users.list,
         create: () => routeMap.users.create,
         update: (userId: string) => routeMap.users.update(userId),

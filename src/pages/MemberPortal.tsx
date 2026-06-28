@@ -1,6 +1,10 @@
 import { MotionCard, MotionModal, easeOutFast, springSoft, useReducedMotionSafe } from "../ui/motion";
 import AccountBalanceWalletRoundedIcon from "@mui/icons-material/AccountBalanceWalletRounded";
-import ApartmentRoundedIcon from "@mui/icons-material/ApartmentRounded";
+import PersonRoundedIcon from "@mui/icons-material/PersonRounded";
+import ContactPhoneRoundedIcon from "@mui/icons-material/ContactPhoneRounded";
+import Diversity3RoundedIcon from "@mui/icons-material/Diversity3Rounded";
+import CardMembershipRoundedIcon from "@mui/icons-material/CardMembershipRounded";
+import AccountCircleRoundedIcon from "@mui/icons-material/AccountCircleRounded";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import UploadFileRoundedIcon from "@mui/icons-material/UploadFileRounded";
 import ApprovalRoundedIcon from "@mui/icons-material/ApprovalRounded";
@@ -66,6 +70,8 @@ import {
     StepLabel,
     Stepper,
     Switch,
+    Tab,
+    Tabs,
     TablePagination,
     TextField,
     Typography,
@@ -91,6 +97,7 @@ import { LoanEligibilitySummary } from "../components/loan-capacity/LoanEligibil
 import { NotificationBell } from "../components/notifications/NotificationBell";
 import { SearchableSelect } from "../components/SearchableSelect";
 import { useToast } from "../components/Toast";
+import { ProfileAvatarUploader } from "../components/ProfileAvatarUploader";
 import { AppLoader } from "../components/AppLoader";
 import { findLocationByName, useTanzaniaLocations } from "../hooks/useTanzaniaLocations";
 import { api, getApiErrorCode, getApiErrorDetails, getApiErrorMessage } from "../lib/api";
@@ -1014,12 +1021,37 @@ function AccountSummaryCard({ icon: Icon, label, value, helper, tone, delta }: M
     );
 }
 
+function titleCase(value?: string | null) {
+    if (!value) {
+        return null;
+    }
+    return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function ProfileField({ label, value }: { label: string; value?: string | number | null }) {
+    const hasValue = value === 0 || Boolean(value);
+    return (
+        <Box>
+            <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ display: "block", textTransform: "uppercase", letterSpacing: 0.5, fontSize: 10.5, fontWeight: 700 }}
+            >
+                {label}
+            </Typography>
+            <Typography variant="body2" sx={{ fontWeight: 600, wordBreak: "break-word" }}>
+                {hasValue ? value : "—"}
+            </Typography>
+        </Box>
+    );
+}
+
 export function MemberPortalPage() {
     const theme = useTheme();
     const navigate = useNavigate();
     const isDesktop = useMediaQuery(theme.breakpoints.up("lg"));
     const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
-    const { profile, selectedTenantName, selectedBranchName, signOut, user, twoFactorSetupRequired } = useAuth();
+    const { profile, selectedTenantName, selectedBranchName, signOut, user, twoFactorSetupRequired, refreshProfile } = useAuth();
     const { pushToast } = useToast();
     const { theme: themeMode, toggleTheme } = useUI();
     const prefersReducedMotion = useReducedMotionSafe();
@@ -1042,6 +1074,8 @@ export function MemberPortalPage() {
     const [error, setError] = useState<string | null>(null);
     const [warning, setWarning] = useState<string | null>(null);
     const [showProfileCompletionDialog, setShowProfileCompletionDialog] = useState(false);
+    const [showMemberProfileDialog, setShowMemberProfileDialog] = useState(false);
+    const [memberProfileTab, setMemberProfileTab] = useState(0);
     const [savingProfileCompletion, setSavingProfileCompletion] = useState(false);
     const [showApplyDialog, setShowApplyDialog] = useState(false);
     const [editingLoanApplicationId, setEditingLoanApplicationId] = useState<string | null>(null);
@@ -6978,19 +7012,14 @@ export function MemberPortalPage() {
                             boxShadow: `0 14px 28px ${alpha(memberAccentStrong, 0.08)}`
                         }}
                     >
-                        <Stack direction="row" spacing={1.1} alignItems="center">
-                            <Avatar
-                                sx={{
-                                    width: 42,
-                                    height: 42,
-                                    borderRadius: 1.6,
-                                    bgcolor: alpha(memberAccent, 0.16),
-                                    color: memberAccentStrong,
-                                    fontWeight: 800
-                                }}
-                            >
-                                {(profile?.full_name || "M").slice(0, 1).toUpperCase()}
-                            </Avatar>
+                        <Stack direction="row" spacing={1.4} alignItems="center">
+                            <ProfileAvatarUploader
+                                size={46}
+                                avatarUrl={profile?.avatar_url}
+                                fallback={(profile?.full_name || "M").slice(0, 1).toUpperCase()}
+                                onUploaded={refreshProfile}
+                                sx={{ "& .MuiAvatar-root": { bgcolor: alpha(memberAccent, 0.16), color: memberAccentStrong } }}
+                            />
                             <Box sx={{ minWidth: 0 }}>
                                 <Typography variant="subtitle2" sx={{ fontWeight: 800 }} noWrap>
                                     {profile?.full_name || "Member"}
@@ -7362,6 +7391,7 @@ export function MemberPortalPage() {
                                 }}
                             >
                                 <Avatar
+                                    src={profile?.avatar_url || undefined}
                                     sx={{
                                         width: 32,
                                         height: 32,
@@ -7427,6 +7457,7 @@ export function MemberPortalPage() {
                             >
                                 <ListItemAvatar>
                                     <Avatar
+                                        src={profile?.avatar_url || undefined}
                                         sx={{
                                             width: 42,
                                             height: 42,
@@ -7473,20 +7504,11 @@ export function MemberPortalPage() {
                                 </ListItem>
                                 <ListItem sx={{ py: 0.35, px: 1.25 }}>
                                     <ListItemIcon sx={{ minWidth: 34 }}>
-                                        <ApartmentRoundedIcon fontSize="small" />
+                                        <CardMembershipRoundedIcon fontSize="small" />
                                     </ListItemIcon>
                                     <ListItemText
-                                        primary={<Typography variant="body2">Branch</Typography>}
-                                        secondary={<Typography variant="caption">{selectedBranchName || "Assigned branch"}</Typography>}
-                                    />
-                                </ListItem>
-                                <ListItem sx={{ py: 0.35, px: 1.25 }}>
-                                    <ListItemIcon sx={{ minWidth: 34 }}>
-                                        <StarRoundedIcon fontSize="small" />
-                                    </ListItemIcon>
-                                    <ListItemText
-                                        primary={<Typography variant="body2">Deployment</Typography>}
-                                        secondary={<Typography variant="caption">SINGLE-TENANT WORKSPACE</Typography>}
+                                        primary={<Typography variant="body2">Member No.</Typography>}
+                                        secondary={<Typography variant="caption">{memberRecord?.member_no || "—"}</Typography>}
                                     />
                                 </ListItem>
                                 <ListItem sx={{ py: 0.35, px: 1.25 }}>
@@ -7502,6 +7524,18 @@ export function MemberPortalPage() {
                         </Box>
 
                         <List dense disablePadding sx={{ mt: 0.75 }}>
+                            <ListItemButton
+                                sx={{ borderRadius: 0.5, minHeight: 42 }}
+                                onClick={() => handleProfileMenuAction(() => {
+                                    setMemberProfileTab(0);
+                                    setShowMemberProfileDialog(true);
+                                })}
+                            >
+                                <ListItemIcon sx={{ minWidth: 34 }}>
+                                    <AccountCircleRoundedIcon fontSize="small" />
+                                </ListItemIcon>
+                                <ListItemText primary="My Profile" />
+                            </ListItemButton>
                             <ListItemButton sx={{ borderRadius: 0.5, minHeight: 42 }} onClick={() => handleProfileMenuAction(startMemberPortalTour)}>
                                 <ListItemIcon sx={{ minWidth: 34 }}>
                                     <TipsAndUpdatesRoundedIcon fontSize="small" />
@@ -7604,6 +7638,109 @@ export function MemberPortalPage() {
                         </List>
                     </Box>
                 </Menu>
+
+                <MotionModal
+                    open={showMemberProfileDialog}
+                    onClose={() => setShowMemberProfileDialog(false)}
+                    maxWidth="sm"
+                    fullWidth
+                >
+                    <DialogTitle sx={{ pb: 1 }}>
+                        <Stack direction="row" spacing={1.5} alignItems="center">
+                            <Avatar
+                                src={profile?.avatar_url || undefined}
+                                sx={{ width: 48, height: 48, bgcolor: alpha(memberAccent, 0.16), color: memberAccent, fontWeight: 800 }}
+                            >
+                                {(profile?.full_name || "M").slice(0, 1).toUpperCase()}
+                            </Avatar>
+                            <Box sx={{ minWidth: 0 }}>
+                                <Typography variant="subtitle1" sx={{ fontWeight: 800 }} noWrap>
+                                    {memberRecord?.full_name || profile?.full_name || "Member"}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary" noWrap>
+                                    {memberRecord?.member_no ? `Member No. ${memberRecord.member_no}` : (memberRecord?.email || user?.email || "")}
+                                </Typography>
+                            </Box>
+                        </Stack>
+                    </DialogTitle>
+                    <Tabs
+                        value={memberProfileTab}
+                        onChange={(_event, value) => setMemberProfileTab(value)}
+                        variant="fullWidth"
+                        sx={{ px: 1, borderBottom: 1, borderColor: "divider", minHeight: 0 }}
+                    >
+                        <Tab icon={<PersonRoundedIcon fontSize="small" />} iconPosition="start" label="Personal" sx={{ minHeight: 44, textTransform: "none" }} />
+                        <Tab icon={<ContactPhoneRoundedIcon fontSize="small" />} iconPosition="start" label="Contact" sx={{ minHeight: 44, textTransform: "none" }} />
+                        <Tab icon={<Diversity3RoundedIcon fontSize="small" />} iconPosition="start" label="Kin & Heir" sx={{ minHeight: 44, textTransform: "none" }} />
+                        <Tab icon={<CardMembershipRoundedIcon fontSize="small" />} iconPosition="start" label="Membership" sx={{ minHeight: 44, textTransform: "none" }} />
+                    </Tabs>
+                    <DialogContent dividers sx={{ minHeight: 280 }}>
+                        {memberProfileTab === 0 ? (
+                            <Grid container spacing={2}>
+                                <Grid size={{ xs: 6 }}><ProfileField label="Full name" value={memberRecord?.full_name || profile?.full_name} /></Grid>
+                                <Grid size={{ xs: 6 }}><ProfileField label="Member No." value={memberRecord?.member_no} /></Grid>
+                                <Grid size={{ xs: 6 }}><ProfileField label="Date of birth" value={memberRecord?.dob ? formatDate(memberRecord.dob) : null} /></Grid>
+                                <Grid size={{ xs: 6 }}><ProfileField label="Gender" value={titleCase(memberRecord?.gender)} /></Grid>
+                                <Grid size={{ xs: 6 }}><ProfileField label="Marital status" value={titleCase(memberRecord?.marital_status)} /></Grid>
+                                <Grid size={{ xs: 6 }}><ProfileField label="Occupation" value={memberRecord?.occupation} /></Grid>
+                                <Grid size={{ xs: 6 }}><ProfileField label="Ilboru completion year" value={memberRecord?.ilboru_completion_year} /></Grid>
+                                <Grid size={{ xs: 6 }}><ProfileField label="National ID / NIDA" value={memberRecord?.national_id || memberRecord?.nida_no} /></Grid>
+                            </Grid>
+                        ) : null}
+                        {memberProfileTab === 1 ? (
+                            <Grid container spacing={2}>
+                                <Grid size={{ xs: 6 }}><ProfileField label="Phone" value={memberRecord?.phone} /></Grid>
+                                <Grid size={{ xs: 6 }}><ProfileField label="Email" value={memberRecord?.email || user?.email} /></Grid>
+                                <Grid size={{ xs: 6 }}><ProfileField label="Region" value={memberRecord?.region} /></Grid>
+                                <Grid size={{ xs: 6 }}><ProfileField label="District" value={memberRecord?.district} /></Grid>
+                                <Grid size={{ xs: 6 }}><ProfileField label="Ward" value={memberRecord?.ward} /></Grid>
+                                <Grid size={{ xs: 6 }}><ProfileField label="Street / village" value={memberRecord?.street_or_village} /></Grid>
+                                <Grid size={{ xs: 12 }}><ProfileField label="Residential address" value={memberRecord?.residential_address || memberRecord?.address_line1} /></Grid>
+                            </Grid>
+                        ) : null}
+                        {memberProfileTab === 2 ? (
+                            <Stack spacing={2}>
+                                <Typography variant="overline" color="text.secondary">Next of kin</Typography>
+                                <Grid container spacing={2}>
+                                    <Grid size={{ xs: 6 }}><ProfileField label="Name" value={memberRecord?.next_of_kin_name} /></Grid>
+                                    <Grid size={{ xs: 6 }}><ProfileField label="Relationship" value={memberRecord?.next_of_kin_relationship ? formatNextOfKinRelationship(memberRecord.next_of_kin_relationship) : null} /></Grid>
+                                    <Grid size={{ xs: 6 }}><ProfileField label="Phone" value={memberRecord?.next_of_kin_phone} /></Grid>
+                                    <Grid size={{ xs: 6 }}><ProfileField label="Address" value={memberRecord?.next_of_kin_address} /></Grid>
+                                </Grid>
+                                <Divider />
+                                <Typography variant="overline" color="text.secondary">Nominated heir (Mrithi)</Typography>
+                                <Grid container spacing={2}>
+                                    <Grid size={{ xs: 6 }}><ProfileField label="Name" value={memberRecord?.heir_name} /></Grid>
+                                    <Grid size={{ xs: 6 }}><ProfileField label="Relationship" value={memberRecord?.heir_relationship ? formatNextOfKinRelationship(memberRecord.heir_relationship) : null} /></Grid>
+                                    <Grid size={{ xs: 6 }}><ProfileField label="Phone" value={memberRecord?.heir_phone} /></Grid>
+                                    <Grid size={{ xs: 6 }}><ProfileField label="Address" value={memberRecord?.heir_address} /></Grid>
+                                </Grid>
+                            </Stack>
+                        ) : null}
+                        {memberProfileTab === 3 ? (
+                            <Grid container spacing={2}>
+                                <Grid size={{ xs: 6 }}><ProfileField label="Membership type" value={titleCase(memberRecord?.membership_type)} /></Grid>
+                                <Grid size={{ xs: 6 }}><ProfileField label="Status" value={titleCase(memberRecord?.status)} /></Grid>
+                                <Grid size={{ xs: 6 }}><ProfileField label="Initial shares" value={memberRecord?.initial_share_amount != null ? formatCurrency(memberRecord.initial_share_amount) : null} /></Grid>
+                                <Grid size={{ xs: 6 }}><ProfileField label="Monthly savings" value={memberRecord?.monthly_savings_commitment != null ? formatCurrency(memberRecord.monthly_savings_commitment) : null} /></Grid>
+                                <Grid size={{ xs: 6 }}><ProfileField label="Legitimate income" value={memberRecord?.legitimate_income_declared ? "Confirmed" : "Not confirmed"} /></Grid>
+                                <Grid size={{ xs: 6 }}><ProfileField label="No conflicting business" value={memberRecord?.no_conflicting_business_declared ? "Confirmed" : "Not confirmed"} /></Grid>
+                            </Grid>
+                        ) : null}
+                    </DialogContent>
+                    <DialogActions sx={{ px: 2.5, py: 1.5 }}>
+                        <Button color="inherit" onClick={() => setShowMemberProfileDialog(false)}>Close</Button>
+                        <Button
+                            variant="contained"
+                            onClick={() => {
+                                setShowMemberProfileDialog(false);
+                                openProfileCompletionDialog();
+                            }}
+                        >
+                            Edit profile
+                        </Button>
+                    </DialogActions>
+                </MotionModal>
 
                 <Box
                     sx={{
