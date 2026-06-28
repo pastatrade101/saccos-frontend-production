@@ -1455,6 +1455,15 @@ export function MembersPage() {
             )
         },
         {
+            key: "member_no",
+            header: "Member No.",
+            render: (row) => (
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    {row.member_no || "—"}
+                </Typography>
+            )
+        },
+        {
             key: "branch",
             header: "Branch",
             render: (row) => (
