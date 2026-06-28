@@ -35,6 +35,25 @@ interface AuthFlowError extends Error {
     details?: unknown;
 }
 
+// Slides for the right-hand visual panel. Drop more images into /public and add
+// entries here to extend the carousel.
+const AUTH_SLIDES = [
+    {
+        image: "/13321.jpg",
+        eyebrow: "Savings & Shares",
+        title: "Grow your wealth, together",
+        copy: "Track your savings, shares and dividends in one secure place — always up to date."
+    },
+    {
+        image: "/bk.jpg",
+        eyebrow: "Digital SACCOS",
+        title: "Banking that moves with you",
+        copy: "Apply for loans, follow repayments and manage your account anytime, anywhere."
+    }
+] as const;
+
+const AUTH_SLIDE_INTERVAL_MS = 6000;
+
 export function SignInPage() {
     const navigate = useNavigate();
     const { pushToast } = useToast();
@@ -57,6 +76,7 @@ export function SignInPage() {
     // endpoint only returns branches when registration is on, so a non-empty list
     // means the "Create an account" link should be shown.
     const [registrationEnabled, setRegistrationEnabled] = useState(false);
+    const [activeSlide, setActiveSlide] = useState(0);
     const otpInputRefs = useRef<Array<HTMLInputElement | null>>([]);
     const totpCode = useMemo(() => otpDigits.join(""), [otpDigits]);
 
@@ -67,6 +87,16 @@ export function SignInPage() {
             password: ""
         }
     });
+
+    useEffect(() => {
+        if (AUTH_SLIDES.length <= 1) {
+            return;
+        }
+        const id = window.setInterval(() => {
+            setActiveSlide((current) => (current + 1) % AUTH_SLIDES.length);
+        }, AUTH_SLIDE_INTERVAL_MS);
+        return () => window.clearInterval(id);
+    }, []);
 
     useEffect(() => {
         let isMounted = true;
@@ -329,8 +359,8 @@ export function SignInPage() {
 
     return (
         <div className={pageStyles.authShell}>
-            <div className={`${pageStyles.authFrame} ${pageStyles.authFrameLogin}`}>
-                <section className={`${pageStyles.authPanel} ${pageStyles.authPanelLogin}`}>
+            <div className={`${pageStyles.authFrame} ${pageStyles.authFrameSplit}`}>
+                <section className={`${pageStyles.authPanel} ${pageStyles.authPanelForm}`}>
                     <div className={`${pageStyles.authBrandRow} ${pageStyles.authBrandRowCentered}`}>
                         <div className={pageStyles.authBrandIdentity}>
                             <img
@@ -401,7 +431,7 @@ export function SignInPage() {
                         </button>
                         {registrationEnabled ? (
                             <RouterLink className={pageStyles.authForgotLink} to="/signup">
-                                New here? Create an account
+                                Apply for membership
                             </RouterLink>
                         ) : null}
                     </div>
@@ -416,6 +446,40 @@ export function SignInPage() {
                         </RouterLink>
                     </p>
                 </section>
+
+                <aside className={pageStyles.authVisual}>
+                    {AUTH_SLIDES.map((slide, index) => (
+                        <div
+                            key={slide.image}
+                            className={`${pageStyles.authSlide} ${index === activeSlide ? pageStyles.authSlideActive : ""}`}
+                            style={{ backgroundImage: `url(${slide.image})` }}
+                            aria-hidden="true"
+                        />
+                    ))}
+                    <div className={pageStyles.authVisualOverlay} aria-hidden="true" />
+                    <div className={pageStyles.authVisualContent}>
+                        <div className={pageStyles.authVisualCaption} key={activeSlide}>
+                            <span className={pageStyles.authVisualEyebrow}>{AUTH_SLIDES[activeSlide].eyebrow}</span>
+                            <h2 className={pageStyles.authVisualTitle}>{AUTH_SLIDES[activeSlide].title}</h2>
+                            <p className={pageStyles.authVisualCopy}>{AUTH_SLIDES[activeSlide].copy}</p>
+                            {AUTH_SLIDES.length > 1 ? (
+                                <div className={pageStyles.authSliderDots} role="tablist" aria-label="Slides">
+                                    {AUTH_SLIDES.map((slide, index) => (
+                                        <button
+                                            key={slide.image}
+                                            type="button"
+                                            role="tab"
+                                            aria-selected={index === activeSlide}
+                                            aria-label={`Show slide ${index + 1}`}
+                                            className={`${pageStyles.authSliderDot} ${index === activeSlide ? pageStyles.authSliderDotActive : ""}`}
+                                            onClick={() => setActiveSlide(index)}
+                                        />
+                                    ))}
+                                </div>
+                            ) : null}
+                        </div>
+                    </div>
+                </aside>
             </div>
 
             {showFirstTimeSetup ? (
