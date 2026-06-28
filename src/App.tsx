@@ -7,6 +7,7 @@ import { ProtectedRoute } from "./auth/ProtectedRoute";
 import { AppLayout } from "./components/Layout";
 import { AppLoader } from "./components/AppLoader";
 import { PwaInstallPrompt } from "./components/PwaInstallPrompt";
+import { RootErrorBoundary } from "./components/RootErrorBoundary";
 import { SessionTimeoutManager } from "./components/SessionTimeoutManager";
 
 // Route pages are code-split so each one is downloaded on demand instead of
@@ -189,6 +190,7 @@ function SetupRouteGuard({ children }: { children: ReactNode }) {
 export default function App() {
     return (
         <>
+            <RootErrorBoundary>
             <Suspense fallback={<AppLoader message="Loading workspace..." />}>
             <Routes>
                 <Route path="/" element={<PublicHomePage />} />
@@ -371,6 +373,7 @@ export default function App() {
                 <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
             </Suspense>
+            </RootErrorBoundary>
             <PwaInstallPrompt />
             <SessionTimeoutManager />
         </>
