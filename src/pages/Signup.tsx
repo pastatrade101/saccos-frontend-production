@@ -1371,10 +1371,10 @@ export function SignupPage() {
                                     <Box component="img" src="/icon-ilboru.png" alt="ILBORU-ALUMNI logo" sx={{ width: { xs: 38, md: 42 }, height: { xs: 38, md: 42 }, objectFit: "contain" }} />
                                     <Box>
                                         <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: "-0.02em", fontSize: { xs: "1.12rem", md: "1.2rem" } }}>
-                                            SMART SACCOS
+                                            ILBORU ALUMNI SACCOS LTD
                                         </Typography>
-                                        <Typography variant="body2" sx={{ color: mutedText, fontSize: "0.8rem" }}>
-                                            Onboarding
+                                        <Typography variant="body2" sx={{ color: mutedText, fontSize: "0.8rem", fontWeight: 700 }}>
+                                            Further Together
                                         </Typography>
                                     </Box>
                                 </Stack>
