@@ -28,6 +28,7 @@ import {
     DialogActions,
     DialogContent,
     DialogTitle,
+    FormControlLabel,
     Grid,
     InputAdornment,
     MenuItem,
@@ -142,7 +143,15 @@ const updateSchema = z.object({
     email: z.string().email("Enter a valid email.").optional().or(z.literal("")),
     national_id: z.string().min(5, "National ID is required."),
     branch_id: z.string().uuid("Select a branch."),
-    status: z.enum(["active", "suspended", "exited", "approved_pending_payment"]).default("active")
+    status: z.enum(["active", "suspended", "exited", "approved_pending_payment"]).default("active"),
+    // By-law fields so staff can complete a member's record on their behalf.
+    ilboru_completion_year: z.union([z.literal(""), z.coerce.number().int().min(1980, "Year must be 1980–2022.").max(2022, "Year must be 1980–2022.")]).optional(),
+    heir_name: z.string().trim().max(120).optional().or(z.literal("")),
+    heir_phone: z.string().trim().max(30).optional().or(z.literal("")),
+    heir_relationship: z.string().trim().max(80).optional().or(z.literal("")),
+    heir_address: z.string().trim().max(255).optional().or(z.literal("")),
+    legitimate_income_declared: z.boolean().optional(),
+    no_conflicting_business_declared: z.boolean().optional()
 });
 
 type UpdateMemberFormValues = z.infer<typeof updateSchema>;
@@ -488,7 +497,14 @@ export function MembersPage() {
             email: "",
             national_id: "",
             branch_id: selectedBranchId || "",
-            status: "active"
+            status: "active",
+            ilboru_completion_year: "",
+            heir_name: "",
+            heir_phone: "",
+            heir_relationship: "",
+            heir_address: "",
+            legitimate_income_declared: false,
+            no_conflicting_business_declared: false
         }
     });
 
@@ -836,7 +852,14 @@ export function MembersPage() {
             email: selectedMember?.email || "",
             national_id: selectedMember?.national_id || "",
             branch_id: selectedMember?.branch_id || selectedBranchId || branches[0]?.id || "",
-            status: selectedMember?.status || "active"
+            status: selectedMember?.status || "active",
+            ilboru_completion_year: selectedMember?.ilboru_completion_year || "",
+            heir_name: selectedMember?.heir_name || "",
+            heir_phone: selectedMember?.heir_phone || "",
+            heir_relationship: selectedMember?.heir_relationship || "",
+            heir_address: selectedMember?.heir_address || "",
+            legitimate_income_declared: Boolean(selectedMember?.legitimate_income_declared),
+            no_conflicting_business_declared: Boolean(selectedMember?.no_conflicting_business_declared)
         });
     }, [branches, selectedBranchId, selectedMember, updateForm]);
 
@@ -1189,7 +1212,16 @@ export function MembersPage() {
                 email: values.email || null,
                 national_id: values.national_id,
                 branch_id: values.branch_id,
-                status: values.status
+                status: values.status,
+                ilboru_completion_year: values.ilboru_completion_year === "" || values.ilboru_completion_year === undefined
+                    ? null
+                    : Number(values.ilboru_completion_year),
+                heir_name: values.heir_name || null,
+                heir_phone: values.heir_phone || null,
+                heir_relationship: values.heir_relationship || null,
+                heir_address: values.heir_address || null,
+                legitimate_income_declared: Boolean(values.legitimate_income_declared),
+                no_conflicting_business_declared: Boolean(values.no_conflicting_business_declared)
             };
 
             const { data } = await api.patch<UpdateMemberResponse>(
@@ -2466,6 +2498,58 @@ export function MembersPage() {
                                                         </TextField>
                                                     </Grid>
                                                     </Grid>
+
+                                                    <Divider textAlign="left">
+                                                        <Typography variant="caption" color="text.secondary">By-law eligibility &amp; heir (Mrithi)</Typography>
+                                                    </Divider>
+                                                    <Grid container spacing={2}>
+                                                        <Grid size={{ xs: 12, md: 4 }}>
+                                                            <TextField
+                                                                select
+                                                                fullWidth
+                                                                label="Ilboru completion year"
+                                                                value={updateForm.watch("ilboru_completion_year") ?? ""}
+                                                                onChange={(event) => updateForm.setValue("ilboru_completion_year", event.target.value === "" ? "" : Number(event.target.value), { shouldValidate: true })}
+                                                                error={Boolean(updateForm.formState.errors.ilboru_completion_year)}
+                                                                helperText={updateForm.formState.errors.ilboru_completion_year?.message}
+                                                            >
+                                                                <MenuItem value="">Select year</MenuItem>
+                                                                {Array.from({ length: 2022 - 1980 + 1 }, (_unused, index) => 2022 - index).map((year) => (
+                                                                    <MenuItem key={year} value={year}>{year}</MenuItem>
+                                                                ))}
+                                                            </TextField>
+                                                        </Grid>
+                                                        <Grid size={{ xs: 12, md: 4 }}>
+                                                            <TextField fullWidth label="Heir name (Mrithi)" {...updateForm.register("heir_name")} />
+                                                        </Grid>
+                                                        <Grid size={{ xs: 12, md: 4 }}>
+                                                            <TextField fullWidth label="Heir relationship" {...updateForm.register("heir_relationship")} />
+                                                        </Grid>
+                                                        <Grid size={{ xs: 12, md: 4 }}>
+                                                            <TextField fullWidth label="Heir phone" {...updateForm.register("heir_phone")} />
+                                                        </Grid>
+                                                        <Grid size={{ xs: 12, md: 8 }}>
+                                                            <TextField fullWidth label="Heir address" {...updateForm.register("heir_address")} />
+                                                        </Grid>
+                                                    </Grid>
+                                                    <FormControlLabel
+                                                        control={
+                                                            <Checkbox
+                                                                checked={Boolean(updateForm.watch("legitimate_income_declared"))}
+                                                                onChange={(event) => updateForm.setValue("legitimate_income_declared", event.target.checked, { shouldValidate: true })}
+                                                            />
+                                                        }
+                                                        label="Legitimate income confirmed (by-laws §10c)."
+                                                    />
+                                                    <FormControlLabel
+                                                        control={
+                                                            <Checkbox
+                                                                checked={Boolean(updateForm.watch("no_conflicting_business_declared"))}
+                                                                onChange={(event) => updateForm.setValue("no_conflicting_business_declared", event.target.checked, { shouldValidate: true })}
+                                                            />
+                                                        }
+                                                        label="No conflicting savings/lending business (by-laws §10f)."
+                                                    />
                                                     <Button type="submit" variant="contained" disabled={updatingMember}>
                                                         {updatingMember ? "Updating member..." : "Update Member"}
                                                     </Button>

@@ -1022,12 +1022,41 @@ export function MemberApplicationsPage() {
                                             />
                                             <ApplicationDetailItem label="Kin address" value={displayApplicationValue(selected?.next_of_kin_address)} />
                                             <Divider flexItem sx={{ my: 0.5 }} />
+                                            <ApplicationDetailItem label="Nominated heir (Mrithi)" value={displayApplicationValue(selected?.heir_name)} />
+                                            <ApplicationDetailItem label="Heir phone" value={displayApplicationValue(selected?.heir_phone)} />
+                                            <ApplicationDetailItem
+                                                label="Heir relationship"
+                                                value={selected?.heir_relationship ? formatNextOfKinRelationship(selected.heir_relationship) : "Not provided"}
+                                            />
+                                            <ApplicationDetailItem label="Heir address" value={displayApplicationValue(selected?.heir_address)} />
+                                            <Divider flexItem sx={{ my: 0.5 }} />
                                             <ApplicationDetailItem label="Membership type" value={displayApplicationValue(selected?.membership_type)} />
                                             <ApplicationDetailItem label="Initial shares" value={formatCurrency(selected?.initial_share_amount || 0)} />
                                             <ApplicationDetailItem label="Monthly savings" value={formatCurrency(selected?.monthly_savings_commitment || 0)} />
                                             <ApplicationDetailItem label="Membership fee" value={formatCurrency(selected?.membership_fee_amount || 0)} />
                                             <ApplicationDetailItem label="Fee paid" value={formatCurrency(selected?.membership_fee_paid || 0)} />
                                             <ApplicationDetailItem label="Balance outstanding" value={formatCurrency(selectedMembershipBalance)} />
+                                        </ReviewSectionCard>
+
+                                        <ReviewSectionCard
+                                            title="Eligibility & declarations (by-laws)"
+                                            description="Common bond and member declarations to verify before the approval handoff."
+                                            icon={<AssignmentTurnedInRoundedIcon fontSize="small" />}
+                                        >
+                                            <ApplicationDetailItem
+                                                label="Completed Ilboru Secondary"
+                                                value={selected?.ilboru_completion_year ? `Year ${selected.ilboru_completion_year}` : "Not provided"}
+                                            />
+                                            <ApplicationDetailItem
+                                                label="Legitimate income declared"
+                                                value={selected?.legitimate_income_declared ? "Confirmed" : "Not confirmed"}
+                                            />
+                                            <ApplicationDetailItem
+                                                label="No conflicting business"
+                                                value={selected?.no_conflicting_business_declared ? "Confirmed" : "Not confirmed"}
+                                            />
+                                            <ApplicationDetailItem label="Terms & by-laws accepted" value={selected?.terms_accepted ? "Yes" : "No"} />
+                                            <ApplicationDetailItem label="Data processing consent" value={selected?.data_processing_consent ? "Yes" : "No"} />
                                         </ReviewSectionCard>
                                     </Stack>
                                 </Grid>

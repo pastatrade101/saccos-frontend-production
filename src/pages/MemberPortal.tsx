@@ -441,7 +441,15 @@ const memberProfileCompletionSchema = z.object({
     next_of_kin_name: z.string().trim().max(120, "Next of kin name is too long.").optional().or(z.literal("")),
     next_of_kin_phone: z.string().trim().max(30, "Next of kin phone is too long.").optional().or(z.literal("")),
     next_of_kin_relationship: z.string().trim().max(80, "Relationship is too long.").optional().or(z.literal("")),
-    next_of_kin_address: z.string().trim().max(255, "Next of kin address is too long.").optional().or(z.literal(""))
+    next_of_kin_address: z.string().trim().max(255, "Next of kin address is too long.").optional().or(z.literal("")),
+    // By-law fields so existing members can complete the same data as new applicants.
+    ilboru_completion_year: z.union([z.literal(""), z.coerce.number().int().min(1980, "Year must be 1980–2022.").max(2022, "Year must be 1980–2022.")]).optional(),
+    heir_name: z.string().trim().max(120, "Heir name is too long.").optional().or(z.literal("")),
+    heir_phone: z.string().trim().max(30, "Heir phone is too long.").optional().or(z.literal("")),
+    heir_relationship: z.string().trim().max(80, "Heir relationship is too long.").optional().or(z.literal("")),
+    heir_address: z.string().trim().max(255, "Heir address is too long.").optional().or(z.literal("")),
+    legitimate_income_declared: z.boolean().optional(),
+    no_conflicting_business_declared: z.boolean().optional()
 });
 
 type MemberProfileCompletionValues = z.infer<typeof memberProfileCompletionSchema>;
@@ -1159,7 +1167,14 @@ export function MemberPortalPage() {
             next_of_kin_name: "",
             next_of_kin_phone: "",
             next_of_kin_relationship: "",
-            next_of_kin_address: ""
+            next_of_kin_address: "",
+            ilboru_completion_year: "",
+            heir_name: "",
+            heir_phone: "",
+            heir_relationship: "",
+            heir_address: "",
+            legitimate_income_declared: false,
+            no_conflicting_business_declared: false
         }
     });
     const requiresMembershipFeePayment = memberApplication?.status === "approved_pending_payment";
@@ -1188,6 +1203,13 @@ export function MemberPortalPage() {
         if (!memberRecord.residential_address && !memberRecord.address_line1) missing.push("residential address");
         if (!memberRecord.next_of_kin_name || !memberRecord.next_of_kin_phone || !memberRecord.next_of_kin_relationship) {
             missing.push("next of kin details");
+        }
+        if (!memberRecord.ilboru_completion_year) missing.push("Ilboru completion year");
+        if (!memberRecord.heir_name || !memberRecord.heir_phone || !memberRecord.heir_relationship) {
+            missing.push("nominated heir (Mrithi)");
+        }
+        if (!memberRecord.legitimate_income_declared || !memberRecord.no_conflicting_business_declared) {
+            missing.push("membership declarations");
         }
 
         return missing;
@@ -2093,7 +2115,14 @@ export function MemberPortalPage() {
             next_of_kin_name: memberRecord?.next_of_kin_name || "",
             next_of_kin_phone: memberRecord?.next_of_kin_phone || "",
             next_of_kin_relationship: memberRecord?.next_of_kin_relationship || "",
-            next_of_kin_address: memberRecord?.next_of_kin_address || ""
+            next_of_kin_address: memberRecord?.next_of_kin_address || "",
+            ilboru_completion_year: memberRecord?.ilboru_completion_year || "",
+            heir_name: memberRecord?.heir_name || "",
+            heir_phone: memberRecord?.heir_phone || "",
+            heir_relationship: memberRecord?.heir_relationship || "",
+            heir_address: memberRecord?.heir_address || "",
+            legitimate_income_declared: Boolean(memberRecord?.legitimate_income_declared),
+            no_conflicting_business_declared: Boolean(memberRecord?.no_conflicting_business_declared)
         });
         setShowProfileCompletionDialog(true);
     };
@@ -2285,7 +2314,14 @@ export function MemberPortalPage() {
                 next_of_kin_name: toNullableProfileValue(values.next_of_kin_name),
                 next_of_kin_phone: toNullableProfileValue(values.next_of_kin_phone),
                 next_of_kin_relationship: toNullableProfileValue(values.next_of_kin_relationship),
-                next_of_kin_address: toNullableProfileValue(values.next_of_kin_address)
+                next_of_kin_address: toNullableProfileValue(values.next_of_kin_address),
+                heir_name: toNullableProfileValue(values.heir_name),
+                heir_phone: toNullableProfileValue(values.heir_phone),
+                heir_relationship: toNullableProfileValue(values.heir_relationship),
+                heir_address: toNullableProfileValue(values.heir_address),
+                ilboru_completion_year: values.ilboru_completion_year ? Number(values.ilboru_completion_year) : null,
+                legitimate_income_declared: Boolean(values.legitimate_income_declared),
+                no_conflicting_business_declared: Boolean(values.no_conflicting_business_declared)
             };
 
             const { data } = await api.patch<UpdateOwnMemberProfileCompletionResponse>(
@@ -9514,6 +9550,82 @@ export function MemberPortalPage() {
                                                 maxRows={3}
                                                 label="Next of kin address"
                                                 {...memberProfileCompletionForm.register("next_of_kin_address")}
+                                            />
+                                        </Stack>
+                                    </Paper>
+                                </Grid>
+
+                                <Grid size={{ xs: 12 }}>
+                                    <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+                                        <Stack spacing={1.4}>
+                                            <Box>
+                                                <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+                                                    Membership eligibility &amp; heir
+                                                </Typography>
+                                                <Typography variant="caption" color="text.secondary">
+                                                    Required by the SACCO by-laws so your record is complete.
+                                                </Typography>
+                                            </Box>
+                                            <Grid container columnSpacing={1.5} rowSpacing={1.5}>
+                                                <Grid size={{ xs: 12, md: 4 }}>
+                                                    <TextField
+                                                        select
+                                                        fullWidth
+                                                        label="Year completed Ilboru Secondary"
+                                                        value={memberProfileCompletionForm.watch("ilboru_completion_year") ?? ""}
+                                                        onChange={(event) => memberProfileCompletionForm.setValue("ilboru_completion_year", event.target.value === "" ? "" : Number(event.target.value), { shouldValidate: true })}
+                                                        error={Boolean(memberProfileCompletionForm.formState.errors.ilboru_completion_year)}
+                                                        helperText={memberProfileCompletionForm.formState.errors.ilboru_completion_year?.message || "Common bond (by-laws §5)."}
+                                                    >
+                                                        <MenuItem value="">Select year</MenuItem>
+                                                        {Array.from({ length: 2022 - 1980 + 1 }, (_unused, index) => 2022 - index).map((year) => (
+                                                            <MenuItem key={year} value={year}>{year}</MenuItem>
+                                                        ))}
+                                                    </TextField>
+                                                </Grid>
+                                                <Grid size={{ xs: 12, md: 4 }}>
+                                                    <TextField fullWidth label="Heir name (Mrithi)" {...memberProfileCompletionForm.register("heir_name")} />
+                                                </Grid>
+                                                <Grid size={{ xs: 12, md: 4 }}>
+                                                    <TextField
+                                                        select
+                                                        fullWidth
+                                                        label="Heir relationship"
+                                                        value={memberProfileCompletionForm.watch("heir_relationship")}
+                                                        onChange={(event) => memberProfileCompletionForm.setValue("heir_relationship", event.target.value, { shouldValidate: true })}
+                                                    >
+                                                        <MenuItem value="">Select relationship</MenuItem>
+                                                        {NEXT_OF_KIN_RELATIONSHIP_OPTIONS.map((option) => (
+                                                            <MenuItem key={option.value} value={option.value}>
+                                                                {option.label}
+                                                            </MenuItem>
+                                                        ))}
+                                                    </TextField>
+                                                </Grid>
+                                                <Grid size={{ xs: 12, md: 4 }}>
+                                                    <TextField fullWidth label="Heir phone" {...memberProfileCompletionForm.register("heir_phone")} />
+                                                </Grid>
+                                                <Grid size={{ xs: 12, md: 8 }}>
+                                                    <TextField fullWidth label="Heir address" {...memberProfileCompletionForm.register("heir_address")} />
+                                                </Grid>
+                                            </Grid>
+                                            <FormControlLabel
+                                                control={
+                                                    <Checkbox
+                                                        checked={Boolean(memberProfileCompletionForm.watch("legitimate_income_declared"))}
+                                                        onChange={(event) => memberProfileCompletionForm.setValue("legitimate_income_declared", event.target.checked, { shouldValidate: true })}
+                                                    />
+                                                }
+                                                label="I confirm I have a legitimate source of income (by-laws §10c)."
+                                            />
+                                            <FormControlLabel
+                                                control={
+                                                    <Checkbox
+                                                        checked={Boolean(memberProfileCompletionForm.watch("no_conflicting_business_declared"))}
+                                                        onChange={(event) => memberProfileCompletionForm.setValue("no_conflicting_business_declared", event.target.checked, { shouldValidate: true })}
+                                                    />
+                                                }
+                                                label="I confirm I have no conflicting savings or lending business (by-laws §10f)."
                                             />
                                         </Stack>
                                     </Paper>

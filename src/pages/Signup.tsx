@@ -54,6 +54,13 @@ const PASSWORD_SPECIAL_PATTERN = /[^A-Za-z0-9]/;
 const SIGNUP_MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const MIN_INITIAL_SHARE_AMOUNT_TZS = 50000;
 const MIN_MONTHLY_SAVINGS_COMMITMENT_TZS = 10000;
+// Common bond per the SACCO by-laws (§5): Ilboru Secondary leavers in this range.
+const ILBORU_MIN_COMPLETION_YEAR = 1980;
+const ILBORU_MAX_COMPLETION_YEAR = 2022;
+const ILBORU_COMPLETION_YEARS = Array.from(
+    { length: ILBORU_MAX_COMPLETION_YEAR - ILBORU_MIN_COMPLETION_YEAR + 1 },
+    (_unused, index) => ILBORU_MAX_COMPLETION_YEAR - index
+);
 const STEP_TITLES = [
     "Personal Information",
     "Address",
@@ -221,6 +228,13 @@ const schema = z.object({
         "Enter a valid Tanzania mobile number."
     ),
     next_of_kin_address: z.string().trim().min(5, "Next of kin address is required."),
+    heir_name: z.string().trim().min(3, "Nominated heir name is required."),
+    heir_relationship: z.enum(NEXT_OF_KIN_RELATIONSHIP_VALUES, { message: "Select heir relationship." }),
+    heir_phone: z.string().trim().refine(
+        (value) => /^255[67]\d{8}$/.test(normalizeSignupPhoneDigits(value)),
+        "Enter a valid Tanzania mobile number."
+    ),
+    heir_address: z.string().trim().min(5, "Nominated heir address is required."),
     upload_national_id: z.custom<File | undefined>((value) => isBrowserFile(value), "National ID upload is required.")
         .refine((value) => !isBrowserFile(value) || ["image/jpeg", "image/png", "application/pdf"].includes(value.type), "Only JPG, PNG, or PDF is allowed.")
         .refine((value) => !isBrowserFile(value) || value.size <= SIGNUP_MAX_UPLOAD_BYTES, "File size must be 5MB or less."),
@@ -228,8 +242,16 @@ const schema = z.object({
         .refine((value) => !isBrowserFile(value) || ["image/jpeg", "image/png", "application/pdf"].includes(value.type), "Only JPG, PNG, or PDF is allowed.")
         .refine((value) => !isBrowserFile(value) || value.size <= SIGNUP_MAX_UPLOAD_BYTES, "File size must be 5MB or less."),
     membership_type: z.enum(["individual", "group", "company"], { message: "Select membership type." }),
+    ilboru_completion_year: z.coerce
+        .number()
+        .refine(
+            (value) => Number.isFinite(value) && value >= ILBORU_MIN_COMPLETION_YEAR && value <= ILBORU_MAX_COMPLETION_YEAR,
+            `Select the year you completed Ilboru Secondary (${ILBORU_MIN_COMPLETION_YEAR}–${ILBORU_MAX_COMPLETION_YEAR}).`
+        ),
     initial_share_amount: z.coerce.number().min(MIN_INITIAL_SHARE_AMOUNT_TZS, `Minimum initial share amount is ${formatCurrency(MIN_INITIAL_SHARE_AMOUNT_TZS)}.`),
     monthly_savings_commitment: z.coerce.number().min(MIN_MONTHLY_SAVINGS_COMMITMENT_TZS, `Minimum monthly savings commitment is ${formatCurrency(MIN_MONTHLY_SAVINGS_COMMITMENT_TZS)}.`),
+    legitimate_income_declared: z.boolean().refine((value) => value, "Confirm you have a legitimate source of income."),
+    no_conflicting_business_declared: z.boolean().refine((value) => value, "Confirm you have no conflicting savings or lending business."),
     password: z.string()
         .min(8, "Password must be at least 8 characters.")
         .regex(/[A-Z]/, "Password must include an uppercase letter.")
@@ -344,6 +366,7 @@ export function SignupPage() {
     const [branchesError, setBranchesError] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
     const [activeStep, setActiveStep] = useState(0);
+    const [heirSameAsKin, setHeirSameAsKin] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
@@ -375,11 +398,18 @@ export function SignupPage() {
             relationship: "spouse",
             next_of_kin_phone: "",
             next_of_kin_address: "",
+            heir_name: "",
+            heir_relationship: "spouse",
+            heir_phone: "",
+            heir_address: "",
             upload_national_id: undefined,
             upload_passport_photo: undefined,
             membership_type: "individual",
+            ilboru_completion_year: undefined as unknown as number,
             initial_share_amount: MIN_INITIAL_SHARE_AMOUNT_TZS,
             monthly_savings_commitment: MIN_MONTHLY_SAVINGS_COMMITMENT_TZS,
+            legitimate_income_declared: false,
+            no_conflicting_business_declared: false,
             password: "",
             confirm_password: "",
             terms_accepted: false,
@@ -483,11 +513,11 @@ export function SignupPage() {
     const stepFields: Array<Array<keyof SignupValues>> = [
         ["first_name", "last_name", "gender", "marital_status", "occupation", "phone", "email", "national_id", "date_of_birth"],
         ["region_id", "district_id", "ward_id", "residential_address"],
-        ["next_of_kin_name", "relationship", "next_of_kin_phone", "next_of_kin_address"],
+        ["next_of_kin_name", "relationship", "next_of_kin_phone", "next_of_kin_address", "heir_name", "heir_relationship", "heir_phone", "heir_address"],
         ["upload_national_id", "upload_passport_photo"],
-        ["branch_id", "membership_type", "initial_share_amount", "monthly_savings_commitment"],
+        ["branch_id", "membership_type", "ilboru_completion_year", "initial_share_amount", "monthly_savings_commitment"],
         ["password", "confirm_password"],
-        ["terms_accepted", "data_processing_consent"]
+        ["terms_accepted", "data_processing_consent", "legitimate_income_declared", "no_conflicting_business_declared"]
     ];
 
     const handleNextStep = async () => {
@@ -540,9 +570,16 @@ export function SignupPage() {
             relationship: values.relationship,
             next_of_kin_phone: normalizeSignupPhoneDigits(values.next_of_kin_phone),
             next_of_kin_address: values.next_of_kin_address.trim(),
+            heir_name: values.heir_name.trim(),
+            heir_relationship: values.heir_relationship,
+            heir_phone: normalizeSignupPhoneDigits(values.heir_phone),
+            heir_address: values.heir_address.trim(),
             membership_type: values.membership_type,
+            ilboru_completion_year: Number(values.ilboru_completion_year),
             initial_share_amount: Number(values.initial_share_amount),
             monthly_savings_commitment: Number(values.monthly_savings_commitment),
+            legitimate_income_declared: true,
+            no_conflicting_business_declared: true,
             terms_accepted: true,
             data_processing_consent: true
         };
@@ -970,6 +1007,68 @@ export function SignupPage() {
                                 <TextField fullWidth multiline minRows={2} maxRows={3} label="Next of kin address" size="small" sx={signupFieldSx} {...form.register("next_of_kin_address")} error={Boolean(form.formState.errors.next_of_kin_address)} helperText={form.formState.errors.next_of_kin_address?.message} />
                             </Grid>
                         </Grid>
+
+                        <Divider sx={{ my: 1.5 }} />
+                        <Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" sx={{ mb: 1 }}>
+                            <Box>
+                                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>Nominated heir (Mrithi)</Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                    Per the by-laws (§15), the person entitled to receive your shares and interests.
+                                </Typography>
+                            </Box>
+                            <FormControlLabel
+                                control={
+                                    <Checkbox
+                                        size="small"
+                                        checked={heirSameAsKin}
+                                        onChange={(event) => {
+                                            const checked = event.target.checked;
+                                            setHeirSameAsKin(checked);
+                                            if (checked) {
+                                                form.setValue("heir_name", form.getValues("next_of_kin_name"), { shouldValidate: true });
+                                                form.setValue("heir_relationship", form.getValues("relationship"), { shouldValidate: true });
+                                                form.setValue("heir_phone", form.getValues("next_of_kin_phone"), { shouldValidate: true });
+                                                form.setValue("heir_address", form.getValues("next_of_kin_address"), { shouldValidate: true });
+                                            }
+                                        }}
+                                    />
+                                }
+                                label="Same as next of kin"
+                            />
+                        </Stack>
+                        <Grid container columnSpacing={1.35} rowSpacing={1.6}>
+                            <Grid size={{ xs: 12, sm: 6 }}>
+                                <TextField fullWidth label="Heir name" size="small" sx={signupFieldSx} disabled={heirSameAsKin} {...form.register("heir_name")} error={Boolean(form.formState.errors.heir_name)} helperText={form.formState.errors.heir_name?.message} />
+                            </Grid>
+                            <Grid size={{ xs: 12, sm: 6 }}>
+                                <TextField select fullWidth label="Heir relationship" size="small" sx={signupFieldSx} disabled={heirSameAsKin} value={form.watch("heir_relationship")} onChange={(event) => form.setValue("heir_relationship", event.target.value as SignupValues["heir_relationship"], { shouldValidate: true })} error={Boolean(form.formState.errors.heir_relationship)} helperText={form.formState.errors.heir_relationship?.message}>
+                                    {NEXT_OF_KIN_RELATIONSHIP_OPTIONS.map((option) => (
+                                        <MenuItem key={option.value} value={option.value}>
+                                            {option.label}
+                                        </MenuItem>
+                                    ))}
+                                </TextField>
+                            </Grid>
+                            <Grid size={{ xs: 12, sm: 6 }}>
+                                <TextField
+                                    fullWidth
+                                    label="Heir phone"
+                                    size="small"
+                                    type="tel"
+                                    sx={signupFieldSx}
+                                    disabled={heirSameAsKin}
+                                    value={form.watch("heir_phone")}
+                                    onChange={(event) => form.setValue("heir_phone", formatSignupPhone(event.target.value), { shouldValidate: true })}
+                                    error={Boolean(form.formState.errors.heir_phone)}
+                                    helperText={form.formState.errors.heir_phone?.message || "Format: 255 712 345 678"}
+                                    placeholder="255 712 345 678"
+                                    inputProps={{ inputMode: "numeric", maxLength: 15 }}
+                                />
+                            </Grid>
+                            <Grid size={{ xs: 12, sm: 6 }}>
+                                <TextField fullWidth multiline minRows={2} maxRows={3} label="Heir address" size="small" sx={signupFieldSx} disabled={heirSameAsKin} {...form.register("heir_address")} error={Boolean(form.formState.errors.heir_address)} helperText={form.formState.errors.heir_address?.message} />
+                            </Grid>
+                        </Grid>
                     </StepShell>
                 );
             case 3:
@@ -1011,7 +1110,7 @@ export function SignupPage() {
                     >
                         <Alert severity="info" variant="outlined">
                             {selectedBranch
-                                ? `${selectedBranch.name} will receive this application. Minimum initial shares: ${formatCurrency(selectedBranch.minimum_initial_share_amount)}. Minimum monthly savings commitment: ${formatCurrency(selectedBranch.minimum_monthly_savings_commitment)}. Membership fee after approval: ${formatCurrency(selectedBranch.membership_fee_amount)}.`
+                                ? `${selectedBranch.name} will receive this application. Minimum initial shares: ${formatCurrency(selectedBranch.minimum_initial_share_amount)}. Minimum monthly savings commitment: ${formatCurrency(selectedBranch.minimum_monthly_savings_commitment)}. Membership fee after approval: ${formatCurrency(selectedBranch.membership_fee_amount)}. Per the by-laws you may pay at least 50% of your shares now and complete the balance within 18 months.`
                                 : "Membership intake details are being prepared for your application."}
                         </Alert>
                         <Grid container columnSpacing={1.35} rowSpacing={1.6}>
@@ -1032,6 +1131,23 @@ export function SignupPage() {
                                     <MenuItem value="individual">Individual</MenuItem>
                                     <MenuItem value="group">Group</MenuItem>
                                     <MenuItem value="company">Company</MenuItem>
+                                </TextField>
+                            </Grid>
+                            <Grid size={{ xs: 12, md: 4 }}>
+                                <TextField
+                                    select
+                                    fullWidth
+                                    label="Year completed Ilboru Secondary"
+                                    size="small"
+                                    sx={signupFieldSx}
+                                    value={form.watch("ilboru_completion_year") || ""}
+                                    onChange={(event) => form.setValue("ilboru_completion_year", Number(event.target.value), { shouldValidate: true })}
+                                    error={Boolean(form.formState.errors.ilboru_completion_year)}
+                                    helperText={form.formState.errors.ilboru_completion_year?.message || "Membership common bond (by-laws §5)."}
+                                >
+                                    {ILBORU_COMPLETION_YEARS.map((year) => (
+                                        <MenuItem key={year} value={year}>{year}</MenuItem>
+                                    ))}
                                 </TextField>
                             </Grid>
                             <Grid size={{ xs: 12, md: 4 }}>
@@ -1178,6 +1294,16 @@ export function SignupPage() {
                                 label="I consent to my personal data being stored and processed for membership onboarding and compliance review."
                             />
                             {form.formState.errors.data_processing_consent ? <FormHelperText error>{form.formState.errors.data_processing_consent.message}</FormHelperText> : null}
+                            <FormControlLabel
+                                control={<Checkbox checked={Boolean(form.watch("legitimate_income_declared"))} onChange={(event) => form.setValue("legitimate_income_declared", event.target.checked, { shouldValidate: true })} />}
+                                label="I confirm that I have a legitimate source of income (by-laws §10c)."
+                            />
+                            {form.formState.errors.legitimate_income_declared ? <FormHelperText error>{form.formState.errors.legitimate_income_declared.message}</FormHelperText> : null}
+                            <FormControlLabel
+                                control={<Checkbox checked={Boolean(form.watch("no_conflicting_business_declared"))} onChange={(event) => form.setValue("no_conflicting_business_declared", event.target.checked, { shouldValidate: true })} />}
+                                label="I confirm that I do not run any savings or lending business that conflicts with the SACCO (by-laws §10f)."
+                            />
+                            {form.formState.errors.no_conflicting_business_declared ? <FormHelperText error>{form.formState.errors.no_conflicting_business_declared.message}</FormHelperText> : null}
                         </Stack>
                     </StepShell>
                 );

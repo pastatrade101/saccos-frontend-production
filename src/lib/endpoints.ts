@@ -715,9 +715,16 @@ export interface PublicSignupRequest {
         | "child";
     next_of_kin_phone: string;
     next_of_kin_address: string;
+    heir_name: string;
+    heir_relationship: PublicSignupRequest["relationship"];
+    heir_phone: string;
+    heir_address: string;
     membership_type: "individual" | "group" | "company";
+    ilboru_completion_year: number;
     initial_share_amount: number;
     monthly_savings_commitment: number;
+    legitimate_income_declared: true;
+    no_conflicting_business_declared: true;
     terms_accepted: true;
     data_processing_consent: true;
 }
@@ -888,8 +895,15 @@ export interface UpdateMemberRequest {
     next_of_kin_phone?: string | null;
     next_of_kin_relationship?: string | null;
     next_of_kin_address?: string | null;
+    heir_name?: string | null;
+    heir_phone?: string | null;
+    heir_relationship?: string | null;
+    heir_address?: string | null;
     employer?: string | null;
     membership_type?: "individual" | "group" | "company" | null;
+    ilboru_completion_year?: number | null;
+    legitimate_income_declared?: boolean | null;
+    no_conflicting_business_declared?: boolean | null;
     initial_share_amount?: number | null;
     monthly_savings_commitment?: number | null;
     kyc_status?: "pending" | "verified" | "rejected" | "waived";
@@ -930,6 +944,13 @@ export interface UpdateOwnMemberProfileCompletionRequest {
     next_of_kin_phone?: string | null;
     next_of_kin_relationship?: string | null;
     next_of_kin_address?: string | null;
+    heir_name?: string | null;
+    heir_phone?: string | null;
+    heir_relationship?: string | null;
+    heir_address?: string | null;
+    ilboru_completion_year?: number | null;
+    legitimate_income_declared?: boolean | null;
+    no_conflicting_business_declared?: boolean | null;
 }
 export type UpdateOwnMemberProfileCompletionResponse = ApiEnvelope<Member>;
 
