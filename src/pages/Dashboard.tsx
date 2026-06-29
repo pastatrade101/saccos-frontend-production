@@ -280,6 +280,49 @@ async function loadDashboardMemberAccounts(tenantId: string) {
     return accounts;
 }
 
+// Paginate members so snapshot totals (count, savings actual, target, reach) cover
+// the whole member base — a single limit:100 fetch silently dropped members beyond
+// 100, making every dashboard total undercount.
+async function loadDashboardMembers(tenantId: string) {
+    const members: Member[] = [];
+    let page = 1;
+    while (page <= 30) {
+        const { data } = await api.get<MembersResponse & { pagination?: { total: number; limit: number; page: number } }>(endpoints.members.list(), {
+            params: { tenant_id: tenantId, page, limit: DASHBOARD_ACCOUNTS_PAGE_LIMIT }
+        });
+        const rows = data.data || [];
+        members.push(...rows);
+        if (data.pagination?.total && members.length >= data.pagination.total) {
+            break;
+        }
+        if (rows.length < DASHBOARD_ACCOUNTS_PAGE_LIMIT) {
+            break;
+        }
+        page += 1;
+    }
+    return members;
+}
+
+async function loadDashboardStatements(tenantId: string) {
+    const statements: StatementRow[] = [];
+    let page = 1;
+    while (page <= 30) {
+        const { data } = await api.get<StatementsResponse & { pagination?: { total: number; limit: number; page: number } }>(endpoints.finance.statements(), {
+            params: { tenant_id: tenantId, page, limit: DASHBOARD_ACCOUNTS_PAGE_LIMIT }
+        });
+        const rows = data.data || [];
+        statements.push(...rows);
+        if (data.pagination?.total && statements.length >= data.pagination.total) {
+            break;
+        }
+        if (rows.length < DASHBOARD_ACCOUNTS_PAGE_LIMIT) {
+            break;
+        }
+        page += 1;
+    }
+    return statements;
+}
+
 function groupAmountsByDate(statements: StatementRow[], direction?: "in" | "out") {
     const map = new Map<string, number>();
 
@@ -1700,18 +1743,14 @@ export function DashboardPage() {
 
             try {
                 const [
-                    { data: membersResponse },
-                    statementsResponse,
+                    membersList,
+                    statementsList,
                     { data: loansResponse },
                     { data: schedulesResponse },
                     memberAccounts
                 ] = await Promise.all([
-                    api.get<MembersResponse>(endpoints.members.list(), {
-                        params: { tenant_id: selectedTenantId, page: 1, limit: 100 }
-                    }),
-                    api.get<StatementsResponse>(endpoints.finance.statements(), {
-                        params: { tenant_id: selectedTenantId, page: 1, limit: 100 }
-                    }),
+                    loadDashboardMembers(selectedTenantId),
+                    loadDashboardStatements(selectedTenantId),
                     api.get<LoansResponse>(endpoints.finance.loanPortfolio(), {
                         params: { tenant_id: selectedTenantId, page: 1, limit: 100 }
                     }),
@@ -1726,9 +1765,9 @@ export function DashboardPage() {
                 }
 
                 setState({
-                    members: membersResponse.data || [],
+                    members: membersList,
                     memberAccounts,
-                    statements: statementsResponse.data.data || [],
+                    statements: statementsList,
                     loans: loansResponse.data || [],
                     schedules: (schedulesResponse.data || []).filter((schedule) => ["pending", "partial", "overdue"].includes(schedule.status)),
                     loanApplications: [],

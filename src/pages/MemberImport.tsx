@@ -702,7 +702,7 @@ export function MemberImportPage() {
             pushToast({
                 type: data.data.failed_rows ? "warning" : "success",
                 title: data.data.failed_rows ? "Dividend history imported with issues" : "Dividend history imported",
-                message: `${data.data.posted_rows} dividend row(s) posted to the ledger. ${data.data.failed_rows} failed.`
+                message: `${data.data.posted_rows} dividend row(s) posted to the ledger. ${data.data.skipped_rows ?? 0} skipped (already posted). ${data.data.failed_rows} failed.`
             });
         } catch (error) {
             pushToast({

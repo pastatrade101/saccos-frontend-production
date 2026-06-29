@@ -1273,6 +1273,7 @@ export interface MemberSavingsHistoryImportResponseData {
     members?: MemberHistoryBulkMemberSummary[];
     total_rows: number;
     posted_rows: number;
+    skipped_rows?: number;
     failed_rows: number;
     total_amount: number;
     posted?: Array<{
