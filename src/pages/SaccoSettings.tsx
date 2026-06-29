@@ -255,7 +255,7 @@ export function SaccoSettingsPage() {
             const { data } = await api.post<MemberPerformanceTargetImportResponse>(
                 endpoints.imports.memberPerformanceTargets(),
                 formData,
-                { headers: { "Content-Type": "multipart/form-data" } }
+                { headers: { "Content-Type": "multipart/form-data" }, timeout: 0 }
             );
             setTargetImportResult(data.data);
             setTargetImportFile(null);

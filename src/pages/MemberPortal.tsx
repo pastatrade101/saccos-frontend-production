@@ -5,6 +5,7 @@ import ContactPhoneRoundedIcon from "@mui/icons-material/ContactPhoneRounded";
 import Diversity3RoundedIcon from "@mui/icons-material/Diversity3Rounded";
 import CardMembershipRoundedIcon from "@mui/icons-material/CardMembershipRounded";
 import AccountCircleRoundedIcon from "@mui/icons-material/AccountCircleRounded";
+import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import UploadFileRoundedIcon from "@mui/icons-material/UploadFileRounded";
 import ApprovalRoundedIcon from "@mui/icons-material/ApprovalRounded";
@@ -411,9 +412,31 @@ type MemberPaymentPurpose = "share_contribution" | "savings_deposit" | "membersh
 type DateRangePreset = "month" | "quarter" | "year" | "custom";
 
 const memberProfileCompletionPhonePattern = /^255[67]\d{8}$/;
+// Coerce stored phone formats (07XXXXXXXX, +2557XXXXXXXX, 7XXXXXXXX) into the
+// 2557XXXXXXXX shape the form expects, so a legacy value doesn't block saving.
+function normalizePortalPhone(value?: string | null) {
+    const digits = String(value || "").replace(/\D/g, "");
+    if (!digits) {
+        return "";
+    }
+    if (digits.startsWith("255")) {
+        return digits.slice(0, 12);
+    }
+    if (digits.startsWith("0")) {
+        return `255${digits.slice(1)}`.slice(0, 12);
+    }
+    if (digits.length === 9) {
+        return `255${digits}`;
+    }
+    return digits;
+}
 function isAdultPortalDate(value: string) {
     const today = new Date();
-    const dob = new Date(`${value}T00:00:00`);
+    const dob = new Date(`${String(value).slice(0, 10)}T00:00:00`);
+    if (Number.isNaN(dob.getTime())) {
+        // Don't block saving on an unparseable / legacy stored date.
+        return true;
+    }
     const minimumBirthDate = new Date(today.getFullYear() - 18, today.getMonth(), today.getDate());
     return dob <= minimumBirthDate;
 }
@@ -2127,8 +2150,8 @@ export function MemberPortalPage() {
     const openProfileCompletionDialog = () => {
         memberProfileCompletionForm.reset({
             full_name: memberRecord?.full_name || "",
-            dob: memberRecord?.dob || "",
-            phone: memberRecord?.phone || "",
+            dob: (memberRecord?.dob || "").slice(0, 10),
+            phone: normalizePortalPhone(memberRecord?.phone),
             email: memberRecord?.email || "",
             gender: memberRecord?.gender || "",
             marital_status: memberRecord?.marital_status || "",
@@ -2380,6 +2403,17 @@ export function MemberPortalPage() {
         } finally {
             setSavingProfileCompletion(false);
         }
+    }, (errors) => {
+        // Without this, an invalid (often pre-filled) field made Save do nothing
+        // silently. Surface the first problem so the member knows what to fix.
+        const firstError = Object.values(errors).find((entry) => entry && (entry as { message?: string }).message) as
+            | { message?: string }
+            | undefined;
+        pushToast({
+            type: "error",
+            title: "Check the highlighted fields",
+            message: firstError?.message || "Some details are invalid. Please review phone, date of birth, and required fields."
+        });
     });
 
     const handleMarkCancelledOnPhone = () => {
@@ -7644,8 +7678,16 @@ export function MemberPortalPage() {
                     onClose={() => setShowMemberProfileDialog(false)}
                     maxWidth="sm"
                     fullWidth
+                    fullScreen={isMobile}
                 >
-                    <DialogTitle sx={{ pb: 1 }}>
+                    <DialogTitle sx={{ pb: 1, pr: 6 }}>
+                        <IconButton
+                            aria-label="Close"
+                            onClick={() => setShowMemberProfileDialog(false)}
+                            sx={{ position: "absolute", right: 8, top: 8, color: "text.secondary" }}
+                        >
+                            <CloseRoundedIcon fontSize="small" />
+                        </IconButton>
                         <Stack direction="row" spacing={1.5} alignItems="center">
                             <Avatar
                                 src={profile?.avatar_url || undefined}
@@ -7666,7 +7708,9 @@ export function MemberPortalPage() {
                     <Tabs
                         value={memberProfileTab}
                         onChange={(_event, value) => setMemberProfileTab(value)}
-                        variant="fullWidth"
+                        variant={isMobile ? "scrollable" : "fullWidth"}
+                        scrollButtons="auto"
+                        allowScrollButtonsMobile
                         sx={{ px: 1, borderBottom: 1, borderColor: "divider", minHeight: 0 }}
                     >
                         <Tab icon={<PersonRoundedIcon fontSize="small" />} iconPosition="start" label="Personal" sx={{ minHeight: 44, textTransform: "none" }} />
@@ -7677,24 +7721,24 @@ export function MemberPortalPage() {
                     <DialogContent dividers sx={{ minHeight: 280 }}>
                         {memberProfileTab === 0 ? (
                             <Grid container spacing={2}>
-                                <Grid size={{ xs: 6 }}><ProfileField label="Full name" value={memberRecord?.full_name || profile?.full_name} /></Grid>
-                                <Grid size={{ xs: 6 }}><ProfileField label="Member No." value={memberRecord?.member_no} /></Grid>
-                                <Grid size={{ xs: 6 }}><ProfileField label="Date of birth" value={memberRecord?.dob ? formatDate(memberRecord.dob) : null} /></Grid>
-                                <Grid size={{ xs: 6 }}><ProfileField label="Gender" value={titleCase(memberRecord?.gender)} /></Grid>
-                                <Grid size={{ xs: 6 }}><ProfileField label="Marital status" value={titleCase(memberRecord?.marital_status)} /></Grid>
-                                <Grid size={{ xs: 6 }}><ProfileField label="Occupation" value={memberRecord?.occupation} /></Grid>
-                                <Grid size={{ xs: 6 }}><ProfileField label="Ilboru completion year" value={memberRecord?.ilboru_completion_year} /></Grid>
-                                <Grid size={{ xs: 6 }}><ProfileField label="National ID / NIDA" value={memberRecord?.national_id || memberRecord?.nida_no} /></Grid>
+                                <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="Full name" value={memberRecord?.full_name || profile?.full_name} /></Grid>
+                                <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="Member No." value={memberRecord?.member_no} /></Grid>
+                                <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="Date of birth" value={memberRecord?.dob ? formatDate(memberRecord.dob) : null} /></Grid>
+                                <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="Gender" value={titleCase(memberRecord?.gender)} /></Grid>
+                                <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="Marital status" value={titleCase(memberRecord?.marital_status)} /></Grid>
+                                <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="Occupation" value={memberRecord?.occupation} /></Grid>
+                                <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="Ilboru completion year" value={memberRecord?.ilboru_completion_year} /></Grid>
+                                <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="National ID / NIDA" value={memberRecord?.national_id || memberRecord?.nida_no} /></Grid>
                             </Grid>
                         ) : null}
                         {memberProfileTab === 1 ? (
                             <Grid container spacing={2}>
-                                <Grid size={{ xs: 6 }}><ProfileField label="Phone" value={memberRecord?.phone} /></Grid>
-                                <Grid size={{ xs: 6 }}><ProfileField label="Email" value={memberRecord?.email || user?.email} /></Grid>
-                                <Grid size={{ xs: 6 }}><ProfileField label="Region" value={memberRecord?.region} /></Grid>
-                                <Grid size={{ xs: 6 }}><ProfileField label="District" value={memberRecord?.district} /></Grid>
-                                <Grid size={{ xs: 6 }}><ProfileField label="Ward" value={memberRecord?.ward} /></Grid>
-                                <Grid size={{ xs: 6 }}><ProfileField label="Street / village" value={memberRecord?.street_or_village} /></Grid>
+                                <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="Phone" value={memberRecord?.phone} /></Grid>
+                                <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="Email" value={memberRecord?.email || user?.email} /></Grid>
+                                <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="Region" value={memberRecord?.region} /></Grid>
+                                <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="District" value={memberRecord?.district} /></Grid>
+                                <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="Ward" value={memberRecord?.ward} /></Grid>
+                                <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="Street / village" value={memberRecord?.street_or_village} /></Grid>
                                 <Grid size={{ xs: 12 }}><ProfileField label="Residential address" value={memberRecord?.residential_address || memberRecord?.address_line1} /></Grid>
                             </Grid>
                         ) : null}
@@ -7702,29 +7746,29 @@ export function MemberPortalPage() {
                             <Stack spacing={2}>
                                 <Typography variant="overline" color="text.secondary">Next of kin</Typography>
                                 <Grid container spacing={2}>
-                                    <Grid size={{ xs: 6 }}><ProfileField label="Name" value={memberRecord?.next_of_kin_name} /></Grid>
-                                    <Grid size={{ xs: 6 }}><ProfileField label="Relationship" value={memberRecord?.next_of_kin_relationship ? formatNextOfKinRelationship(memberRecord.next_of_kin_relationship) : null} /></Grid>
-                                    <Grid size={{ xs: 6 }}><ProfileField label="Phone" value={memberRecord?.next_of_kin_phone} /></Grid>
-                                    <Grid size={{ xs: 6 }}><ProfileField label="Address" value={memberRecord?.next_of_kin_address} /></Grid>
+                                    <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="Name" value={memberRecord?.next_of_kin_name} /></Grid>
+                                    <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="Relationship" value={memberRecord?.next_of_kin_relationship ? formatNextOfKinRelationship(memberRecord.next_of_kin_relationship) : null} /></Grid>
+                                    <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="Phone" value={memberRecord?.next_of_kin_phone} /></Grid>
+                                    <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="Address" value={memberRecord?.next_of_kin_address} /></Grid>
                                 </Grid>
                                 <Divider />
                                 <Typography variant="overline" color="text.secondary">Nominated heir (Mrithi)</Typography>
                                 <Grid container spacing={2}>
-                                    <Grid size={{ xs: 6 }}><ProfileField label="Name" value={memberRecord?.heir_name} /></Grid>
-                                    <Grid size={{ xs: 6 }}><ProfileField label="Relationship" value={memberRecord?.heir_relationship ? formatNextOfKinRelationship(memberRecord.heir_relationship) : null} /></Grid>
-                                    <Grid size={{ xs: 6 }}><ProfileField label="Phone" value={memberRecord?.heir_phone} /></Grid>
-                                    <Grid size={{ xs: 6 }}><ProfileField label="Address" value={memberRecord?.heir_address} /></Grid>
+                                    <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="Name" value={memberRecord?.heir_name} /></Grid>
+                                    <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="Relationship" value={memberRecord?.heir_relationship ? formatNextOfKinRelationship(memberRecord.heir_relationship) : null} /></Grid>
+                                    <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="Phone" value={memberRecord?.heir_phone} /></Grid>
+                                    <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="Address" value={memberRecord?.heir_address} /></Grid>
                                 </Grid>
                             </Stack>
                         ) : null}
                         {memberProfileTab === 3 ? (
                             <Grid container spacing={2}>
-                                <Grid size={{ xs: 6 }}><ProfileField label="Membership type" value={titleCase(memberRecord?.membership_type)} /></Grid>
-                                <Grid size={{ xs: 6 }}><ProfileField label="Status" value={titleCase(memberRecord?.status)} /></Grid>
-                                <Grid size={{ xs: 6 }}><ProfileField label="Initial shares" value={memberRecord?.initial_share_amount != null ? formatCurrency(memberRecord.initial_share_amount) : null} /></Grid>
-                                <Grid size={{ xs: 6 }}><ProfileField label="Monthly savings" value={memberRecord?.monthly_savings_commitment != null ? formatCurrency(memberRecord.monthly_savings_commitment) : null} /></Grid>
-                                <Grid size={{ xs: 6 }}><ProfileField label="Legitimate income" value={memberRecord?.legitimate_income_declared ? "Confirmed" : "Not confirmed"} /></Grid>
-                                <Grid size={{ xs: 6 }}><ProfileField label="No conflicting business" value={memberRecord?.no_conflicting_business_declared ? "Confirmed" : "Not confirmed"} /></Grid>
+                                <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="Membership type" value={titleCase(memberRecord?.membership_type)} /></Grid>
+                                <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="Status" value={titleCase(memberRecord?.status)} /></Grid>
+                                <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="Initial shares" value={memberRecord?.initial_share_amount != null ? formatCurrency(memberRecord.initial_share_amount) : null} /></Grid>
+                                <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="Monthly savings" value={memberRecord?.monthly_savings_commitment != null ? formatCurrency(memberRecord.monthly_savings_commitment) : null} /></Grid>
+                                <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="Legitimate income" value={memberRecord?.legitimate_income_declared ? "Confirmed" : "Not confirmed"} /></Grid>
+                                <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="No conflicting business" value={memberRecord?.no_conflicting_business_declared ? "Confirmed" : "Not confirmed"} /></Grid>
                             </Grid>
                         ) : null}
                     </DialogContent>
