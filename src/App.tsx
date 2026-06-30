@@ -6,7 +6,7 @@ import { useAuth } from "./auth/AuthContext";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
 import { AppLayout } from "./components/Layout";
 import { AppLoader } from "./components/AppLoader";
-import { PwaInstallPrompt } from "./components/PwaInstallPrompt";
+// import { PwaInstallPrompt } from "./components/PwaInstallPrompt"; // hidden: PWA install prompt disabled
 import { RootErrorBoundary } from "./components/RootErrorBoundary";
 import { SessionTimeoutManager } from "./components/SessionTimeoutManager";
 
@@ -374,7 +374,7 @@ export default function App() {
             </Routes>
             </Suspense>
             </RootErrorBoundary>
-            <PwaInstallPrompt />
+            {/* <PwaInstallPrompt /> — hidden: PWA install prompt disabled */}
             <SessionTimeoutManager />
         </>
     );

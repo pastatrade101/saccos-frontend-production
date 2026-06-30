@@ -6,6 +6,15 @@ export function formatCurrency(value?: number | null) {
     }).format(value || 0);
 }
 
+export function formatCurrencyCompact(value?: number | null) {
+    return new Intl.NumberFormat("en-TZ", {
+        style: "currency",
+        currency: "TZS",
+        notation: "compact",
+        maximumFractionDigits: 2
+    }).format(value || 0);
+}
+
 export function formatDate(value?: string | null) {
     if (!value) {
         return "N/A";

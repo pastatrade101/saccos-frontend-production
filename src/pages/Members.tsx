@@ -72,7 +72,7 @@ import {
     type UpdateMemberResponse
 } from "../lib/endpoints";
 import type { Branch, Member, MemberAccount, ProductBootstrapPayload } from "../types/api";
-import { formatCurrency, formatDate, formatRole } from "../utils/format";
+import { formatCurrency, formatCurrencyCompact, formatDate, formatRole } from "../utils/format";
 
 const schema = z.object({
     first_name: z.string().trim().min(2, "First name is required."),
@@ -222,13 +222,13 @@ function getMemberAccountProductLabel(
 function MetricCard({
     title,
     value,
-    helper,
+    valueTooltip,
     icon,
     tone = "primary"
 }: {
     title: string;
     value: string;
-    helper: string;
+    valueTooltip?: string;
     icon: React.ReactNode;
     tone?: "primary" | "success" | "warning" | "neutral";
 }) {
@@ -247,7 +247,6 @@ function MetricCard({
             variant="outlined"
             sx={{
                 height: "100%",
-                minHeight: 206,
                 display: "flex",
                 position: "relative",
                 overflow: "hidden",
@@ -272,7 +271,7 @@ function MetricCard({
                 }}
             >
                 <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
-                    <Box>
+                    <Box sx={{ minWidth: 0 }}>
                         <Typography
                             variant="overline"
                             sx={{
@@ -282,11 +281,18 @@ function MetricCard({
                         >
                             {title}
                         </Typography>
-                        <Typography variant="h4" sx={{ mt: 1, fontWeight: 800, lineHeight: 1.05 }}>
+                        <Typography
+                            title={valueTooltip}
+                            sx={{
+                                mt: 0.75,
+                                fontWeight: 800,
+                                lineHeight: 1.1,
+                                fontSize: { xs: "1.45rem", md: "1.6rem" },
+                                fontVariantNumeric: "tabular-nums",
+                                whiteSpace: "nowrap"
+                            }}
+                        >
                             {value}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                            {helper}
                         </Typography>
                     </Box>
                     <Avatar
@@ -1787,11 +1793,6 @@ export function MembersPage() {
                             <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={2}>
                                 <Box>
                                     <Typography variant="h5">{isTeller ? "Member Service Desk" : "Member Registry"}</Typography>
-                                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75, maxWidth: 760 }}>
-                                        {isTeller
-                                            ? "Search members quickly, confirm savings-account readiness, and move straight into teller operations with the correct account context."
-                                            : "Onboard members, monitor savings readiness, and manage member access without leaving the tenant workspace."}
-                                    </Typography>
                                 </Box>
                                 <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
                                     <Chip label={selectedTenantName || "Tenant workspace"} variant="outlined" />
@@ -1810,7 +1811,6 @@ export function MembersPage() {
                     <MetricCard
                         title={isTeller ? "Visible Members" : "Members"}
                         value={String(memberCounts.total)}
-                        helper={isTeller ? "Members available for teller lookup." : "Profiles provisioned in this tenant."}
                         icon={<BadgeRoundedIcon fontSize="small" />}
                         tone="primary"
                     />
@@ -1819,7 +1819,6 @@ export function MembersPage() {
                     <MetricCard
                         title={isTeller ? "Cash Ready" : "Active Profiles"}
                         value={String(isTeller ? tellerReadyCount : memberCounts.active)}
-                        helper={isTeller ? "Active members with a provisioned savings account." : "Members currently eligible for service."}
                         icon={isTeller ? <PaidRoundedIcon fontSize="small" /> : <PersonAddAlt1RoundedIcon fontSize="small" />}
                         tone="success"
                     />
@@ -1828,7 +1827,6 @@ export function MembersPage() {
                     <MetricCard
                         title={isTeller ? "Needs Follow-up" : "Linked Logins"}
                         value={String(isTeller ? tellerNeedsFollowUpCount : memberCounts.linkedLogins)}
-                        helper={isTeller ? "Members needing escalation before cash service." : "Members with self-service access."}
                         icon={isTeller ? <SearchRoundedIcon fontSize="small" /> : <LockPersonRoundedIcon fontSize="small" />}
                         tone={isTeller ? "warning" : "neutral"}
                     />
@@ -1836,10 +1834,8 @@ export function MembersPage() {
                 <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
                     <MetricCard
                         title={isTeller ? "Visible Savings Float" : "Savings Balance"}
-                        value={(serverSummary || accountsLoaded) ? formatCurrency(memberCounts.totalSavings) : "Syncing..."}
-                        helper={(serverSummary || accountsLoaded)
-                            ? (isTeller ? "Current visible balances across teller-served accounts." : "Total savings across all members in scope.")
-                            : "Account balances are loading in the background."}
+                        value={(serverSummary || accountsLoaded) ? formatCurrencyCompact(memberCounts.totalSavings) : "Syncing..."}
+                        valueTooltip={(serverSummary || accountsLoaded) ? formatCurrency(memberCounts.totalSavings) : undefined}
                         icon={<AccountBalanceWalletRoundedIcon fontSize="small" />}
                         tone="warning"
                     />
@@ -2074,9 +2070,6 @@ export function MembersPage() {
                         <MotionCard variant="outlined">
                             <CardContent>
                                 <Typography variant="h6">Member Monitoring</Typography>
-                                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
-                                    Your current role is read-only here. You can review member balances, onboarding status, and linked access, but not create or edit profiles.
-                                </Typography>
                             </CardContent>
                         </MotionCard>
                     )}
@@ -2124,13 +2117,6 @@ export function MembersPage() {
                                 <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
                                     <Box>
                                         <Typography variant="h6">{isTeller ? "Member Service Snapshot" : memberWorkspaceRoute ? "Member Management Workspace" : "Member Detail Workspace"}</Typography>
-                                        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                                            {isTeller
-                                                ? "Select a member to confirm service readiness, inspect the primary savings account, and launch directly into the cash desk."
-                                                : memberWorkspaceRoute
-                                                    ? "Manage the selected member in a dedicated workspace for profile, accounts, and access operations."
-                                                    : "Select a member from the registry to review profile data, route to cash or loans, and manage login access."}
-                                        </Typography>
                                     </Box>
                                     {memberWorkspaceRoute ? (
                                         <Button

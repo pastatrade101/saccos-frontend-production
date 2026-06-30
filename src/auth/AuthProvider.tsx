@@ -207,9 +207,17 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
             if (shouldRefreshProfile) {
                 setLoading(true);
-                void refreshProfile().finally(() => {
+                const profileFetch = refreshProfile();
+                const bootstrapRequestId = refreshProfileRequestIdRef.current;
+                void profileFetch.finally(() => {
                     authBootstrappedRef.current = true;
-                    setLoading(false);
+                    // Two bootstraps run concurrently on refresh (INITIAL_SESSION via
+                    // onAuthStateChange + getSession below). Only the latest fetch may clear
+                    // loading: otherwise the first to finish flips loading=false while profile
+                    // is still null, and the role guard bounces the user to /dashboard.
+                    if (bootstrapRequestId === refreshProfileRequestIdRef.current) {
+                        setLoading(false);
+                    }
                 });
             } else {
                 authBootstrappedRef.current = true;
@@ -223,9 +231,13 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
             if (data.session) {
                 setLoading(true);
-                void refreshProfile().finally(() => {
+                const profileFetch = refreshProfile();
+                const bootstrapRequestId = refreshProfileRequestIdRef.current;
+                void profileFetch.finally(() => {
                     authBootstrappedRef.current = true;
-                    setLoading(false);
+                    if (bootstrapRequestId === refreshProfileRequestIdRef.current) {
+                        setLoading(false);
+                    }
                 });
                 return;
             }

@@ -25,6 +25,8 @@ import {
 import AccountBalanceWalletRoundedIcon from "@mui/icons-material/AccountBalanceWalletRounded";
 import AssignmentTurnedInRoundedIcon from "@mui/icons-material/AssignmentTurnedInRounded";
 import BadgeRoundedIcon from "@mui/icons-material/BadgeRounded";
+import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
+import InsightsRoundedIcon from "@mui/icons-material/InsightsRounded";
 import PaymentsRoundedIcon from "@mui/icons-material/PaymentsRounded";
 import PieChartRoundedIcon from "@mui/icons-material/PieChartRounded";
 import ReceiptLongRoundedIcon from "@mui/icons-material/ReceiptLongRounded";
@@ -423,14 +425,88 @@ function calculateAgingSummary(schedules: LoanSchedule[]) {
     };
 }
 
+type MetricTone = "primary" | "success" | "info" | "warning";
+
+function resolveMetricVisual(label: string): { Icon: typeof GroupsRoundedIcon; tone: MetricTone } {
+    const l = label.toLowerCase();
+    if (/(member|user|workspace|people|staff|active)/.test(l)) {
+        return { Icon: GroupsRoundedIcon, tone: "primary" };
+    }
+    if (/(saving|deposit|balance|wallet|cash|revenue|income)/.test(l)) {
+        return { Icon: AccountBalanceWalletRoundedIcon, tone: "success" };
+    }
+    if (/(loan|portfolio|credit|disburse|outstanding)/.test(l)) {
+        return { Icon: PaymentsRoundedIcon, tone: "info" };
+    }
+    if (/(par|overdue|risk|arrear|default|error|variance|signal)/.test(l)) {
+        return { Icon: WarningAmberRoundedIcon, tone: "warning" };
+    }
+    if (/(branch|network|throughput|latency|sms)/.test(l)) {
+        return { Icon: PieChartRoundedIcon, tone: "info" };
+    }
+    return { Icon: InsightsRoundedIcon, tone: "primary" };
+}
+
 function MetricCard({ label, value, helper }: { label: string; value: string; helper?: string }) {
+    const theme = useTheme();
+    const { Icon, tone } = resolveMetricVisual(label);
+    const toneColor = theme.palette[tone].main;
+
     return (
-        <MotionCard variant="outlined" inView sx={{ height: "100%" }}>
-            <CardContent>
-                <Typography variant="overline" color="text.secondary">
+        <MotionCard
+            variant="outlined"
+            inView
+            interactive
+            sx={{
+                height: "100%",
+                transition: "box-shadow .25s ease, border-color .25s ease",
+                "&::before": {
+                    content: "\"\"",
+                    position: "absolute",
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: 4,
+                    background: `linear-gradient(180deg, ${toneColor}, ${alpha(toneColor, 0.35)})`
+                },
+                "&:hover": {
+                    borderColor: alpha(toneColor, 0.5),
+                    boxShadow: `0 16px 34px ${alpha(toneColor, 0.18)}`
+                }
+            }}
+        >
+            <CardContent sx={{ pl: 2.75 }}>
+                <Box
+                    sx={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 2,
+                        display: "grid",
+                        placeItems: "center",
+                        color: toneColor,
+                        background: `linear-gradient(135deg, ${alpha(toneColor, 0.18)}, ${alpha(toneColor, 0.05)})`,
+                        border: `1px solid ${alpha(toneColor, 0.22)}`
+                    }}
+                >
+                    <Icon fontSize="small" />
+                </Box>
+                <Typography
+                    variant="overline"
+                    color="text.secondary"
+                    sx={{ mt: 1.75, display: "block", fontWeight: 600, letterSpacing: "0.08em" }}
+                >
                     {label}
                 </Typography>
-                <Typography variant="h5" sx={{ mt: 0.5 }}>
+                <Typography
+                    sx={{
+                        mt: 0.5,
+                        fontSize: { xs: "1.6rem", sm: "1.9rem" },
+                        fontWeight: 800,
+                        lineHeight: 1.1,
+                        letterSpacing: "-0.01em",
+                        fontVariantNumeric: "tabular-nums"
+                    }}
+                >
                     {value}
                 </Typography>
                 {helper ? (
