@@ -1751,13 +1751,11 @@ export function DashboardPage() {
             try {
                 const [
                     membersList,
-                    statementsList,
                     { data: loansResponse },
                     { data: schedulesResponse },
                     memberAccounts
                 ] = await Promise.all([
                     loadDashboardMembers(selectedTenantId),
-                    loadDashboardStatements(selectedTenantId),
                     api.get<LoansResponse>(endpoints.finance.loanPortfolio(), {
                         params: { tenant_id: selectedTenantId, page: 1, limit: 100 }
                     }),
@@ -1774,7 +1772,7 @@ export function DashboardPage() {
                 setState({
                     members: membersList,
                     memberAccounts,
-                    statements: statementsList,
+                    statements: [],
                     loans: loansResponse.data || [],
                     schedules: (schedulesResponse.data || []).filter((schedule) => ["pending", "partial", "overdue"].includes(schedule.status)),
                     loanApplications: [],
@@ -1785,11 +1783,34 @@ export function DashboardPage() {
                     dailyCashSummary: []
                 });
 
-                const [normalizedFinancialYearSettings] = await Promise.all([
-                    loadFinancialYearSettings(selectedTenantId),
-                    loadPerformanceTargetSettings(selectedTenantId)
-                ]);
-                void loadSupplementalData(profile?.role || "", selectedTenantId, resolveFinancialYearPeriod(normalizedFinancialYearSettings));
+                // Core dashboard data is in — render immediately. Everything below is
+                // secondary (activity chart, tenant settings, supplemental lists) and loads
+                // in the background, so one slow read can never hold the page on the loader.
+                if (isActive) {
+                    setLoading(false);
+                }
+
+                // Recent statements feed only the activity chart + cash-flow tiles and are
+                // the heaviest read, so they load on their own and the chart fills in later.
+                void loadDashboardStatements(selectedTenantId)
+                    .then((statementsList) => {
+                        if (isActive) {
+                            setState((current) => ({ ...current, statements: statementsList }));
+                        }
+                    })
+                    .catch(() => {
+                        // Activity chart stays empty; the rest of the dashboard is unaffected.
+                    });
+
+                void (async () => {
+                    const [normalizedFinancialYearSettings] = await Promise.all([
+                        loadFinancialYearSettings(selectedTenantId),
+                        loadPerformanceTargetSettings(selectedTenantId)
+                    ]);
+                    if (isActive) {
+                        void loadSupplementalData(profile?.role || "", selectedTenantId, resolveFinancialYearPeriod(normalizedFinancialYearSettings));
+                    }
+                })();
             } catch (loadError) {
                 if (isActive) {
                     setError(getApiErrorMessage(loadError));
