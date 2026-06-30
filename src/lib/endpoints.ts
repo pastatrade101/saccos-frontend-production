@@ -67,6 +67,7 @@ import type {
     WorkspacePublicRegistrationSettings,
     SaccoFinancialYearSettings,
     SaccoPerformanceTargetSettings,
+    SaccoManualImportsSettings,
     PaymentOrder,
     TellerPaymentTransaction,
     MobileMoneyProvider,
@@ -309,7 +310,8 @@ const routeMap = {
     },
     saccoSettings: {
         financialYear: "/sacco-settings/financial-year",
-        performanceTarget: "/sacco-settings/performance-target"
+        performanceTarget: "/sacco-settings/performance-target",
+        manualImports: "/sacco-settings/manual-imports"
     },
     notifications: {
         list: "/notifications",
@@ -567,7 +569,8 @@ export const endpoints = {
     },
     saccoSettings: {
         financialYear: () => routeMap.saccoSettings.financialYear,
-        performanceTarget: () => routeMap.saccoSettings.performanceTarget
+        performanceTarget: () => routeMap.saccoSettings.performanceTarget,
+        manualImports: () => routeMap.saccoSettings.manualImports
     },
     notifications: {
         list: () => routeMap.notifications.list,
@@ -1915,6 +1918,7 @@ export interface WorkspaceTwoFactorSettingsResponse extends ApiEnvelope<Workspac
 export interface WorkspacePublicRegistrationSettingsResponse extends ApiEnvelope<WorkspacePublicRegistrationSettings> {}
 export interface SaccoFinancialYearSettingsResponse extends ApiEnvelope<SaccoFinancialYearSettings> {}
 export interface SaccoPerformanceTargetSettingsResponse extends ApiEnvelope<SaccoPerformanceTargetSettings> {}
+export interface SaccoManualImportsSettingsResponse extends ApiEnvelope<SaccoManualImportsSettings> {}
 
 export interface UpdateApprovalPolicyRequest {
     tenant_id?: string;
@@ -1967,6 +1971,11 @@ export interface UpdateSaccoFinancialYearSettingsRequest {
     tenant_id?: string;
     financial_year_start_month: number;
     financial_year_start_day: number;
+}
+
+export interface UpdateSaccoManualImportsSettingsRequest {
+    tenant_id?: string;
+    manual_imports_enabled: boolean;
 }
 
 export interface UpdateSaccoPerformanceTargetSettingsRequest {

@@ -765,6 +765,14 @@ export interface SaccoPerformanceTargetSettings {
     updated_at?: string | null;
 }
 
+export interface SaccoManualImportsSettings {
+    tenant_id: string | null;
+    manual_imports_enabled: boolean;
+    manual_imports_configured_at?: string | null;
+    manual_imports_configured_by?: string | null;
+    updated_at?: string | null;
+}
+
 export interface ApprovalDecision {
     id: string;
     decision: "approved" | "rejected";

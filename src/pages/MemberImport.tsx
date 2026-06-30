@@ -43,7 +43,8 @@ import {
     type MemberDividendHistoryImportResponse,
     type MemberLoanHistoryImportResponse,
     type MemberLoanRepaymentImportResponse,
-    type MemberSavingsHistoryImportResponse
+    type MemberSavingsHistoryImportResponse,
+    type SaccoManualImportsSettingsResponse
 } from "../lib/endpoints";
 import { loadAllMembers } from "../lib/loadAllMembers";
 import type { Branch, ImportJob, ImportJobRow, Member } from "../types/api";
@@ -104,7 +105,7 @@ export function MemberImportPage() {
     const memberAccent = isDarkMode ? "#D9B273" : "#1FA8E6";
     const memberAccentStrong = isDarkMode ? "#C89B52" : "#0A0573";
     const { pushToast } = useToast();
-    const { selectedTenantId, selectedBranchId } = useAuth();
+    const { selectedTenantId, selectedBranchId, profile } = useAuth();
     const [branches, setBranches] = useState<Branch[]>([]);
     const [members, setMembers] = useState<Member[]>([]);
     const [job, setJob] = useState<ImportJob | null>(null);
@@ -114,6 +115,10 @@ export function MemberImportPage() {
     const [failedRowsLimit, setFailedRowsLimit] = useState(10);
     const [loadingBranches, setLoadingBranches] = useState(true);
     const [loadingMembers, setLoadingMembers] = useState(true);
+    // Super admin can hide the bulk historical importers from branch managers once
+    // legacy data is bootstrapped (sacco-settings.manual_imports_enabled). Default
+    // true so importers stay visible until an admin turns them off.
+    const [manualImportsEnabled, setManualImportsEnabled] = useState(true);
     const [loadingRows, setLoadingRows] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [historySubmitting, setHistorySubmitting] = useState(false);
@@ -159,6 +164,35 @@ export function MemberImportPage() {
     const updateExistingOnly = form.watch("update_existing_only");
     const selectedDefaultBranchId = form.watch("default_branch_id");
     const selectedFile = form.watch("file");
+
+    // Load the tenant's manual-import visibility. Branch managers see the bulk
+    // historical importers only when enabled; super admins always see them.
+    useEffect(() => {
+        if (!selectedTenantId) {
+            return;
+        }
+        let isActive = true;
+        void api
+            .get<SaccoManualImportsSettingsResponse>(endpoints.saccoSettings.manualImports(), {
+                params: { tenant_id: selectedTenantId }
+            })
+            .then(({ data }) => {
+                if (isActive) {
+                    setManualImportsEnabled(data.data.manual_imports_enabled);
+                }
+            })
+            .catch(() => {
+                // Fail open: if the setting can't be read, keep importers visible.
+                if (isActive) {
+                    setManualImportsEnabled(true);
+                }
+            });
+        return () => {
+            isActive = false;
+        };
+    }, [selectedTenantId]);
+
+    const showBulkImporters = manualImportsEnabled || profile?.role === "super_admin";
     const hasSingleBranch = branches.length <= 1;
     const selectedDefaultBranch = branches.find((branch) => branch.id === selectedDefaultBranchId) || branches[0] || null;
     const selectedHistoryMember = members.find((member) => member.id === historyMemberId) || null;
@@ -1029,6 +1063,8 @@ export function MemberImportPage() {
                 </Grid>
             </Grid>
 
+            {showBulkImporters ? (
+            <>
             <MotionCard variant="outlined" sx={{ borderRadius: 2 }}>
                 <CardContent sx={{ p: 3 }}>
                     <Stack spacing={2.5}>
@@ -1597,6 +1633,8 @@ export function MemberImportPage() {
                     </Stack>
                 </CardContent>
             </MotionCard>
+            </>
+            ) : null}
 
             <MotionCard variant="outlined" sx={{ borderRadius: 2 }}>
                 <CardContent sx={{ p: 3 }}>

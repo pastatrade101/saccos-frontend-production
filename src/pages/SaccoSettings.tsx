@@ -1,6 +1,7 @@
 import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
 import TrackChangesRoundedIcon from "@mui/icons-material/TrackChangesRounded";
 import LockRoundedIcon from "@mui/icons-material/LockRounded";
+import UploadFileRoundedIcon from "@mui/icons-material/UploadFileRounded";
 import {
     Alert,
     Box,
@@ -26,10 +27,12 @@ import {
     type MemberPerformanceTargetImportResponse,
     type SaccoFinancialYearSettingsResponse,
     type SaccoPerformanceTargetSettingsResponse,
+    type SaccoManualImportsSettingsResponse,
     type UpdateSaccoFinancialYearSettingsRequest,
-    type UpdateSaccoPerformanceTargetSettingsRequest
+    type UpdateSaccoPerformanceTargetSettingsRequest,
+    type UpdateSaccoManualImportsSettingsRequest
 } from "../lib/endpoints";
-import type { SaccoFinancialYearSettings, SaccoPerformanceTargetSettings } from "../types/api";
+import type { SaccoFinancialYearSettings, SaccoManualImportsSettings, SaccoPerformanceTargetSettings } from "../types/api";
 import { MotionCard } from "../ui/motion";
 import {
     DEFAULT_SACCO_FINANCIAL_YEAR_SETTINGS,
@@ -73,6 +76,9 @@ export function SaccoSettingsPage() {
         performance_target_on_track_percent: DEFAULT_SACCO_PERFORMANCE_TARGET_SETTINGS.performance_target_on_track_percent,
         performance_target_member_target_source: DEFAULT_SACCO_PERFORMANCE_TARGET_SETTINGS.performance_target_member_target_source
     });
+    const [manualImports, setManualImports] = useState<SaccoManualImportsSettings | null>(null);
+    const [manualImportsDraft, setManualImportsDraft] = useState(true);
+    const [savingManualImports, setSavingManualImports] = useState(false);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [savingPerformance, setSavingPerformance] = useState(false);
@@ -83,6 +89,7 @@ export function SaccoSettingsPage() {
 
     const canSetFinancialYear = profile?.role === "super_admin" && !settings.locked;
     const canSetPerformanceTarget = profile?.role === "super_admin" || profile?.role === "branch_manager";
+    const canSetManualImports = profile?.role === "super_admin";
     const period = useMemo(() => resolveFinancialYearPeriod(settings), [settings]);
     const draftSettings = useMemo(
         () => normalizeSaccoFinancialYearSettings({
@@ -107,13 +114,16 @@ export function SaccoSettingsPage() {
             setError(null);
 
             try {
-                const [financialYearResult, performanceTargetResult] = await Promise.all([
+                const [financialYearResult, performanceTargetResult, manualImportsResult] = await Promise.all([
                     api.get<SaccoFinancialYearSettingsResponse>(endpoints.saccoSettings.financialYear(), {
                         params: { tenant_id: selectedTenantId }
                     }),
                     api.get<SaccoPerformanceTargetSettingsResponse>(endpoints.saccoSettings.performanceTarget(), {
                         params: { tenant_id: selectedTenantId }
-                    })
+                    }),
+                    api.get<SaccoManualImportsSettingsResponse>(endpoints.saccoSettings.manualImports(), {
+                        params: { tenant_id: selectedTenantId }
+                    }).catch(() => null)
                 ]);
 
                 if (!isActive) {
@@ -124,6 +134,10 @@ export function SaccoSettingsPage() {
                 const normalizedPerformance = normalizeSaccoPerformanceTargetSettings(performanceTargetResult.data.data);
                 setSettings(normalized);
                 setPerformanceSettings(normalizedPerformance);
+                if (manualImportsResult?.data?.data) {
+                    setManualImports(manualImportsResult.data.data);
+                    setManualImportsDraft(manualImportsResult.data.data.manual_imports_enabled);
+                }
                 setDraft({
                     financial_year_start_month: normalized.financial_year_start_month,
                     financial_year_start_day: normalized.financial_year_start_day
@@ -224,6 +238,38 @@ export function SaccoSettingsPage() {
             setError(getApiErrorMessage(saveError));
         } finally {
             setSavingPerformance(false);
+        }
+    };
+
+    const saveManualImports = async () => {
+        if (!selectedTenantId) {
+            setError("Select a tenant before saving SACCO settings.");
+            return;
+        }
+
+        setSavingManualImports(true);
+        setError(null);
+
+        try {
+            const payload: UpdateSaccoManualImportsSettingsRequest = {
+                tenant_id: selectedTenantId,
+                manual_imports_enabled: manualImportsDraft
+            };
+            const { data } = await api.patch<SaccoManualImportsSettingsResponse>(endpoints.saccoSettings.manualImports(), payload);
+
+            setManualImports(data.data);
+            setManualImportsDraft(data.data.manual_imports_enabled);
+            pushToast({
+                type: "success",
+                title: "Manual imports updated",
+                message: data.data.manual_imports_enabled
+                    ? "Branch managers can use the manual data importers."
+                    : "Manual data importers are now hidden from branch managers."
+            });
+        } catch (saveError) {
+            setError(getApiErrorMessage(saveError));
+        } finally {
+            setSavingManualImports(false);
         }
     };
 
@@ -644,6 +690,64 @@ export function SaccoSettingsPage() {
                                 ) : null}
                             </Stack>
                         </Box>
+                    </Stack>
+                </CardContent>
+            </MotionCard>
+
+            <MotionCard variant="outlined" inView>
+                <CardContent>
+                    <Stack spacing={2}>
+                        <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} justifyContent="space-between" alignItems={{ xs: "flex-start", md: "center" }}>
+                            <Stack spacing={0.75}>
+                                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                                    <UploadFileRoundedIcon color="primary" />
+                                    <Typography variant="h5">Manual Data Imports</Typography>
+                                    <Chip
+                                        label={manualImportsDraft ? "Visible to branch managers" : "Hidden from branch managers"}
+                                        color={manualImportsDraft ? "success" : "default"}
+                                        variant="outlined"
+                                    />
+                                </Stack>
+                                <Typography variant="body2" color="text.secondary">
+                                    The bulk savings-history, loan-history, loan-repayment, and dividend importers were built to bootstrap legacy data. Turn this off once that migration is complete so branch managers record ongoing activity through the normal forms.
+                                </Typography>
+                            </Stack>
+                            {manualImports?.manual_imports_configured_at ? (
+                                <Chip label={`Updated ${formatDate(manualImports.manual_imports_configured_at)}`} variant="outlined" />
+                            ) : null}
+                        </Stack>
+
+                        <Box sx={{ p: 1.5, border: "1px solid", borderColor: "divider", borderRadius: 1.5 }}>
+                            <FormControlLabel
+                                control={
+                                    <Switch
+                                        checked={manualImportsDraft}
+                                        onChange={(event) => setManualImportsDraft(event.target.checked)}
+                                        disabled={!canSetManualImports || savingManualImports}
+                                    />
+                                }
+                                label="Allow branch managers to use manual data importers"
+                            />
+                            <Typography variant="caption" color="text.secondary" display="block">
+                                When off, the savings-history, loan-history, loan-repayment, and dividend import cards are hidden from branch managers. Member import stays available, and super admins can always see every importer.
+                            </Typography>
+                        </Box>
+
+                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.2} alignItems={{ xs: "stretch", sm: "center" }}>
+                            <Button
+                                variant="contained"
+                                onClick={saveManualImports}
+                                disabled={!canSetManualImports || savingManualImports || (manualImports ? manualImportsDraft === manualImports.manual_imports_enabled : false)}
+                                sx={{ width: { xs: "100%", sm: "fit-content" } }}
+                            >
+                                {savingManualImports ? "Saving..." : "Save Import Visibility"}
+                            </Button>
+                            {!canSetManualImports ? (
+                                <Alert severity="info" variant="outlined" sx={{ py: 0.25 }}>
+                                    This setting is read-only for your role.
+                                </Alert>
+                            ) : null}
+                        </Stack>
                     </Stack>
                 </CardContent>
             </MotionCard>
