@@ -43,9 +43,9 @@ import {
     type MemberDividendHistoryImportResponse,
     type MemberLoanHistoryImportResponse,
     type MemberLoanRepaymentImportResponse,
-    type MemberSavingsHistoryImportResponse,
-    type MembersResponse
+    type MemberSavingsHistoryImportResponse
 } from "../lib/endpoints";
+import { loadAllMembers } from "../lib/loadAllMembers";
 import type { Branch, ImportJob, ImportJobRow, Member } from "../types/api";
 import { downloadFile, getFilenameFromDisposition } from "../utils/downloadFile";
 import { formatDate } from "../utils/format";
@@ -210,17 +210,9 @@ export function MemberImportPage() {
             });
 
         setLoadingMembers(true);
-        void api
-            .get<MembersResponse>(endpoints.members.list(), {
-                params: {
-                    tenant_id: selectedTenantId,
-                    page: 1,
-                    limit: 100,
-                    status: "active"
-                }
-            })
-            .then(({ data }) => {
-                setMembers(data.data || []);
+        void loadAllMembers(selectedTenantId, { status: "active" })
+            .then((all) => {
+                setMembers(all);
             })
             .catch((error) => {
                 pushToast({

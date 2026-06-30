@@ -23,7 +23,8 @@ import { AppLoader } from "../components/AppLoader";
 import { DataTable, type Column } from "../components/DataTable";
 import { useToast } from "../components/Toast";
 import { api, getApiErrorMessage } from "../lib/api";
-import { endpoints, type LoanSchedulesResponse, type LoansResponse, type MembersResponse } from "../lib/endpoints";
+import { endpoints, type LoanSchedulesResponse, type LoansResponse } from "../lib/endpoints";
+import { loadAllMembers } from "../lib/loadAllMembers";
 import type { Loan, LoanSchedule, Member } from "../types/api";
 import { formatCurrency, formatDate } from "../utils/format";
 
@@ -64,21 +65,19 @@ export function FollowUpsPage() {
             setLoading(true);
 
             try {
-                const [{ data: schedulesResponse }, { data: loansResponse }, { data: membersResponse }] = await Promise.all([
+                const [{ data: schedulesResponse }, { data: loansResponse }, membersList] = await Promise.all([
                     api.get<LoanSchedulesResponse>(endpoints.finance.loanSchedules(), {
                         params: { tenant_id: selectedTenantId, page: 1, limit: 100 }
                     }),
                     api.get<LoansResponse>(endpoints.finance.loanPortfolio(), {
                         params: { tenant_id: selectedTenantId, page: 1, limit: 100 }
                     }),
-                    api.get<MembersResponse>(endpoints.members.list(), {
-                        params: { tenant_id: selectedTenantId, page: 1, limit: 100 }
-                    })
+                    loadAllMembers(selectedTenantId)
                 ]);
 
                 setSchedules((schedulesResponse.data || []).filter((schedule) => ["pending", "partial", "overdue"].includes(schedule.status)));
                 setLoans(loansResponse.data || []);
-                setMembers(membersResponse.data || []);
+                setMembers(membersList);
             } catch (error) {
                 pushToast({
                     type: "error",

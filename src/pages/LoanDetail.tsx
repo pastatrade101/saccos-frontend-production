@@ -29,9 +29,9 @@ import {
     endpoints,
     type LoanSchedulesResponse,
     type LoanTransactionsResponse,
-    type LoansResponse,
-    type MembersResponse
+    type LoansResponse
 } from "../lib/endpoints";
+import { loadAllMembers } from "../lib/loadAllMembers";
 import type { Loan, LoanSchedule, LoanTransaction, Member } from "../types/api";
 import { formatCurrency, formatDate } from "../utils/format";
 import { formatMonthlyLoanRate } from "../utils/loanInterest";
@@ -158,10 +158,8 @@ export function LoanDetailPage() {
             setLoading(true);
 
             try {
-                const [{ data: membersResponse }, { data: loansResponse }, { data: schedulesResponse }, { data: transactionsResponse }] = await Promise.all([
-                    api.get<MembersResponse>(endpoints.members.list(), {
-                        params: { tenant_id: selectedTenantId, page: 1, limit: 100 }
-                    }),
+                const [membersList, { data: loansResponse }, { data: schedulesResponse }, { data: transactionsResponse }] = await Promise.all([
+                    loadAllMembers(selectedTenantId),
                     api.get<LoansResponse>(endpoints.finance.loanPortfolio(), {
                         params: { tenant_id: selectedTenantId, loan_id: loanId, page: 1, limit: 100 }
                     }),
@@ -175,7 +173,7 @@ export function LoanDetailPage() {
 
                 const resolvedLoan = (loansResponse.data || []).find((entry) => entry.id === loanId) || null;
                 const resolvedMember = resolvedLoan
-                    ? (membersResponse.data || []).find((entry) => entry.id === resolvedLoan.member_id) || null
+                    ? membersList.find((entry) => entry.id === resolvedLoan.member_id) || null
                     : null;
 
                 setLoan(resolvedLoan);

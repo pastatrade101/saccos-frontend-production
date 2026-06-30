@@ -303,10 +303,17 @@ async function loadDashboardMembers(tenantId: string) {
     return members;
 }
 
+// The dashboard only needs RECENT statements (7-day cash-flow chart + today's
+// figures); member count and savings totals come from the paginated members/
+// accounts. Statements are ordered newest-first, so cap to a few recent pages —
+// loading every transaction (now thousands after history imports) made the
+// dashboard take ages to load.
+const DASHBOARD_STATEMENT_MAX_PAGES = 3;
+
 async function loadDashboardStatements(tenantId: string) {
     const statements: StatementRow[] = [];
     let page = 1;
-    while (page <= 30) {
+    while (page <= DASHBOARD_STATEMENT_MAX_PAGES) {
         const { data } = await api.get<StatementsResponse & { pagination?: { total: number; limit: number; page: number } }>(endpoints.finance.statements(), {
             params: { tenant_id: tenantId, page, limit: DASHBOARD_ACCOUNTS_PAGE_LIMIT }
         });

@@ -1424,6 +1424,7 @@ export interface CashRequest {
     reference?: string | null;
     description?: string | null;
     approval_request_id?: string;
+    value_date?: string;
     receipt_ids?: string[];
 }
 
@@ -1457,7 +1458,7 @@ export interface OperationalBatchRequest {
 export interface OperationalBatchResultRow {
     row_number: number;
     operation: OperationalBatchRowRequest["operation"] | null;
-    status: "posted" | "failed";
+    status: "posted" | "skipped" | "failed";
     reference?: string | null;
     journal_id?: string | null;
     amount: number;
@@ -1468,6 +1469,7 @@ export interface OperationalBatchResultRow {
 export interface OperationalBatchResult {
     total_rows: number;
     posted_rows: number;
+    skipped_rows?: number;
     failed_rows: number;
     rows: OperationalBatchResultRow[];
 }

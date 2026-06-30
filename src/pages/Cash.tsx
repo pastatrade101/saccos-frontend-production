@@ -25,7 +25,7 @@ import {
     Typography
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -66,12 +66,59 @@ const actionSchema = z.object({
     account_id: z.string().uuid("Select an account."),
     amount: z.coerce.number().positive("Amount must be greater than zero."),
     reference: z.string().max(80).optional().or(z.literal("")),
-    description: z.string().max(255).optional().or(z.literal(""))
+    description: z.string().max(255).optional().or(z.literal("")),
+    value_date: z.string().optional().or(z.literal(""))
 });
 
 type CashValues = z.infer<typeof actionSchema>;
 type ActionType = "deposit" | "withdraw" | "share_contribution";
 type PendingAction = { type: ActionType; values: CashValues; receiptFile: File | null } | null;
+
+// This SACCO runs a savings + dividend model (no separate share ledger), so the
+// Share Capital teller action is hidden. Flip to true to re-enable it if shares
+// are ever issued per the by-laws.
+const SHARE_CAPITAL_ENABLED = false;
+
+// The Quick Transaction Actions card duplicated the Cash Desk header buttons, so
+// it's hidden — the header now carries Deposit / Withdrawal / Batch Posting. Flip
+// to true to bring the card back.
+const SHOW_QUICK_ACTIONS = false;
+
+// Page through a list endpoint (limit is capped at 100 server-side) so the account
+// dropdown and member lookup cover the whole member base, not just the first 100.
+async function loadAllPaged<T>(fetchPage: (page: number) => Promise<{ rows: T[]; total?: number }>): Promise<T[]> {
+    const out: T[] = [];
+    let page = 1;
+    while (page <= 30) {
+        const { rows, total } = await fetchPage(page);
+        out.push(...rows);
+        if ((total && out.length >= total) || rows.length < 100) {
+            break;
+        }
+        page += 1;
+    }
+    return out;
+}
+
+function loadAllCashAccounts(tenantId: string) {
+    return loadAllPaged<MemberAccount>(async (page) => {
+        const { data } = await api.get<MemberAccountsResponse & { pagination?: { total: number } }>(
+            endpoints.members.accounts(),
+            { params: { tenant_id: tenantId, page, limit: 100 } }
+        );
+        return { rows: data.data || [], total: data.pagination?.total };
+    });
+}
+
+function loadAllCashMembers(tenantId: string) {
+    return loadAllPaged<Member>(async (page) => {
+        const { data } = await api.get<MembersResponse & { pagination?: { total: number } }>(
+            endpoints.members.list(),
+            { params: { tenant_id: tenantId, page, limit: 100 } }
+        );
+        return { rows: data.data || [], total: data.pagination?.total };
+    });
+}
 
 function formatWholeMoneyInput(value: string) {
     const digits = value.replace(/[^\d]/g, "");
@@ -269,9 +316,13 @@ export function CashPage() {
     const theme = useTheme();
     const navigate = useNavigate();
     const { pushToast } = useToast();
-    const { selectedTenantId, selectedTenantName, selectedBranchId, selectedBranchName } = useAuth();
+    const { selectedTenantId, selectedTenantName, selectedBranchId, selectedBranchName, profile } = useAuth();
+    const canBackdate = profile?.role === "branch_manager" || profile?.role === "super_admin";
+    const backdateMinDate = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+    const todayDate = new Date().toISOString().slice(0, 10);
     const [members, setMembers] = useState<Member[]>([]);
     const [accounts, setAccounts] = useState<MemberAccount[]>([]);
+    const amountInputRef = useRef<HTMLInputElement | null>(null);
     const [transactions, setTransactions] = useState<StatementRow[]>([]);
     const [currentSession, setCurrentSession] = useState<TellerSession | null>(null);
     const [receiptPolicy, setReceiptPolicy] = useState<ReceiptPolicy | null>(null);
@@ -360,22 +411,18 @@ export function CashPage() {
 
         try {
             const [
-                { data: membersResponse },
+                membersList,
                 statementsResponse,
-                { data: accountsResponse },
+                accountsList,
                 { data: currentSessionResponse },
                 { data: receiptPolicyResponse },
                 { data: dailySummaryResponse }
             ] = await Promise.all([
-                api.get<MembersResponse>(endpoints.members.list(), {
-                    params: { tenant_id: selectedTenantId, page: 1, limit: 100 }
-                }),
+                loadAllCashMembers(selectedTenantId),
                 api.get<StatementsResponse>(endpoints.finance.statements(), {
                     params: { tenant_id: selectedTenantId, page: 1, limit: 100 }
                 }),
-                api.get<MemberAccountsResponse>(endpoints.members.accounts(), {
-                    params: { tenant_id: selectedTenantId, page: 1, limit: 100 }
-                }),
+                loadAllCashAccounts(selectedTenantId),
                 api.get<TellerSessionResponse>(endpoints.cashControl.currentSession(), {
                     params: selectedBranchId ? { branch_id: selectedBranchId } : {}
                 }),
@@ -387,9 +434,9 @@ export function CashPage() {
                 })
             ]);
 
-            setMembers(membersResponse.data);
+            setMembers(membersList);
             setTransactions((statementsResponse.data.data || []).slice(0, 40));
-            setAccounts(accountsResponse.data || []);
+            setAccounts(accountsList);
             setCurrentSession(currentSessionResponse.data || null);
             setReceiptPolicy(receiptPolicyResponse.data || null);
             setDailySummary(dailySummaryResponse.data || []);
@@ -416,11 +463,14 @@ export function CashPage() {
         () =>
             accounts.map((account) => {
                 const member = members.find((entry) => entry.id === account.member_id);
+                const phone = member?.phone ? ` • ${member.phone}` : "";
 
                 return {
                     value: account.id,
-                    label: `${account.account_number} - ${member?.full_name || "Unknown member"}`,
-                    secondary: `${account.product_type} • Balance ${formatCurrency(account.available_balance)}`
+                    // Member name first — tellers search by name/phone, not account number.
+                    // Phone is in the secondary so it's both visible and searchable.
+                    label: `${member?.full_name || "Unknown member"} — ${account.account_number}`,
+                    secondary: `${account.product_type} • ${formatCurrency(account.available_balance)}${phone}`
                 };
             }),
         [accounts, members]
@@ -551,7 +601,22 @@ export function CashPage() {
     );
 
     const handleSubmit = (type: ActionType, values: CashValues) => {
-        setPendingAction({ type, values, receiptFile });
+        // One-click post: enforce the receipt rule inline, then post directly — no
+        // separate review step (the form already shows the member, balance and amount).
+        const needsReceipt = Boolean(
+            receiptPolicy?.receipt_required
+            && receiptPolicy.enforce_on_types.includes(type)
+            && values.amount >= receiptPolicy.required_threshold
+        );
+        if (needsReceipt && !receiptFile) {
+            pushToast({
+                type: "error",
+                title: "Receipt required",
+                message: "Attach the receipt proof before posting this transaction."
+            });
+            return;
+        }
+        void confirmAction({ type, values, receiptFile });
     };
 
     const uploadReceiptForAction = async (action: PendingAction, branchId: string, memberId?: string | null) => {
@@ -636,39 +701,41 @@ export function CashPage() {
         }
     });
 
-    const confirmAction = async () => {
-        if (!pendingAction) {
+    const confirmAction = async (actionInput?: PendingAction) => {
+        const action = actionInput ?? pendingAction;
+        if (!action) {
             return;
         }
 
         setProcessing(true);
 
         try {
-            const account = accounts.find((entry) => entry.id === pendingAction.values.account_id);
+            const account = accounts.find((entry) => entry.id === action.values.account_id);
             const member = members.find((entry) => entry.id === account?.member_id);
             const receiptIds = account
-                ? await uploadReceiptForAction(pendingAction, account.branch_id, member?.id || null)
+                ? await uploadReceiptForAction(action, account.branch_id, member?.id || null)
                 : [];
 
             const payload: CashRequest = {
                 tenant_id: selectedTenantId || undefined,
-                account_id: pendingAction.values.account_id,
-                amount: pendingAction.values.amount,
-                reference: pendingAction.values.reference || null,
-                description: pendingAction.values.description || null,
+                account_id: action.values.account_id,
+                amount: action.values.amount,
+                reference: action.values.reference || null,
+                description: action.values.description || null,
+                value_date: (canBackdate && action.values.value_date) ? action.values.value_date : undefined,
                 receipt_ids: receiptIds
             };
 
             const endpoint =
-                pendingAction.type === "deposit"
+                action.type === "deposit"
                     ? endpoints.finance.deposit()
-                    : pendingAction.type === "withdraw"
+                    : action.type === "withdraw"
                         ? endpoints.finance.withdraw()
                         : endpoints.finance.shareContribution();
 
             const { data } = await api.post<CashResponse | ShareContributionResponse | ApiEnvelope<PendingApprovalPayload>>(endpoint, payload);
             const maybePending = data.data as Partial<PendingApprovalPayload>;
-            if (pendingAction.type === "withdraw" && maybePending.approval_required && maybePending.approval_request_id) {
+            if (action.type === "withdraw" && maybePending.approval_required && maybePending.approval_request_id) {
                 pushToast({
                     type: "success",
                     title: "Sent for approval",
@@ -683,9 +750,9 @@ export function CashPage() {
                 pushToast({
                     type: "success",
                     title:
-                        pendingAction.type === "deposit"
+                        action.type === "deposit"
                             ? "Deposit posted"
-                            : pendingAction.type === "withdraw"
+                            : action.type === "withdraw"
                                 ? "Withdrawal posted"
                                 : "Share contribution posted",
                     message: financeData.journal_id
@@ -697,9 +764,9 @@ export function CashPage() {
             setPendingAction(null);
             setActionDialog(null);
             setReceiptFile(null);
-            depositForm.reset({ account_id: payload.account_id, amount: 0, reference: generateCashReference("deposit"), description: "" });
-            withdrawForm.reset({ account_id: payload.account_id, amount: 0, reference: generateCashReference("withdraw"), description: "" });
-            shareForm.reset({ account_id: "", amount: 0, reference: generateCashReference("share_contribution"), description: "" });
+            depositForm.reset({ account_id: payload.account_id, amount: 0, reference: generateCashReference("deposit"), description: "", value_date: "" });
+            withdrawForm.reset({ account_id: payload.account_id, amount: 0, reference: generateCashReference("withdraw"), description: "", value_date: "" });
+            shareForm.reset({ account_id: "", amount: 0, reference: generateCashReference("share_contribution"), description: "", value_date: "" });
             setDepositAmountInput("");
             setWithdrawAmountInput("");
             setShareAmountInput("");
@@ -786,7 +853,7 @@ export function CashPage() {
             pushToast({
                 type: data.data.failed_rows ? "warning" : "success",
                 title: "Batch posting complete",
-                message: `${data.data.posted_rows} posted, ${data.data.failed_rows} failed.`
+                message: `${data.data.posted_rows} posted, ${data.data.skipped_rows ?? 0} skipped (already posted), ${data.data.failed_rows} failed.`
             });
             await loadCashData();
         } catch (error) {
@@ -906,6 +973,7 @@ export function CashPage() {
                             >
                                 Start Withdrawal
                             </Button>
+                            {SHARE_CAPITAL_ENABLED ? (
                             <Button
                                 variant="outlined"
                                 startIcon={<SavingsRoundedIcon />}
@@ -917,6 +985,20 @@ export function CashPage() {
                                 sx={theme.palette.mode === "dark" ? { borderColor: alpha(cashDeskAccent, 0.44), color: cashDeskAccent, "&:hover": { borderColor: alpha(cashDeskAccent, 0.78), bgcolor: alpha(cashDeskAccent, 0.1) } } : undefined}
                             >
                                 Start Contribution
+                            </Button>
+                            ) : null}
+                            <Button
+                                variant="outlined"
+                                startIcon={<FileUploadRoundedIcon />}
+                                onClick={() => {
+                                    setBatchDialogOpen(true);
+                                    setBatchResult(null);
+                                    setBatchParseError(null);
+                                }}
+                                disabled={tellerSessionRequired}
+                                sx={theme.palette.mode === "dark" ? { borderColor: alpha(cashDeskAccent, 0.44), color: cashDeskAccent, "&:hover": { borderColor: alpha(cashDeskAccent, 0.78), bgcolor: alpha(cashDeskAccent, 0.1) } } : undefined}
+                            >
+                                Batch Posting
                             </Button>
                             {!currentSession ? (
                                 <Button
@@ -1122,6 +1204,7 @@ export function CashPage() {
             </Grid>
 
             <Grid container spacing={2}>
+                {SHOW_QUICK_ACTIONS ? (
                 <Grid size={{ xs: 12, xl: 7 }}>
                     <MotionCard
                         variant="outlined"
@@ -1141,7 +1224,7 @@ export function CashPage() {
                                 </Box>
 
                                 <Grid container spacing={2}>
-                                    <Grid size={{ xs: 12, md: 3 }}>
+                                    <Grid size={{ xs: 12, md: SHARE_CAPITAL_ENABLED ? 3 : 4 }}>
                                         <MotionCard variant="outlined" sx={{ borderRadius: 2, height: "100%" }}>
                                             <CardContent>
                                                 <Stack spacing={2}>
@@ -1168,7 +1251,7 @@ export function CashPage() {
                                             </CardContent>
                                         </MotionCard>
                                     </Grid>
-                                    <Grid size={{ xs: 12, md: 3 }}>
+                                    <Grid size={{ xs: 12, md: SHARE_CAPITAL_ENABLED ? 3 : 4 }}>
                                         <MotionCard variant="outlined" sx={{ borderRadius: 2, height: "100%" }}>
                                             <CardContent>
                                                 <Stack spacing={2}>
@@ -1195,7 +1278,8 @@ export function CashPage() {
                                             </CardContent>
                                         </MotionCard>
                                     </Grid>
-                                    <Grid size={{ xs: 12, md: 3 }}>
+                                    {SHARE_CAPITAL_ENABLED ? (
+                                    <Grid size={{ xs: 12, md: SHARE_CAPITAL_ENABLED ? 3 : 4 }}>
                                         <MotionCard variant="outlined" sx={{ borderRadius: 2, height: "100%" }}>
                                             <CardContent>
                                                 <Stack spacing={2}>
@@ -1222,7 +1306,8 @@ export function CashPage() {
                                             </CardContent>
                                         </MotionCard>
                                     </Grid>
-                                    <Grid size={{ xs: 12, md: 3 }}>
+                                    ) : null}
+                                    <Grid size={{ xs: 12, md: SHARE_CAPITAL_ENABLED ? 3 : 4 }}>
                                         <MotionCard variant="outlined" sx={{ borderRadius: 2, height: "100%" }}>
                                             <CardContent>
                                                 <Stack spacing={2}>
@@ -1245,6 +1330,15 @@ export function CashPage() {
                                                     >
                                                         Upload CSV
                                                     </Button>
+                                                    <Button
+                                                        variant="text"
+                                                        size="small"
+                                                        startIcon={<DownloadRoundedIcon />}
+                                                        onClick={downloadOperationalBatchTemplate}
+                                                        sx={{ alignSelf: "flex-start" }}
+                                                    >
+                                                        Download template
+                                                    </Button>
                                                 </Stack>
                                             </CardContent>
                                         </MotionCard>
@@ -1254,8 +1348,9 @@ export function CashPage() {
                         </CardContent>
                     </MotionCard>
                 </Grid>
+                ) : null}
 
-                <Grid size={{ xs: 12, xl: 5 }}>
+                <Grid size={{ xs: 12, xl: SHOW_QUICK_ACTIONS ? 5 : 12 }}>
                     <MotionCard
                         variant="outlined"
                         sx={{
@@ -1481,7 +1576,12 @@ export function CashPage() {
                                     <SearchableSelect
                                         value={currentForm.watch("account_id")}
                                         options={currentActionOptions}
-                                        onChange={(value) => currentForm.setValue("account_id", value, { shouldValidate: true })}
+                                        placeholder="Search by member name, phone, or account…"
+                                        onChange={(value) => {
+                                            currentForm.setValue("account_id", value, { shouldValidate: true });
+                                            // Jump straight to the amount once a member is chosen.
+                                            setTimeout(() => amountInputRef.current?.focus(), 50);
+                                        }}
                                     />
                                 </Box>
                                 {currentForm.formState.errors.account_id ? (
@@ -1530,55 +1630,49 @@ export function CashPage() {
                                 </Grid>
                             ) : null}
 
-                            {actionDialog === "deposit" && currentActionAccount ? (
-                                <Alert severity="info" variant="outlined">
-                                    Teller deposit will post directly into the selected savings account after review. The reference below is generated automatically for audit traceability.
-                                </Alert>
+                            <TextField
+                                label="Amount"
+                                fullWidth
+                                inputRef={amountInputRef}
+                                value={currentAmountInput}
+                                onChange={(event) => {
+                                    const digits = event.target.value.replace(/[^\d]/g, "");
+                                    const formatted = formatWholeMoneyInput(digits);
+                                    if (actionDialog === "deposit") {
+                                        setDepositAmountInput(formatted);
+                                    } else if (actionDialog === "withdraw") {
+                                        setWithdrawAmountInput(formatted);
+                                    } else {
+                                        setShareAmountInput(formatted);
+                                    }
+                                    currentForm.setValue("amount", digits ? Number(digits) : 0, { shouldValidate: true, shouldDirty: true });
+                                }}
+                                error={Boolean(currentForm.formState.errors.amount)}
+                                helperText={currentForm.formState.errors.amount?.message || "Reference is generated automatically for audit."}
+                                inputProps={{ inputMode: "numeric" }}
+                                InputProps={{
+                                    startAdornment: <InputAdornment position="start">TSh</InputAdornment>
+                                }}
+                                sx={{ "& .MuiInputBase-input": { fontSize: "1.5rem", fontWeight: 700, py: 1.2 } }}
+                            />
+
+                            {canBackdate ? (
+                                <TextField
+                                    label="Value date (optional backdate)"
+                                    type="date"
+                                    fullWidth
+                                    InputLabelProps={{ shrink: true }}
+                                    inputProps={{ min: backdateMinDate, max: todayDate }}
+                                    {...currentForm.register("value_date")}
+                                    helperText="Backdate up to 7 days for a deposit received on a past date. Leave blank for today — the audit log always keeps the real entry time."
+                                />
                             ) : null}
 
-                            <Grid container spacing={2}>
-                                <Grid size={{ xs: 12, md: 6 }}>
-                                    <TextField
-                                        label="Amount"
-                                        fullWidth
-                                        value={currentAmountInput}
-                                        onChange={(event) => {
-                                            const digits = event.target.value.replace(/[^\d]/g, "");
-                                            const formatted = formatWholeMoneyInput(digits);
-                                            if (actionDialog === "deposit") {
-                                                setDepositAmountInput(formatted);
-                                            } else if (actionDialog === "withdraw") {
-                                                setWithdrawAmountInput(formatted);
-                                            } else {
-                                                setShareAmountInput(formatted);
-                                            }
-                                            currentForm.setValue("amount", digits ? Number(digits) : 0, { shouldValidate: true, shouldDirty: true });
-                                        }}
-                                        error={Boolean(currentForm.formState.errors.amount)}
-                                        helperText={currentForm.formState.errors.amount?.message || "Enter amount in TSh. Example: 1,000,000"}
-                                        inputProps={{ inputMode: "numeric" }}
-                                        InputProps={{
-                                            startAdornment: <InputAdornment position="start">TSh</InputAdornment>
-                                        }}
-                                    />
-                                </Grid>
-                                <Grid size={{ xs: 12, md: 6 }}>
-                                    <TextField
-                                        label="Reference"
-                                        fullWidth
-                                        value={currentForm.watch("reference") || ""}
-                                        InputProps={{ readOnly: true }}
-                                        error={Boolean(currentForm.formState.errors.reference)}
-                                        helperText={currentForm.formState.errors.reference?.message || "Generated automatically by the system."}
-                                    />
-                                </Grid>
-                            </Grid>
-
                             <TextField
-                                label="Notes"
+                                label="Notes (optional)"
                                 fullWidth
                                 multiline
-                                minRows={3}
+                                minRows={2}
                                 placeholder={
                                     actionDialog === "deposit"
                                         ? "Counter savings deposit"
@@ -1624,7 +1718,13 @@ export function CashPage() {
                         Cancel
                     </Button>
                     <Button form="cash-action-form" type="submit" variant="contained" disabled={processing}>
-                        Review
+                        {processing
+                            ? "Posting…"
+                            : actionDialog === "deposit"
+                                ? "Post Deposit"
+                                : actionDialog === "withdraw"
+                                    ? "Post Withdrawal"
+                                    : "Post Share Contribution"}
                     </Button>
                 </DialogActions>
             </MotionModal>
