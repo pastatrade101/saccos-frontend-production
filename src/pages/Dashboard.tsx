@@ -63,14 +63,11 @@ import {
     type MemberApplicationsResponse,
     type MembersResponse,
     type PlatformErrorRow,
-    type PlatformErrorsResponse,
     type PlatformInfrastructureMetrics,
     type PlatformInfrastructureMetricsResponse,
+    type PlatformOperationsOverviewResponse,
     type PlatformSlowEndpointRow,
-    type PlatformSlowEndpointsResponse,
     type PlatformSystemMetrics,
-    type PlatformSystemMetricsResponse,
-    type PlatformTenantTrafficResponse,
     type PlatformTenantTrafficRow,
     type SaccoFinancialYearSettingsResponse,
     type SaccoPerformanceTargetSettingsResponse,
@@ -1738,50 +1735,45 @@ export function DashboardPage() {
                 setError(null);
 
                 try {
+                    // system + tenant-traffic + slow-endpoints + errors all share the
+                    // 60-min window and are served together by the cached operations
+                    // overview RPC — one call instead of four uncached scans of the
+                    // large api_metrics table. Infrastructure keeps its own 1-min
+                    // window ("current" load), so it stays a separate request.
                     const [
                         tenantsResult,
                         branchesResult,
-                        systemResult,
-                        tenantTrafficResult,
-                        infrastructureResult,
-                        errorsResult,
-                        slowEndpointsResult
+                        overviewResult,
+                        infrastructureResult
                     ] = await Promise.allSettled([
                         api.get<TenantsListResponse>(endpoints.tenants.list(), { params: { page: 1, limit: 100 } }),
                         api.get<BranchesListResponse>(endpoints.branches.list(), { params: { page: 1, limit: 100 } }),
-                        api.get<PlatformSystemMetricsResponse>(endpoints.platform.metricsSystem(), {
+                        api.get<PlatformOperationsOverviewResponse>(endpoints.platform.operationsOverview(), {
                             params: { window_minutes: 60 }
-                        }),
-                        api.get<PlatformTenantTrafficResponse>(endpoints.platform.metricsTenants(), {
-                            params: { window_minutes: 60, sort_by: "traffic", sort_dir: "desc" }
                         }),
                         api.get<PlatformInfrastructureMetricsResponse>(endpoints.platform.metricsInfrastructure(), {
                             params: { window_minutes: 1 }
-                        }),
-                        api.get<PlatformErrorsResponse>(endpoints.platform.errors(), {
-                            params: { page: 1, limit: 20 }
-                        }),
-                        api.get<PlatformSlowEndpointsResponse>(endpoints.platform.metricsSlowEndpoints(), {
-                            params: { window_minutes: 60, limit: 10 }
                         })
                     ]);
+
+                    const overview = overviewResult.status === "fulfilled" ? overviewResult.value.data.data : null;
 
                     if (isActive) {
                         setPlatformState({
                             tenants: tenantsResult.status === "fulfilled" ? tenantsResult.value.data.data || [] : [],
                             branches: branchesResult.status === "fulfilled" ? branchesResult.value.data.data || [] : [],
-                            systemMetrics: systemResult.status === "fulfilled" ? systemResult.value.data.data : null,
-                            tenantTraffic: tenantTrafficResult.status === "fulfilled" ? tenantTrafficResult.value.data.data || [] : [],
+                            systemMetrics: overview?.system ?? null,
+                            tenantTraffic: overview?.tenants ?? [],
                             infrastructure: infrastructureResult.status === "fulfilled" ? infrastructureResult.value.data.data : null,
-                            errors: errorsResult.status === "fulfilled" ? errorsResult.value.data.data || [] : [],
-                            slowEndpoints: slowEndpointsResult.status === "fulfilled" ? slowEndpointsResult.value.data.data || [] : []
+                            errors: overview?.errors ?? [],
+                            slowEndpoints: overview?.slow_endpoints ?? []
                         });
                     }
 
                     const criticalFailure =
                         tenantsResult.status === "rejected"
                         && branchesResult.status === "rejected"
-                        && systemResult.status === "rejected";
+                        && overviewResult.status === "rejected";
 
                     if (criticalFailure && isActive) {
                         setError(getApiErrorMessage(tenantsResult.reason));
