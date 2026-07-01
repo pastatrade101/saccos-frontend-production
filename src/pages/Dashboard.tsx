@@ -481,11 +481,11 @@ function MetricCard({ label, value, helper }: { label: string; value: string; he
                 }
             }}
         >
-            <CardContent sx={{ pl: 2.75 }}>
+            <CardContent sx={{ p: 1.75, pl: 2.25, "&:last-child": { pb: 1.75 } }}>
                 <Box
                     sx={{
-                        width: 44,
-                        height: 44,
+                        width: 34,
+                        height: 34,
                         borderRadius: 2,
                         display: "grid",
                         placeItems: "center",
@@ -499,27 +499,24 @@ function MetricCard({ label, value, helper }: { label: string; value: string; he
                 <Typography
                     variant="overline"
                     color="text.secondary"
-                    sx={{ mt: 1.75, display: "block", fontWeight: 600, letterSpacing: "0.08em" }}
+                    sx={{ mt: 1.25, display: "block", fontWeight: 600, letterSpacing: "0.08em" }}
                 >
                     {label}
                 </Typography>
                 <Typography
+                    title={helper}
                     sx={{
-                        mt: 0.5,
-                        fontSize: { xs: "1.6rem", sm: "1.9rem" },
+                        mt: 0.25,
+                        fontSize: "1.4rem",
                         fontWeight: 800,
-                        lineHeight: 1.1,
+                        lineHeight: 1.15,
                         letterSpacing: "-0.01em",
-                        fontVariantNumeric: "tabular-nums"
+                        fontVariantNumeric: "tabular-nums",
+                        overflowWrap: "anywhere"
                     }}
                 >
                     {value}
                 </Typography>
-                {helper ? (
-                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
-                        {helper}
-                    </Typography>
-                ) : null}
             </CardContent>
         </MotionCard>
     );
@@ -3266,7 +3263,8 @@ export function DashboardPage() {
                         <Grid size={{ xs: 12, sm: 6, xl: 3 }}>
                             <BranchManagerTopCard
                                 label="Outstanding Book"
-                                value={formatCurrency(metrics.branchOutstanding)}
+                                value={formatCurrencyCompact(metrics.branchOutstanding)}
+                                valueTooltip={formatCurrency(metrics.branchOutstanding)}
                                 helper="Total principal and accrued value currently supervised by loan operations."
                                 status={metrics.branchOutstanding > 0 ? "Live portfolio" : "No active exposure"}
                                 tone="neutral"
@@ -3276,7 +3274,8 @@ export function DashboardPage() {
                         <Grid size={{ xs: 12, sm: 6, xl: 3 }}>
                             <BranchManagerTopCard
                                 label="Repayment Pressure"
-                                value={formatCurrency(metrics.branchOverdueOutstanding)}
+                                value={formatCurrencyCompact(metrics.branchOverdueOutstanding)}
+                                valueTooltip={formatCurrency(metrics.branchOverdueOutstanding)}
                                 helper="Outstanding from loans formally in arrears that need collection."
                                 status={`${overdueScheduleCount} loan(s) in arrears`}
                                 tone={overdueScheduleCount > 0 ? "negative" : "positive"}

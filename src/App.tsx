@@ -5,7 +5,6 @@ import type { ReactNode } from "react";
 import { useAuth } from "./auth/AuthContext";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
 import { AppLayout } from "./components/Layout";
-import { AppLoader } from "./components/AppLoader";
 import { AppShellSkeleton } from "./components/AppShellSkeleton";
 // import { PwaInstallPrompt } from "./components/PwaInstallPrompt"; // hidden: PWA install prompt disabled
 import { RootErrorBoundary } from "./components/RootErrorBoundary";
@@ -123,7 +122,7 @@ function PublicHomePage() {
     const { session, loading } = useAuth();
 
     if (loading) {
-        return <AppLoader message="Loading workspace..." />;
+        return <AppShellSkeleton />;
     }
 
     if (!session) {
@@ -137,7 +136,7 @@ function SignInRoute() {
     const { session, loading } = useAuth();
 
     if (session && loading) {
-        return <AppLoader message="Loading workspace..." />;
+        return <AppShellSkeleton />;
     }
 
     if (session) {
@@ -151,7 +150,7 @@ function SignupRoute() {
     const { session, loading } = useAuth();
 
     if (session && loading) {
-        return <AppLoader message="Loading workspace..." />;
+        return <AppShellSkeleton />;
     }
 
     if (session) {
@@ -165,7 +164,7 @@ function SetupRouteGuard({ children }: { children: ReactNode }) {
     const { session, profile, backendUnavailable, isInternalOps, loading } = useAuth();
 
     if (loading || (session && !profile && !isInternalOps && !backendUnavailable)) {
-        return <AppLoader message="Loading workspace..." />;
+        return <AppShellSkeleton />;
     }
 
     if (backendUnavailable) {
@@ -192,7 +191,7 @@ export default function App() {
     return (
         <>
             <RootErrorBoundary>
-            <Suspense fallback={<AppLoader message="Loading workspace..." />}>
+            <Suspense fallback={<AppShellSkeleton />}>
             <Routes>
                 <Route path="/" element={<PublicHomePage />} />
                 <Route path="/signin" element={<SignInRoute />} />

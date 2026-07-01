@@ -7,7 +7,7 @@ import { Box, Button, CardContent, Chip, LinearProgress, Stack, Typography } fro
 import { alpha, useTheme } from "@mui/material/styles";
 
 import { brandColors } from "../../theme/colors";
-import { formatCurrency, formatDate } from "../../utils/format";
+import { formatCurrency, formatCurrencyCompact, formatDate } from "../../utils/format";
 import { MotionCard } from "../../ui/motion";
 import type { FinancialStanding, FinancialStandingTone, FinancialSummaryData } from "./types";
 
@@ -56,7 +56,7 @@ function formatRemaining(amount: number) {
         return "Target met";
     }
 
-    return formatCurrency(amount);
+    return formatCurrencyCompact(amount);
 }
 
 export function FinancialSummary({
@@ -75,23 +75,26 @@ export function FinancialSummary({
     const primaryMetrics = [
         {
             label: "Savings",
-            value: formatCurrency(summary.totalSavings),
-            helper: "Current posted savings balance",
+            value: formatCurrencyCompact(summary.totalSavings),
+            valueTitle: formatCurrency(summary.totalSavings),
+            helper: "Posted savings balance",
             icon: SavingsRoundedIcon,
             color: brandColors.success,
             bg: alpha(brandColors.success, 0.12)
         },
         {
             label: "Dividends",
-            value: formatCurrency(summary.totalDividends),
-            helper: "Posted dividend allocations",
+            value: formatCurrencyCompact(summary.totalDividends),
+            valueTitle: formatCurrency(summary.totalDividends),
+            helper: "Allocations posted",
             icon: TrendingUpRoundedIcon,
             color: accent,
             bg: alpha(accent, 0.12)
         },
         {
             label: "Loan",
-            value: formatCurrency(summary.outstandingLoan),
+            value: formatCurrencyCompact(summary.outstandingLoan),
+            valueTitle: formatCurrency(summary.outstandingLoan),
             helper: standing.label,
             icon: CreditScoreRoundedIcon,
             color: summary.outstandingLoan > 0 ? brandColors.danger : brandColors.success,
@@ -99,10 +102,10 @@ export function FinancialSummary({
         }
     ];
     const targetFacts = [
-        { label: "% reached", value: `${Math.round(summary.targetProgressPercent)}%` },
-        { label: "Annual target", value: formatCurrency(summary.annualSavingsTarget) },
-        { label: "Remaining", value: formatRemaining(summary.targetRemainingAmount) },
-        { label: "Needed now", value: summary.nextRequiredAmount > 0 ? formatCurrency(summary.nextRequiredAmount) : "Clear" }
+        { label: "% reached", value: `${Math.round(summary.targetProgressPercent)}%`, valueTitle: undefined as string | undefined },
+        { label: "Annual target", value: formatCurrencyCompact(summary.annualSavingsTarget), valueTitle: formatCurrency(summary.annualSavingsTarget) },
+        { label: "Remaining", value: formatRemaining(summary.targetRemainingAmount), valueTitle: formatCurrency(summary.targetRemainingAmount) },
+        { label: "Needed now", value: summary.nextRequiredAmount > 0 ? formatCurrencyCompact(summary.nextRequiredAmount) : "Clear", valueTitle: summary.nextRequiredAmount > 0 ? formatCurrency(summary.nextRequiredAmount) : undefined }
     ];
     const nextLoanText = summary.nextInstallmentDueDate
         ? `${formatDate(summary.nextInstallmentDueDate)} · ${formatCurrency(summary.nextInstallmentAmount)}`
@@ -122,8 +125,8 @@ export function FinancialSummary({
                 boxShadow: "0 6px 18px rgba(15, 23, 42, 0.05)"
             }}
         >
-            <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
-                <Stack spacing={2}>
+            <CardContent sx={{ p: 1.75, "&:last-child": { pb: 1.75 } }}>
+                <Stack spacing={1.5}>
                     <Stack direction={{ xs: "column", lg: "row" }} spacing={2} justifyContent="space-between">
                         <Box sx={{ minWidth: 0, flex: 1 }}>
                             <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
@@ -144,18 +147,20 @@ export function FinancialSummary({
                             </Stack>
                             <Typography
                                 variant="h4"
+                                title={formatCurrency(summary.totalSavings)}
                                 sx={{
-                                    mt: 0.75,
+                                    mt: 0.5,
                                     fontWeight: 800,
-                                    lineHeight: 1.08,
-                                    fontSize: { xs: "1.9rem", sm: "2.15rem", md: "2.35rem" },
+                                    lineHeight: 1.1,
+                                    fontSize: { xs: "1.5rem", sm: "1.65rem" },
+                                    fontVariantNumeric: "tabular-nums",
                                     overflowWrap: "anywhere"
                                 }}
                             >
-                                {formatCurrency(summary.totalSavings)} saved
+                                {formatCurrencyCompact(summary.totalSavings)} saved
                             </Typography>
-                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.6, overflowWrap: "anywhere" }}>
-                                Against {formatCurrency(summary.annualSavingsTarget)} annual performance target. Net position is {formatCurrency(summary.netPosition)} after visible loans.
+                            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5, overflowWrap: "anywhere" }}>
+                                {Math.round(summary.targetProgressPercent)}% of {formatCurrencyCompact(summary.annualSavingsTarget)} target · net {formatCurrencyCompact(summary.netPosition)}
                             </Typography>
                         </Box>
                         <Stack spacing={1} sx={{ width: { xs: "100%", lg: 390 }, minWidth: 0 }}>
@@ -223,7 +228,7 @@ export function FinancialSummary({
                                 key={item.label}
                                 sx={{
                                     minWidth: 0,
-                                    p: 1.25,
+                                    p: 1,
                                     borderRadius: 1.5,
                                     border: "1px solid",
                                     borderColor: "divider",
@@ -233,7 +238,7 @@ export function FinancialSummary({
                                 <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
                                     {item.label}
                                 </Typography>
-                                <Typography variant="subtitle1" sx={{ mt: 0.35, fontWeight: 800, overflowWrap: "anywhere" }}>
+                                <Typography title={item.valueTitle} sx={{ mt: 0.25, fontWeight: 800, fontSize: "1.05rem", fontVariantNumeric: "tabular-nums", overflowWrap: "anywhere" }}>
                                     {item.value}
                                 </Typography>
                             </Box>
@@ -259,7 +264,7 @@ export function FinancialSummary({
                                     key={item.label}
                                     sx={{
                                         minWidth: 0,
-                                        p: 1.35,
+                                        p: 1.1,
                                         borderRadius: 1.5,
                                         border: "1px solid",
                                         borderColor: "divider",
@@ -271,11 +276,8 @@ export function FinancialSummary({
                                             <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
                                                 {item.label}
                                             </Typography>
-                                            <Typography variant="h6" sx={{ mt: 0.4, fontWeight: 800, lineHeight: 1.2, overflowWrap: "anywhere" }}>
+                                            <Typography title={item.valueTitle} sx={{ mt: 0.25, fontWeight: 800, fontSize: "1.25rem", lineHeight: 1.2, fontVariantNumeric: "tabular-nums", overflowWrap: "anywhere" }}>
                                                 {item.value}
-                                            </Typography>
-                                            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.4, overflowWrap: "anywhere" }}>
-                                                {item.helper}
                                             </Typography>
                                         </Box>
                                         <Box
@@ -320,6 +322,7 @@ export function FinancialSummary({
                             sx={{ "& > *": { width: { xs: "100%", sm: "auto" } } }}
                         >
                             <Button
+                                size="small"
                                 variant="contained"
                                 onClick={onMakeContribution}
                                 startIcon={<SavingsRoundedIcon />}
@@ -334,6 +337,7 @@ export function FinancialSummary({
                                 Make Contribution
                             </Button>
                             <Button
+                                size="small"
                                 variant="outlined"
                                 onClick={onApplyLoan}
                                 startIcon={<PaidRoundedIcon />}
@@ -352,6 +356,7 @@ export function FinancialSummary({
                                 Apply for Loan
                             </Button>
                             <Button
+                                size="small"
                                 variant="outlined"
                                 onClick={onDownloadStatement}
                                 startIcon={<DownloadRoundedIcon />}
