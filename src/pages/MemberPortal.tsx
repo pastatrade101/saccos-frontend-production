@@ -452,12 +452,11 @@ const memberProfileCompletionSchema = z.object({
         (value) => !value || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value),
         "Enter a valid email address."
     ),
-    gender: z.enum(["male", "female", "other"]).or(z.literal("")),
+    gender: z.enum(["male", "female"]).or(z.literal("")),
     marital_status: z.enum(["single", "married", "divorced", "widowed"]).or(z.literal("")),
     occupation: z.string().trim().max(160, "Occupation is too long.").optional().or(z.literal("")),
     employer: z.string().trim().max(160, "Employer name is too long.").optional().or(z.literal("")),
     national_id: z.string().trim().max(50, "National ID is too long.").optional().or(z.literal("")),
-    nida_no: z.string().trim().max(50, "NIDA number is too long.").optional().or(z.literal("")),
     tin_no: z.string().trim().max(50, "TIN number is too long.").optional().or(z.literal("")),
     region_id: z.string().uuid().optional().or(z.literal("")),
     district_id: z.string().uuid().optional().or(z.literal("")),
@@ -1210,7 +1209,6 @@ export function MemberPortalPage() {
             occupation: "",
             employer: "",
             national_id: "",
-            nida_no: "",
             tin_no: "",
             region_id: "",
             district_id: "",
@@ -2153,12 +2151,11 @@ export function MemberPortalPage() {
             dob: (memberRecord?.dob || "").slice(0, 10),
             phone: normalizePortalPhone(memberRecord?.phone),
             email: memberRecord?.email || "",
-            gender: memberRecord?.gender || "",
+            gender: memberRecord?.gender === "male" || memberRecord?.gender === "female" ? memberRecord.gender : "",
             marital_status: memberRecord?.marital_status || "",
             occupation: memberRecord?.occupation || "",
             employer: memberRecord?.employer || "",
-            national_id: memberRecord?.national_id || "",
-            nida_no: memberRecord?.nida_no || "",
+            national_id: memberRecord?.national_id || memberRecord?.nida_no || "",
             tin_no: memberRecord?.tin_no || "",
             region_id: memberRecord?.region_id || "",
             district_id: memberRecord?.district_id || "",
@@ -2353,7 +2350,6 @@ export function MemberPortalPage() {
                 occupation: toNullableProfileValue(values.occupation),
                 employer: toNullableProfileValue(values.employer),
                 national_id: toNullableProfileValue(values.national_id),
-                nida_no: toNullableProfileValue(values.nida_no),
                 tin_no: toNullableProfileValue(values.tin_no),
                 region_id: toNullableProfileValue(values.region_id),
                 district_id: toNullableProfileValue(values.district_id),
@@ -7728,7 +7724,7 @@ export function MemberPortalPage() {
                                 <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="Marital status" value={titleCase(memberRecord?.marital_status)} /></Grid>
                                 <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="Occupation" value={memberRecord?.occupation} /></Grid>
                                 <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="Ilboru completion year" value={memberRecord?.ilboru_completion_year} /></Grid>
-                                <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="National ID / NIDA" value={memberRecord?.national_id || memberRecord?.nida_no} /></Grid>
+                                <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="National ID (NIDA)" value={memberRecord?.national_id || memberRecord?.nida_no} /></Grid>
                             </Grid>
                         ) : null}
                         {memberProfileTab === 1 ? (
@@ -9543,7 +9539,6 @@ export function MemberPortalPage() {
                                                         <MenuItem value="">Not set</MenuItem>
                                                         <MenuItem value="male">Male</MenuItem>
                                                         <MenuItem value="female">Female</MenuItem>
-                                                        <MenuItem value="other">Other</MenuItem>
                                                     </TextField>
                                                 </Grid>
                                                 <Grid size={{ xs: 12, md: 4 }}>
@@ -9588,10 +9583,7 @@ export function MemberPortalPage() {
                                                     <TextField fullWidth label="Employer name" {...memberProfileCompletionForm.register("employer")} />
                                                 </Grid>
                                                 <Grid size={{ xs: 12, md: 4 }}>
-                                                    <TextField fullWidth label="National ID" {...memberProfileCompletionForm.register("national_id")} />
-                                                </Grid>
-                                                <Grid size={{ xs: 12, md: 4 }}>
-                                                    <TextField fullWidth label="NIDA number" {...memberProfileCompletionForm.register("nida_no")} />
+                                                    <TextField fullWidth label="National ID (NIDA)" {...memberProfileCompletionForm.register("national_id")} />
                                                 </Grid>
                                                 <Grid size={{ xs: 12, md: 4 }}>
                                                     <TextField fullWidth label="TIN number" {...memberProfileCompletionForm.register("tin_no")} />

@@ -91,6 +91,27 @@ export function getApiErrorMessage(error: unknown, fallback = "Request failed.")
         const details = apiError?.details;
 
         if (details && typeof details === "object") {
+            // Zod validation errors (from the validate middleware) arrive as a flattened
+            // { issues: { fieldErrors, formErrors } }. Surface the specific field(s) so
+            // "Request validation failed." names what to fix instead of staying generic.
+            const issues = (details as {
+                issues?: { fieldErrors?: Record<string, string[] | undefined>; formErrors?: string[] };
+            }).issues;
+            if (issues && typeof issues === "object") {
+                const parts: string[] = [];
+                for (const [field, messages] of Object.entries(issues.fieldErrors || {})) {
+                    if (messages && messages.length) {
+                        parts.push(`${field}: ${messages[0]}`);
+                    }
+                }
+                if (issues.formErrors?.length) {
+                    parts.push(...issues.formErrors);
+                }
+                if (parts.length) {
+                    return `${apiError?.message || fallback} ${parts.slice(0, 4).join("; ")}`;
+                }
+            }
+
             const detailedMessage = "message" in details && typeof details.message === "string"
                 ? details.message
                 : "msg" in details && typeof details.msg === "string"
