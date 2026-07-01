@@ -441,9 +441,18 @@ function isAdultPortalDate(value: string) {
     return dob <= minimumBirthDate;
 }
 
+// Optional free-text field that, WHEN filled, must meet the backend's minimum length —
+// so the member sees the problem inline (highlighted field) instead of a server
+// "Request validation failed" with no explanation.
+const optionalText = (min: number, max: number, label: string) =>
+    z.string().trim().max(max, `${label} is too long.`).optional().or(z.literal(""))
+        .refine((value) => !value || value.trim().length >= min, `${label} must be at least ${min} characters.`);
+
 const memberProfileCompletionSchema = z.object({
     full_name: z.string().trim().min(3, "Full name is required.").max(120, "Full name is too long."),
-    dob: z.string().optional().or(z.literal("")).refine((value) => !value || isAdultPortalDate(value), "Member must be at least 18 years old."),
+    dob: z.string().optional().or(z.literal(""))
+        .refine((value) => !value || /^\d{4}-\d{2}-\d{2}$/.test(value), "Use date format YYYY-MM-DD.")
+        .refine((value) => !value || isAdultPortalDate(value), "Member must be at least 18 years old."),
     phone: z.string().trim().optional().or(z.literal("")).refine(
         (value) => !value || memberProfileCompletionPhonePattern.test(value),
         "Use 2557XXXXXXXX or 2556XXXXXXXX."
@@ -454,33 +463,46 @@ const memberProfileCompletionSchema = z.object({
     ),
     gender: z.enum(["male", "female", "other"]).or(z.literal("")),
     marital_status: z.enum(["single", "married", "divorced", "widowed"]).or(z.literal("")),
-    occupation: z.string().trim().max(160, "Occupation is too long.").optional().or(z.literal("")),
-    employer: z.string().trim().max(160, "Employer name is too long.").optional().or(z.literal("")),
-    national_id: z.string().trim().max(50, "National ID is too long.").optional().or(z.literal("")),
+    occupation: optionalText(2, 160, "Occupation"),
+    employer: optionalText(2, 160, "Employer name"),
+    id_type: z.enum(["nida", "voter", "license", "passport"]).default("nida"),
+    national_id: optionalText(5, 50, "ID number"),
     nida_no: z.string().trim().max(50, "NIDA number is too long.").optional().or(z.literal("")),
     tin_no: z.string().trim().max(50, "TIN number is too long.").optional().or(z.literal("")),
     region_id: z.string().uuid().optional().or(z.literal("")),
     district_id: z.string().uuid().optional().or(z.literal("")),
     ward_id: z.string().uuid().optional().or(z.literal("")),
     village_id: z.string().uuid().optional().or(z.literal("")),
-    region: z.string().trim().max(120, "Region is too long.").optional().or(z.literal("")),
-    district: z.string().trim().max(120, "District is too long.").optional().or(z.literal("")),
-    ward: z.string().trim().max(120, "Ward is too long.").optional().or(z.literal("")),
-    street_or_village: z.string().trim().max(160, "Street or village is too long.").optional().or(z.literal("")),
-    residential_address: z.string().trim().max(255, "Residential address is too long.").optional().or(z.literal("")),
-    next_of_kin_name: z.string().trim().max(120, "Next of kin name is too long.").optional().or(z.literal("")),
-    next_of_kin_phone: z.string().trim().max(30, "Next of kin phone is too long.").optional().or(z.literal("")),
-    next_of_kin_relationship: z.string().trim().max(80, "Relationship is too long.").optional().or(z.literal("")),
-    next_of_kin_address: z.string().trim().max(255, "Next of kin address is too long.").optional().or(z.literal("")),
+    region: optionalText(2, 120, "Region"),
+    district: optionalText(2, 120, "District"),
+    ward: optionalText(2, 120, "Ward"),
+    street_or_village: optionalText(2, 160, "Street or village"),
+    residential_address: optionalText(3, 255, "Residential address"),
+    next_of_kin_name: optionalText(3, 120, "Next of kin name"),
+    next_of_kin_phone: optionalText(7, 30, "Next of kin phone"),
+    next_of_kin_relationship: optionalText(2, 80, "Relationship"),
+    next_of_kin_address: optionalText(3, 255, "Next of kin address"),
     // By-law fields so existing members can complete the same data as new applicants.
     ilboru_completion_year: z.union([z.literal(""), z.coerce.number().int().min(1980, "Year must be 1980–2022.").max(2022, "Year must be 1980–2022.")]).optional(),
-    heir_name: z.string().trim().max(120, "Heir name is too long.").optional().or(z.literal("")),
-    heir_phone: z.string().trim().max(30, "Heir phone is too long.").optional().or(z.literal("")),
-    heir_relationship: z.string().trim().max(80, "Heir relationship is too long.").optional().or(z.literal("")),
-    heir_address: z.string().trim().max(255, "Heir address is too long.").optional().or(z.literal("")),
+    heir_name: optionalText(3, 120, "Heir name"),
+    heir_phone: optionalText(7, 30, "Heir phone"),
+    heir_relationship: optionalText(2, 80, "Heir relationship"),
+    heir_address: optionalText(3, 255, "Heir address"),
     legitimate_income_declared: z.boolean().optional(),
     no_conflicting_business_declared: z.boolean().optional()
-});
+})
+    .superRefine((data, ctx) => {
+        // NIDA / National ID is a 20-digit number; other ID types are free-form.
+        const idNumber = (data.national_id || "").replace(/\s/g, "");
+        if (data.id_type === "nida" && idNumber && !/^\d{20}$/.test(idNumber)) {
+            ctx.addIssue({ path: ["national_id"], code: z.ZodIssueCode.custom, message: "NIDA / National ID must be exactly 20 digits." });
+        }
+        // TIN is always a 9-digit number when provided.
+        const tin = (data.tin_no || "").replace(/\s/g, "");
+        if (tin && !/^\d{9}$/.test(tin)) {
+            ctx.addIssue({ path: ["tin_no"], code: z.ZodIssueCode.custom, message: "TIN number must be exactly 9 digits." });
+        }
+    });
 
 type MemberProfileCompletionValues = z.infer<typeof memberProfileCompletionSchema>;
 
@@ -1209,6 +1231,7 @@ export function MemberPortalPage() {
             marital_status: "",
             occupation: "",
             employer: "",
+            id_type: "nida",
             national_id: "",
             nida_no: "",
             tin_no: "",
@@ -2157,7 +2180,8 @@ export function MemberPortalPage() {
             marital_status: memberRecord?.marital_status || "",
             occupation: memberRecord?.occupation || "",
             employer: memberRecord?.employer || "",
-            national_id: memberRecord?.national_id || "",
+            id_type: ((memberRecord as { id_type?: string } | null | undefined)?.id_type as "nida" | "voter" | "license" | "passport") || "nida",
+            national_id: memberRecord?.national_id || memberRecord?.nida_no || "",
             nida_no: memberRecord?.nida_no || "",
             tin_no: memberRecord?.tin_no || "",
             region_id: memberRecord?.region_id || "",
@@ -2352,8 +2376,11 @@ export function MemberPortalPage() {
                 marital_status: values.marital_status || null,
                 occupation: toNullableProfileValue(values.occupation),
                 employer: toNullableProfileValue(values.employer),
-                national_id: toNullableProfileValue(values.national_id),
-                nida_no: toNullableProfileValue(values.nida_no),
+                id_type: values.id_type,
+                national_id: toNullableProfileValue(values.national_id?.replace(/\s/g, "")),
+                // NIDA number and National ID are the same value in Tanzania; mirror the
+                // single ID field into nida_no when the chosen ID type is NIDA/National ID.
+                nida_no: values.id_type === "nida" ? toNullableProfileValue(values.national_id?.replace(/\s/g, "")) : null,
                 tin_no: toNullableProfileValue(values.tin_no),
                 region_id: toNullableProfileValue(values.region_id),
                 district_id: toNullableProfileValue(values.district_id),
@@ -9537,7 +9564,7 @@ export function MemberPortalPage() {
                                                         fullWidth
                                                         label="Gender"
                                                         InputLabelProps={{ shrink: true }}
-                                                        defaultValue=""
+                                                        value={memberProfileCompletionForm.watch("gender") ?? ""}
                                                         {...memberProfileCompletionForm.register("gender")}
                                                     >
                                                         <MenuItem value="">Not set</MenuItem>
@@ -9571,7 +9598,7 @@ export function MemberPortalPage() {
                                                         fullWidth
                                                         label="Marital status"
                                                         InputLabelProps={{ shrink: true }}
-                                                        defaultValue=""
+                                                        value={memberProfileCompletionForm.watch("marital_status") ?? ""}
                                                         {...memberProfileCompletionForm.register("marital_status")}
                                                     >
                                                         <MenuItem value="">Not set</MenuItem>
@@ -9588,13 +9615,38 @@ export function MemberPortalPage() {
                                                     <TextField fullWidth label="Employer name" {...memberProfileCompletionForm.register("employer")} />
                                                 </Grid>
                                                 <Grid size={{ xs: 12, md: 4 }}>
-                                                    <TextField fullWidth label="National ID" {...memberProfileCompletionForm.register("national_id")} />
+                                                    <TextField
+                                                        select
+                                                        fullWidth
+                                                        label="ID type"
+                                                        InputLabelProps={{ shrink: true }}
+                                                        value={memberProfileCompletionForm.watch("id_type") ?? "nida"}
+                                                        {...memberProfileCompletionForm.register("id_type")}
+                                                    >
+                                                        <MenuItem value="nida">NIDA / National ID</MenuItem>
+                                                        <MenuItem value="voter">Voter ID</MenuItem>
+                                                        <MenuItem value="license">Driver's license</MenuItem>
+                                                        <MenuItem value="passport">Passport</MenuItem>
+                                                    </TextField>
                                                 </Grid>
                                                 <Grid size={{ xs: 12, md: 4 }}>
-                                                    <TextField fullWidth label="NIDA number" {...memberProfileCompletionForm.register("nida_no")} />
+                                                    <TextField
+                                                        fullWidth
+                                                        label={memberProfileCompletionForm.watch("id_type") === "nida" ? "NIDA / National ID number" : "ID number"}
+                                                        {...memberProfileCompletionForm.register("national_id")}
+                                                        error={Boolean(memberProfileCompletionForm.formState.errors.national_id)}
+                                                        helperText={memberProfileCompletionForm.formState.errors.national_id?.message
+                                                            || (memberProfileCompletionForm.watch("id_type") === "nida" ? "20 digits" : undefined)}
+                                                    />
                                                 </Grid>
                                                 <Grid size={{ xs: 12, md: 4 }}>
-                                                    <TextField fullWidth label="TIN number" {...memberProfileCompletionForm.register("tin_no")} />
+                                                    <TextField
+                                                        fullWidth
+                                                        label="TIN number"
+                                                        {...memberProfileCompletionForm.register("tin_no")}
+                                                        error={Boolean(memberProfileCompletionForm.formState.errors.tin_no)}
+                                                        helperText={memberProfileCompletionForm.formState.errors.tin_no?.message || "9 digits"}
+                                                    />
                                                 </Grid>
                                             </Grid>
                                         </Stack>
