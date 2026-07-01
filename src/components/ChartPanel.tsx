@@ -38,12 +38,12 @@ export function ChartPanel({
                 background: `linear-gradient(180deg, ${alpha(theme.palette.background.paper, 0.98)}, ${alpha(theme.palette.secondary.main, 0.03)})`
             }}
         >
-            <CardContent>
-                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" mb={2}>
+            <CardContent sx={{ p: 1.75, "&:last-child": { pb: 1.75 } }}>
+                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" mb={1.25}>
                     <div>
                         <Typography variant="h6">{title}</Typography>
                         {subtitle ? (
-                            <Typography variant="body2" color="text.secondary">
+                            <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.75rem", lineHeight: 1.3 }}>
                                 {subtitle}
                             </Typography>
                         ) : null}
