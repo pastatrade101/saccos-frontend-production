@@ -479,6 +479,40 @@ const memberProfileCompletionSchema = z.object({
     heir_address: z.string().trim().max(255, "Heir address is too long.").optional().or(z.literal("")),
     legitimate_income_declared: z.boolean().optional(),
     no_conflicting_business_declared: z.boolean().optional()
+}).superRefine((value, ctx) => {
+    // "Complete Member Profile" must actually be complete — enforce the same fields
+    // the completeness check flags, so an empty form can't save as a success.
+    const requireText = (field: keyof typeof value, label: string) => {
+        const current = value[field];
+        if (current === undefined || current === null || String(current).trim() === "") {
+            ctx.addIssue({ code: z.ZodIssueCode.custom, path: [field], message: `${label} is required.` });
+        }
+    };
+
+    requireText("dob", "Date of birth");
+    requireText("gender", "Gender");
+    requireText("marital_status", "Marital status");
+    requireText("occupation", "Occupation");
+    requireText("phone", "Phone number");
+    requireText("national_id", "National ID (NIDA)");
+    requireText("region_id", "Region");
+    requireText("district_id", "District");
+    requireText("ward_id", "Ward");
+    requireText("residential_address", "Residential address");
+    requireText("next_of_kin_name", "Next of kin name");
+    requireText("next_of_kin_phone", "Next of kin phone");
+    requireText("next_of_kin_relationship", "Next of kin relationship");
+    requireText("ilboru_completion_year", "Year completed Ilboru Secondary");
+    requireText("heir_name", "Heir name (Mrithi)");
+    requireText("heir_phone", "Heir phone");
+    requireText("heir_relationship", "Heir relationship");
+
+    if (!value.legitimate_income_declared) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["legitimate_income_declared"], message: "Confirm your legitimate source of income (by-laws §10c)." });
+    }
+    if (!value.no_conflicting_business_declared) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["no_conflicting_business_declared"], message: "Confirm you have no conflicting savings or lending business (by-laws §10f)." });
+    }
 });
 
 type MemberProfileCompletionValues = z.infer<typeof memberProfileCompletionSchema>;
@@ -2400,15 +2434,18 @@ export function MemberPortalPage() {
             setSavingProfileCompletion(false);
         }
     }, (errors) => {
-        // Without this, an invalid (often pre-filled) field made Save do nothing
-        // silently. Surface the first problem so the member knows what to fix.
-        const firstError = Object.values(errors).find((entry) => entry && (entry as { message?: string }).message) as
-            | { message?: string }
-            | undefined;
+        // The profile only saves once every required by-law field is filled, so an
+        // empty form can no longer save silently. Surface how many are outstanding and
+        // the first one to fix.
+        const messages = Object.values(errors)
+            .map((entry) => (entry as { message?: string })?.message)
+            .filter((message): message is string => Boolean(message));
         pushToast({
             type: "error",
-            title: "Check the highlighted fields",
-            message: firstError?.message || "Some details are invalid. Please review phone, date of birth, and required fields."
+            title: "Complete the required fields",
+            message: messages.length > 1
+                ? `${messages.length} fields still need attention — start with: ${messages[0]}`
+                : messages[0] || "Some details are invalid. Please review the required fields."
         });
     });
 
