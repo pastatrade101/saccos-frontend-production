@@ -2,7 +2,7 @@ import { Navigate, Outlet, useLocation } from "react-router-dom";
 
 import { useAuth } from "./AuthContext";
 import type { Role } from "../types/api";
-import { AppLoader } from "../components/AppLoader";
+import { AppShellSkeleton } from "../components/AppShellSkeleton";
 
 interface ProtectedRouteProps {
     allowedRoles?: Role[];
@@ -19,7 +19,7 @@ export function ProtectedRoute({
     const location = useLocation();
 
     if (loading) {
-        return <AppLoader message="Loading session..." />;
+        return <AppShellSkeleton />;
     }
 
     if (!session) {

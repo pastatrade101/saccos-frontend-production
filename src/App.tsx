@@ -6,6 +6,7 @@ import { useAuth } from "./auth/AuthContext";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
 import { AppLayout } from "./components/Layout";
 import { AppLoader } from "./components/AppLoader";
+import { AppShellSkeleton } from "./components/AppShellSkeleton";
 // import { PwaInstallPrompt } from "./components/PwaInstallPrompt"; // hidden: PWA install prompt disabled
 import { RootErrorBoundary } from "./components/RootErrorBoundary";
 import { SessionTimeoutManager } from "./components/SessionTimeoutManager";
@@ -57,7 +58,7 @@ function WorkspaceRedirect() {
     const { session, profile, backendUnavailable, isInternalOps, twoFactorSetupRequired, loading } = useAuth();
 
     if (loading || (session && !profile && !isInternalOps && !backendUnavailable && !twoFactorSetupRequired)) {
-        return <AppLoader message="Loading workspace..." />;
+        return <AppShellSkeleton />;
     }
 
     if (backendUnavailable) {
