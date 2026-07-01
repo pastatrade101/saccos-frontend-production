@@ -85,10 +85,77 @@ api.interceptors.response.use(
     }
 );
 
+const FIELD_LABELS: Record<string, string> = {
+    dob: "Date of birth",
+    date_of_birth: "Date of birth",
+    nida_no: "NIDA number",
+    national_id: "National ID",
+    tin_no: "TIN number",
+    phone: "Phone",
+    phone_number: "Phone",
+    email: "Email",
+    full_name: "Full name",
+    occupation: "Occupation",
+    employer: "Employer",
+    region: "Region",
+    district: "District",
+    ward: "Ward",
+    street_or_village: "Street / Village",
+    residential_address: "Residential address",
+    address_line1: "Address",
+    next_of_kin_name: "Next of kin name",
+    next_of_kin_phone: "Next of kin phone",
+    next_of_kin_address: "Next of kin address",
+    next_of_kin_relationship: "Next of kin relationship",
+    heir_name: "Heir name",
+    heir_phone: "Heir phone",
+    heir_address: "Heir address",
+    heir_relationship: "Heir relationship",
+    ilboru_completion_year: "Year completed"
+};
+
+function humanizeFieldName(field: string) {
+    return FIELD_LABELS[field] || field.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+}
+
+// Zod validation errors arrive as details.issues = { formErrors, fieldErrors }.
+// Turn them into a readable per-field message so the user knows exactly what to fix.
+function formatFieldErrors(details: unknown): string | null {
+    if (!details || typeof details !== "object" || !("issues" in details)) {
+        return null;
+    }
+    const issues = (details as { issues?: unknown }).issues;
+    if (!issues || typeof issues !== "object") {
+        return null;
+    }
+
+    const parts: string[] = [];
+    const fieldErrors = (issues as { fieldErrors?: Record<string, string[]> }).fieldErrors;
+    if (fieldErrors && typeof fieldErrors === "object") {
+        for (const [field, messages] of Object.entries(fieldErrors)) {
+            if (Array.isArray(messages) && messages.length > 0) {
+                parts.push(`${humanizeFieldName(field)}: ${messages.join(" ")}`);
+            }
+        }
+    }
+    const formErrors = (issues as { formErrors?: string[] }).formErrors;
+    if (Array.isArray(formErrors)) {
+        parts.push(...formErrors.filter((m) => typeof m === "string" && m.length > 0));
+    }
+
+    return parts.length > 0 ? parts.join("; ") : null;
+}
+
 export function getApiErrorMessage(error: unknown, fallback = "Request failed.") {
     if (axios.isAxiosError<ApiErrorPayload>(error)) {
         const apiError = error.response?.data?.error;
         const details = apiError?.details;
+
+        // Surface per-field validation messages when present.
+        const fieldMessage = formatFieldErrors(details);
+        if (fieldMessage) {
+            return fieldMessage;
+        }
 
         if (details && typeof details === "object") {
             // Zod validation errors (from the validate middleware) arrive as a flattened

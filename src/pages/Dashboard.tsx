@@ -94,7 +94,7 @@ import {
     type PerformanceTargetLevelColor,
     type PerformanceTargetStatusId
 } from "../utils/performanceTarget";
-import { formatCurrency, formatDate, formatRole } from "../utils/format";
+import { formatCurrency, formatCurrencyCompact, formatDate, formatRole } from "../utils/format";
 
 registerCharts();
 
@@ -242,6 +242,14 @@ function formatSignedCurrency(value: number) {
     }
 
     return formatCurrency(value);
+}
+
+function formatSignedCurrencyCompact(value: number) {
+    if (value < 0) {
+        return `(${formatCurrencyCompact(Math.abs(value))})`;
+    }
+
+    return formatCurrencyCompact(value);
 }
 
 function formatSignedPercent(value: number) {
@@ -473,11 +481,11 @@ function MetricCard({ label, value, helper }: { label: string; value: string; he
                 }
             }}
         >
-            <CardContent sx={{ pl: 2.75 }}>
+            <CardContent sx={{ p: 1.75, pl: 2.25, "&:last-child": { pb: 1.75 } }}>
                 <Box
                     sx={{
-                        width: 44,
-                        height: 44,
+                        width: 34,
+                        height: 34,
                         borderRadius: 2,
                         display: "grid",
                         placeItems: "center",
@@ -491,27 +499,24 @@ function MetricCard({ label, value, helper }: { label: string; value: string; he
                 <Typography
                     variant="overline"
                     color="text.secondary"
-                    sx={{ mt: 1.75, display: "block", fontWeight: 600, letterSpacing: "0.08em" }}
+                    sx={{ mt: 1.25, display: "block", fontWeight: 600, letterSpacing: "0.08em" }}
                 >
                     {label}
                 </Typography>
                 <Typography
+                    title={helper}
                     sx={{
-                        mt: 0.5,
-                        fontSize: { xs: "1.6rem", sm: "1.9rem" },
+                        mt: 0.25,
+                        fontSize: "1.4rem",
                         fontWeight: 800,
-                        lineHeight: 1.1,
+                        lineHeight: 1.15,
                         letterSpacing: "-0.01em",
-                        fontVariantNumeric: "tabular-nums"
+                        fontVariantNumeric: "tabular-nums",
+                        overflowWrap: "anywhere"
                     }}
                 >
                     {value}
                 </Typography>
-                {helper ? (
-                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
-                        {helper}
-                    </Typography>
-                ) : null}
             </CardContent>
         </MotionCard>
     );
@@ -537,14 +542,21 @@ function RiskStripCard({
 
     return (
         <MotionCard variant="outlined" inView sx={{ height: "100%", borderColor: toneStyles.border, bgcolor: toneStyles.bg }}>
-            <CardContent sx={{ p: 2 }}>
+            <CardContent sx={{ p: 1.75 }}>
                 <Typography variant="overline" color="text.secondary">
                     {label}
                 </Typography>
-                <Typography variant="h5" sx={{ mt: 0.25, color: toneStyles.color }}>
+                <Typography
+                    variant="h5"
+                    sx={{ mt: 0.25, color: toneStyles.color, fontSize: "1.4rem", fontWeight: 800, lineHeight: 1.15, fontVariantNumeric: "tabular-nums" }}
+                >
                     {value}
                 </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+                <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ display: "block", mt: 0.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                >
                     {helper}
                 </Typography>
             </CardContent>
@@ -571,15 +583,10 @@ function OperationalQueueCard({
                     : "primary";
 
     return (
-        <MotionListItem interactive variant="outlined" inView sx={{ p: 1.5, cursor: "pointer" }} onClick={() => onOpen(item.route)}>
-            <Stack spacing={1}>
-                <Stack direction="row" justifyContent="space-between" alignItems="center">
-                    <Typography variant="subtitle2">{item.label}</Typography>
-                    <Chip label={String(item.count)} size="small" color={color} />
-                </Stack>
-                <Typography variant="body2" color="text.secondary">
-                    {item.helper}
-                </Typography>
+        <MotionListItem interactive variant="outlined" inView sx={{ p: 1.25, cursor: "pointer" }} onClick={() => onOpen(item.route)}>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1} sx={{ width: "100%" }}>
+                <Typography variant="subtitle2">{item.label}</Typography>
+                <Chip label={String(item.count)} size="small" color={color} />
             </Stack>
         </MotionListItem>
     );
@@ -588,6 +595,7 @@ function OperationalQueueCard({
 function BranchManagerTopCard({
     label,
     value,
+    valueTooltip,
     helper,
     status,
     tone,
@@ -597,6 +605,7 @@ function BranchManagerTopCard({
 }: {
     label: string;
     value: string;
+    valueTooltip?: string;
     helper: string;
     status: string;
     tone: "positive" | "negative" | "neutral";
@@ -627,24 +636,40 @@ function BranchManagerTopCard({
             inView
             sx={{
                 height: "100%",
-                minHeight: 172,
+                position: "relative",
+                overflow: "hidden",
                 borderColor: alpha(toneMap.main, featured ? 0.28 : 0.18),
                 background: featured
                     ? `linear-gradient(135deg, ${alpha(toneMap.main, 0.08)}, ${theme.palette.background.paper})`
                     : theme.palette.background.paper,
-                boxShadow: featured ? `0 16px 34px ${alpha(toneMap.main, 0.08)}` : "none"
+                boxShadow: featured ? `0 16px 34px ${alpha(toneMap.main, 0.08)}` : "none",
+                transition: "box-shadow .25s ease, border-color .25s ease, transform .25s ease",
+                "&::before": {
+                    content: "\"\"",
+                    position: "absolute",
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: 4,
+                    background: `linear-gradient(180deg, ${toneMap.main}, ${alpha(toneMap.main, 0.35)})`
+                },
+                "&:hover": {
+                    borderColor: alpha(toneMap.main, 0.45),
+                    boxShadow: `0 18px 36px ${alpha(toneMap.main, 0.16)}`,
+                    transform: "translateY(-2px)"
+                }
             }}
         >
-            <CardContent sx={{ height: "100%", p: 2, display: "flex", flexDirection: "column" }}>
-                <Stack spacing={1.1} sx={{ height: "100%", minWidth: 0 }}>
+            <CardContent sx={{ p: 1.75, pl: 2.25, display: "flex", flexDirection: "column" }}>
+                <Stack spacing={0.75} sx={{ minWidth: 0 }}>
                     <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
                         <Typography variant="overline" color="text.secondary" sx={{ lineHeight: 1.25 }}>
                             {label}
                         </Typography>
                         <Box
                             sx={{
-                                width: 36,
-                                height: 36,
+                                width: 34,
+                                height: 34,
                                 borderRadius: 2,
                                 bgcolor: toneMap.soft,
                                 color: toneMap.main,
@@ -660,9 +685,13 @@ function BranchManagerTopCard({
 
                     <Typography
                         variant="h5"
+                        title={valueTooltip}
                         sx={{
-                            lineHeight: 1.1,
-                            fontSize: featured ? "1.75rem" : "1.6rem",
+                            lineHeight: 1.15,
+                            fontSize: featured ? "1.5rem" : "1.4rem",
+                            fontWeight: 800,
+                            letterSpacing: "-0.01em",
+                            fontVariantNumeric: "tabular-nums",
                             overflowWrap: "anywhere",
                             wordBreak: "normal"
                         }}
@@ -670,22 +699,7 @@ function BranchManagerTopCard({
                         {value}
                     </Typography>
 
-                    <Typography
-                        variant="body2"
-                        color="text.secondary"
-                        sx={{
-                            flexGrow: 1,
-                            minHeight: 38,
-                            display: "-webkit-box",
-                            WebkitBoxOrient: "vertical",
-                            WebkitLineClamp: 2,
-                            overflow: "hidden"
-                        }}
-                    >
-                        {helper}
-                    </Typography>
-
-                    <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1.5} sx={{ mt: "auto" }}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1.5} sx={{ mt: 0.25 }}>
                         <Chip
                             label={status}
                             size="small"
@@ -869,14 +883,9 @@ function StaffPerformancePanel({
 }) {
     return (
         <MotionCard variant="outlined" inView sx={{ height: "100%" }}>
-            <CardContent>
-                <Stack spacing={1.5}>
-                    <Box>
-                        <Typography variant="h6">Staff Performance</Typography>
-                        <Typography variant="body2" color="text.secondary">
-                            Loan officer output and collection quality snapshot for branch supervision.
-                        </Typography>
-                    </Box>
+            <CardContent sx={{ p: 1.75, "&:last-child": { pb: 1.75 } }}>
+                <Stack spacing={1.25}>
+                    <Typography variant="h6">Staff Performance</Typography>
                     {rows.length ? (
                         <Stack spacing={1} divider={<Divider flexItem />}>
                             {rows.map((row, index) => (
@@ -3254,7 +3263,8 @@ export function DashboardPage() {
                         <Grid size={{ xs: 12, sm: 6, xl: 3 }}>
                             <BranchManagerTopCard
                                 label="Outstanding Book"
-                                value={formatCurrency(metrics.branchOutstanding)}
+                                value={formatCurrencyCompact(metrics.branchOutstanding)}
+                                valueTooltip={formatCurrency(metrics.branchOutstanding)}
                                 helper="Total principal and accrued value currently supervised by loan operations."
                                 status={metrics.branchOutstanding > 0 ? "Live portfolio" : "No active exposure"}
                                 tone="neutral"
@@ -3264,7 +3274,8 @@ export function DashboardPage() {
                         <Grid size={{ xs: 12, sm: 6, xl: 3 }}>
                             <BranchManagerTopCard
                                 label="Repayment Pressure"
-                                value={formatCurrency(metrics.branchOverdueOutstanding)}
+                                value={formatCurrencyCompact(metrics.branchOverdueOutstanding)}
+                                valueTooltip={formatCurrency(metrics.branchOverdueOutstanding)}
                                 helper="Outstanding from loans formally in arrears that need collection."
                                 status={`${overdueScheduleCount} loan(s) in arrears`}
                                 tone={overdueScheduleCount > 0 ? "negative" : "positive"}
@@ -3311,31 +3322,41 @@ export function DashboardPage() {
                                 : `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.08)}, ${alpha(theme.palette.background.paper, 0.95)})`
                         }}
                     >
-                        <CardContent sx={{ p: { xs: 2.25, md: 2.75 } }}>
-                            <Stack spacing={2.5}>
-                                <Stack direction={{ xs: "column", lg: "row" }} spacing={2.5} justifyContent="space-between">
-                                    <Stack spacing={1.5} sx={{ flex: 1, minWidth: 0 }}>
+                        <CardContent sx={{ p: 1.75 }}>
+                            <Stack spacing={1.75}>
+                                <Stack direction={{ xs: "column", lg: "row" }} spacing={2} justifyContent="space-between">
+                                    <Stack spacing={1.25} sx={{ flex: 1, minWidth: 0 }}>
                                         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                                             <Chip label={`SACCO year ${financialYearPeriod.startLabel} - ${financialYearPeriod.endLabel}`} color="primary" variant="outlined" />
-                                            <Chip label={`${metrics.branchActiveMembers} active of ${metrics.branchMembers} member(s)`} variant="outlined" />
+                                            <Chip label={`${metrics.branchActiveMembers}/${metrics.branchMembers} active`} variant="outlined" />
                                             <Chip
                                                 label={par30Percent >= 8 ? `PAR ${par30Percent.toFixed(1)}% watch` : `PAR ${par30Percent.toFixed(1)}% healthy`}
                                                 color={par30Percent >= 15 ? "error" : par30Percent >= 8 ? "warning" : "success"}
                                                 variant="outlined"
                                             />
                                         </Stack>
+                                        <Typography variant="subtitle1" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
+                                            {selectedTenantName || "SACCO"} operating pulse
+                                        </Typography>
                                         <Box>
-                                            <Typography variant="overline" color="text.secondary">
-                                                Branch manager snapshot
-                                            </Typography>
-                                            <Typography variant="h5" sx={{ mt: 0.5 }}>
-                                                {selectedTenantName || "SACCO"} operating pulse
-                                            </Typography>
-                                        </Box>
-                                        <Box>
-                                            <Stack direction="row" justifyContent="space-between" alignItems="baseline" spacing={1.5}>
-                                                <Typography variant="subtitle2">Annual contribution target</Typography>
-                                                <Typography variant="h6">{branchTargetReachPercent.toFixed(0)}%</Typography>
+                                            <Stack direction="row" justifyContent="space-between" alignItems="flex-end" spacing={1.5}>
+                                                <Typography variant="overline" color="text.secondary">Annual target</Typography>
+                                                <Typography
+                                                    sx={{
+                                                        fontSize: "1.45rem",
+                                                        fontVariantNumeric: "tabular-nums",
+                                                        fontWeight: 800,
+                                                        lineHeight: 1,
+                                                        letterSpacing: "-0.02em",
+                                                        color: branchTargetReachPercent >= 100
+                                                            ? "success.main"
+                                                            : branchTargetReachPercent >= 60
+                                                                ? "info.main"
+                                                                : "warning.main"
+                                                    }}
+                                                >
+                                                    {branchTargetReachPercent.toFixed(0)}%
+                                                </Typography>
                                             </Stack>
                                             <LinearProgress
                                                 variant="determinate"
@@ -3354,15 +3375,27 @@ export function DashboardPage() {
                                                     }
                                                 }}
                                             />
-                                            <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ mt: 1.25 }}>
-                                                <Chip label={`Actual ${formatCurrency(memberPerformanceSummary.totalActualForm)}`} color="success" variant="outlined" />
-                                                <Chip label={`Target ${formatCurrency(memberPerformanceSummary.totalAnnualTarget)}`} variant="outlined" />
-                                                <Chip
-                                                    label={`Remaining ${formatSignedCurrency(memberPerformanceSummary.totalRemainingAmount)}`}
-                                                    color={memberPerformanceSummary.totalRemainingAmount < 0 ? "warning" : "success"}
-                                                    variant="outlined"
-                                                />
-                                            </Stack>
+                                            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", sm: "repeat(3, 1fr)" }, gap: 2, mt: 2 }}>
+                                                {[
+                                                    { label: "Actual", value: formatCurrencyCompact(memberPerformanceSummary.totalActualForm), full: formatCurrency(memberPerformanceSummary.totalActualForm), color: "success.main" },
+                                                    { label: "Target", value: formatCurrencyCompact(memberPerformanceSummary.totalAnnualTarget), full: formatCurrency(memberPerformanceSummary.totalAnnualTarget), color: "text.primary" },
+                                                    {
+                                                        label: "Remaining",
+                                                        value: formatSignedCurrencyCompact(memberPerformanceSummary.totalRemainingAmount),
+                                                        full: formatSignedCurrency(memberPerformanceSummary.totalRemainingAmount),
+                                                        color: memberPerformanceSummary.totalRemainingAmount < 0 ? "warning.main" : "text.primary"
+                                                    }
+                                                ].map((stat) => (
+                                                    <Box key={stat.label} sx={{ minWidth: 0 }}>
+                                                        <Typography variant="overline" color="text.secondary" sx={{ display: "block", lineHeight: 1.4, letterSpacing: "0.08em" }}>
+                                                            {stat.label}
+                                                        </Typography>
+                                                        <Typography title={stat.full} sx={{ fontWeight: 700, fontVariantNumeric: "tabular-nums", lineHeight: 1.2, color: stat.color }}>
+                                                            {stat.value}
+                                                        </Typography>
+                                                    </Box>
+                                                ))}
+                                            </Box>
                                         </Box>
                                     </Stack>
 
@@ -3388,16 +3421,16 @@ export function DashboardPage() {
                                             </Stack>
                                             <Stack direction="row" justifyContent="space-between">
                                                 <Typography variant="body2" color="text.secondary">Cash in</Typography>
-                                                <Typography variant="body2" fontWeight={700}>{formatCurrency(branchDashboardCashInToday)}</Typography>
+                                                <Typography variant="body2" fontWeight={700} title={formatCurrency(branchDashboardCashInToday)}>{formatCurrencyCompact(branchDashboardCashInToday)}</Typography>
                                             </Stack>
                                             <Stack direction="row" justifyContent="space-between">
                                                 <Typography variant="body2" color="text.secondary">Cash out</Typography>
-                                                <Typography variant="body2" fontWeight={700}>{formatCurrency(branchDashboardCashOutToday)}</Typography>
+                                                <Typography variant="body2" fontWeight={700} title={formatCurrency(branchDashboardCashOutToday)}>{formatCurrencyCompact(branchDashboardCashOutToday)}</Typography>
                                             </Stack>
                                             <Stack direction="row" justifyContent="space-between">
                                                 <Typography variant="body2" color="text.secondary">Net</Typography>
-                                                <Typography variant="body2" fontWeight={800} color={branchDashboardCashNetToday >= 0 ? "success.main" : "error.main"}>
-                                                    {formatCurrency(branchDashboardCashNetToday)}
+                                                <Typography variant="body2" fontWeight={800} title={formatCurrency(branchDashboardCashNetToday)} color={branchDashboardCashNetToday >= 0 ? "success.main" : "error.main"}>
+                                                    {formatCurrencyCompact(branchDashboardCashNetToday)}
                                                 </Typography>
                                             </Stack>
                                             <Divider />
@@ -3410,16 +3443,16 @@ export function DashboardPage() {
                                 </Stack>
 
                                 <Stack direction={{ xs: "column", sm: "row" }} spacing={1} useFlexGap flexWrap="wrap">
-                                    <Button variant="contained" onClick={() => navigate("/cash-control")} startIcon={<ReceiptLongRoundedIcon />}>
+                                    <Button size="small" variant="contained" onClick={() => navigate("/cash-control")} startIcon={<ReceiptLongRoundedIcon />}>
                                         Cash Control
                                     </Button>
-                                    <Button variant="outlined" onClick={() => navigate("/revenue")} startIcon={<PaymentsRoundedIcon />}>
+                                    <Button size="small" variant="outlined" onClick={() => navigate("/revenue")} startIcon={<PaymentsRoundedIcon />}>
                                         Revenue
                                     </Button>
-                                    <Button variant="outlined" onClick={() => navigate("/loans")} startIcon={<RequestQuoteRoundedIcon />}>
+                                    <Button size="small" variant="outlined" onClick={() => navigate("/loans")} startIcon={<RequestQuoteRoundedIcon />}>
                                         Loans
                                     </Button>
-                                    <Button variant="outlined" onClick={() => navigate("/dividends")} startIcon={<AccountBalanceWalletRoundedIcon />}>
+                                    <Button size="small" variant="outlined" onClick={() => navigate("/dividends")} startIcon={<AccountBalanceWalletRoundedIcon />}>
                                         Dividends
                                     </Button>
                                 </Stack>
@@ -3427,11 +3460,12 @@ export function DashboardPage() {
                         </CardContent>
                     </MotionCard>
 
-                    <Grid container spacing={2}>
-                        <Grid size={{ xs: 12, sm: 6, lg: 4 }}>
+                    <Grid container spacing={2} columns={10}>
+                        <Grid size={{ xs: 10, sm: 5, lg: 2 }}>
                             <BranchManagerTopCard
                                 label="Savings"
-                                value={formatCurrency(metrics.branchSavings)}
+                                value={formatCurrencyCompact(metrics.branchSavings)}
+                                valueTooltip={formatCurrency(metrics.branchSavings)}
                                 helper="Operational member balance used for targets, borrowing context, and dashboard totals."
                                 status="Savings book"
                                 tone="positive"
@@ -3439,37 +3473,40 @@ export function DashboardPage() {
                                 featured
                             />
                         </Grid>
-                        <Grid size={{ xs: 12, sm: 6, lg: 4 }}>
+                        <Grid size={{ xs: 10, sm: 5, lg: 2 }}>
                             <BranchManagerTopCard
                                 label="Gross Revenue"
-                                value={formatCurrency(metrics.branchGrossRevenue)}
+                                value={formatCurrencyCompact(metrics.branchGrossRevenue)}
+                                valueTooltip={formatCurrency(metrics.branchGrossRevenue)}
                                 helper="Posted income ledger revenue for the SACCO year."
                                 status={`${metrics.branchRevenuePostedLines} posted line(s)`}
                                 tone={metrics.branchGrossRevenue > 0 ? "positive" : "neutral"}
                                 icon={<PaymentsRoundedIcon fontSize="small" />}
                             />
                         </Grid>
-                        <Grid size={{ xs: 12, sm: 6, lg: 4 }}>
+                        <Grid size={{ xs: 10, sm: 5, lg: 2 }}>
                             <BranchManagerTopCard
                                 label="Loan Book"
-                                value={formatCurrency(metrics.branchOutstanding)}
+                                value={formatCurrencyCompact(metrics.branchOutstanding)}
+                                valueTooltip={formatCurrency(metrics.branchOutstanding)}
                                 helper="Outstanding principal under branch supervision."
                                 status={`${metrics.branchOverdueLoans} overdue loan(s)`}
                                 tone={metrics.branchOverdueLoans > 0 ? "negative" : "neutral"}
                                 icon={<RequestQuoteRoundedIcon fontSize="small" />}
                             />
                         </Grid>
-                        <Grid size={{ xs: 12, sm: 6, lg: 4 }}>
+                        <Grid size={{ xs: 10, sm: 5, lg: 2 }}>
                             <BranchManagerTopCard
                                 label="Dividends"
-                                value={formatCurrency(metrics.branchDividendsPosted)}
+                                value={formatCurrencyCompact(metrics.branchDividendsPosted)}
+                                valueTooltip={formatCurrency(metrics.branchDividendsPosted)}
                                 helper="Manual Excel-style dividend batches already posted."
                                 status={`${formatCurrency(metrics.branchDividendsPending)} pending`}
                                 tone={metrics.branchDividendsPending > 0 ? "neutral" : "positive"}
                                 icon={<ReceiptLongRoundedIcon fontSize="small" />}
                             />
                         </Grid>
-                        <Grid size={{ xs: 12, sm: 6, lg: 4 }}>
+                        <Grid size={{ xs: 10, sm: 5, lg: 2 }}>
                             <BranchManagerTopCard
                                 label="Action Items"
                                 value={String(signOffTasks)}
@@ -3487,8 +3524,8 @@ export function DashboardPage() {
                                 <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" useFlexGap>
                                     <Box>
                                         <Typography variant="h6" fontWeight={700}>Funding sources</Typography>
-                                        <Typography variant="body2" color="text.secondary">
-                                            Where member money came in — M-KOBA, NMB, UTT, loan interest and more.
+                                        <Typography variant="caption" color="text.secondary">
+                                            Inflow by source
                                         </Typography>
                                     </Box>
                                     {fundingSources?.available && fundingSources.total > 0 ? (
@@ -3536,7 +3573,7 @@ export function DashboardPage() {
 
                     <Grid container spacing={2}>
                         {branchRiskStrip.map((item) => (
-                            <Grid key={item.id} size={{ xs: 12, sm: 6, xl: 3 }}>
+                            <Grid key={item.id} size={{ xs: 12, sm: 6, lg: 3 }}>
                                 <RiskStripCard
                                     label={item.label}
                                     value={item.value}
@@ -3739,27 +3776,27 @@ export function DashboardPage() {
                         <Grid size={{ xs: 12, lg: 4 }}>
                             <ChartPanel
                                 title="Savings Position"
-                                subtitle="Savings is the single operational member balance used across ILBORU."
+                                subtitle="Member savings"
                                 type="doughnut"
                                 data={branchSavingsPositionData}
-                                height={240}
+                                height={220}
                                 options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } }}
                             />
                         </Grid>
                         <Grid size={{ xs: 12, lg: 4 }}>
                             <ChartPanel
                                 title="Revenue Mix"
-                                subtitle="Gross revenue posted to income accounts during the SACCO year."
+                                subtitle="This SACCO year"
                                 type="doughnut"
                                 data={branchRevenueMixData}
-                                height={240}
+                                height={220}
                                 options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } }}
                             />
                         </Grid>
                         <Grid size={{ xs: 12, lg: 4 }}>
                             <ChartPanel
                                 title="Loan Aging"
-                                subtitle="Overdue schedule pressure and current PAR visibility."
+                                subtitle="Overdue by bucket"
                                 data={{
                                     labels: ["Current", "1-30", "31-60", "60+"],
                                     datasets: [
@@ -3781,21 +3818,16 @@ export function DashboardPage() {
                                     ]
                                 }}
                                 type="bar"
-                                height={240}
+                                height={220}
                                 options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }}
                             />
                         </Grid>
                         <Grid size={{ xs: 12, lg: 7 }}>
                             <MotionCard variant="outlined" inView sx={{ height: "100%" }}>
                                 <CardContent sx={{ height: "100%" }}>
-                                    <Stack spacing={2.25} sx={{ height: "100%" }}>
+                                    <Stack spacing={2} sx={{ height: "100%" }}>
                                         <Stack direction="row" justifyContent="space-between" alignItems="center">
-                                            <Box>
-                                                <Typography variant="h6">Action Queue</Typography>
-                                                <Typography variant="body2" color="text.secondary">
-                                                    Work that needs branch-manager movement today.
-                                                </Typography>
-                                            </Box>
+                                            <Typography variant="h6">Action Queue</Typography>
                                             <Button size="small" variant="outlined" onClick={() => navigate("/approvals")}>
                                                 Open approvals
                                             </Button>
@@ -3815,12 +3847,7 @@ export function DashboardPage() {
                             <MotionCard variant="outlined" inView sx={{ height: "100%" }}>
                                 <CardContent sx={{ height: "100%" }}>
                                     <Stack spacing={1.5} sx={{ height: "100%" }}>
-                                        <Box>
-                                            <Typography variant="h6">Risk & Exceptions</Typography>
-                                            <Typography variant="body2" color="text.secondary">
-                                                The few things that can distort the SACCO picture if ignored.
-                                            </Typography>
-                                        </Box>
+                                        <Typography variant="h6">Risk & Exceptions</Typography>
                                         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                                             <Chip
                                                 color={par30Percent >= 15 ? "error" : par30Percent >= 8 ? "warning" : "success"}
@@ -3849,8 +3876,8 @@ export function DashboardPage() {
                                 <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" alignItems={{ xs: "stretch", md: "flex-start" }} spacing={1.5}>
                                     <Box>
                                         <Typography variant="h6">Target Watchlist</Typography>
-                                        <Typography variant="body2" color="text.secondary">
-                                            {selectedTargetWatchFilter?.count || 0} member(s) in {selectedTargetWatchFilter?.label.toLowerCase() || "this"} view. Full control covers search, sorting, pagination, and all target bands.
+                                        <Typography variant="caption" color="text.secondary">
+                                            {selectedTargetWatchFilter?.count || 0} members · {selectedTargetWatchFilter?.label || "all"}
                                         </Typography>
                                     </Box>
                                     <Button variant="outlined" size="small" onClick={() => navigate("/performance-targets")}>
@@ -3870,13 +3897,15 @@ export function DashboardPage() {
                                         />
                                     ))}
                                 </Stack>
-                                <DataTable
-                                    rows={memberTargetWatchRows}
-                                    columns={memberTargetWatchColumns}
-                                    emptyMessage="No member matches this watchlist filter."
-                                    maxHeight={360}
-                                    stickyHeader
-                                />
+                                <Box sx={{ "& td": { py: 0.5 }, "& th": { py: 0.75 } }}>
+                                    <DataTable
+                                        rows={memberTargetWatchRows}
+                                        columns={memberTargetWatchColumns}
+                                        emptyMessage="No member matches this watchlist filter."
+                                        maxHeight={360}
+                                        stickyHeader
+                                    />
+                                </Box>
                             </Stack>
                         </Grid>
                         <Grid size={{ xs: 12 }}>

@@ -927,6 +927,7 @@ export interface UpdateOwnMemberProfileCompletionRequest {
     marital_status?: "single" | "married" | "divorced" | "widowed" | null;
     occupation?: string | null;
     employer?: string | null;
+    id_type?: string | null;
     national_id?: string | null;
     nida_no?: string | null;
     tin_no?: string | null;

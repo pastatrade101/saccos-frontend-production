@@ -26,7 +26,7 @@ import { useMemo } from "react";
 import { MotionCard } from "../../ui/motion";
 import type { Loan, LoanSchedule, LoanTransaction, PaymentOrder } from "../../types/api";
 import { brandColors } from "../../theme/colors";
-import { formatCurrency, formatDate } from "../../utils/format";
+import { formatCurrency, formatCurrencyCompact, formatDate } from "../../utils/format";
 import { formatMonthlyLoanRate } from "../../utils/loanInterest";
 
 interface MemberLoanWorkspaceCardProps {
@@ -103,12 +103,14 @@ function LoanMiniMetric({
     icon: Icon,
     label,
     value,
+    valueTitle,
     helper,
     tone = "primary"
 }: {
     icon: typeof AutoGraphRoundedIcon;
     label: string;
     value: string;
+    valueTitle?: string;
     helper: string;
     tone?: "primary" | "success" | "warning";
 }) {
@@ -150,7 +152,7 @@ function LoanMiniMetric({
                     <Typography variant="overline" sx={{ color: "text.secondary", lineHeight: 1.2 }}>
                         {label}
                     </Typography>
-                    <Typography variant="subtitle1" sx={{ fontWeight: 800, lineHeight: 1.2 }}>
+                    <Typography title={valueTitle} variant="subtitle1" sx={{ fontWeight: 800, lineHeight: 1.2, fontVariantNumeric: "tabular-nums", overflowWrap: "anywhere" }}>
                         {value}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
@@ -304,14 +306,9 @@ export function MemberLoanWorkspaceCard({
                     <Grid size={{ xs: 12, lg: 8 }}>
                         <Stack spacing={2}>
                             <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} justifyContent="space-between" alignItems={{ md: "center" }}>
-                                <Stack spacing={0.8}>
-                                    <Typography variant="h6" sx={{ fontWeight: 800 }}>
-                                        Current loan snapshot
-                                    </Typography>
-                                    <Typography variant="body2" color="text.secondary">
-                                        See the current facility in a nutshell before you dive into schedules and repayment history.
-                                    </Typography>
-                                </Stack>
+                                <Typography variant="h6" sx={{ fontWeight: 800 }}>
+                                    Current loan snapshot
+                                </Typography>
                                 <TextField
                                     select
                                     size="small"
@@ -363,8 +360,9 @@ export function MemberLoanWorkspaceCard({
                                     <LoanMiniMetric
                                         icon={PaymentsRoundedIcon}
                                         label="Pay now"
-                                        value={dueNowAmount > 0 ? formatCurrency(dueNowAmount) : "Nothing due"}
-                                        helper={overdueSchedules.length ? `${overdueSchedules.length} overdue installment(s)` : nextDueSchedule ? `Next due ${formatDate(nextDueSchedule.due_date)}` : "No unpaid installment detected"}
+                                        value={dueNowAmount > 0 ? formatCurrencyCompact(dueNowAmount) : "Nothing due"}
+                                        valueTitle={dueNowAmount > 0 ? formatCurrency(dueNowAmount) : undefined}
+                                        helper={overdueSchedules.length ? `${overdueSchedules.length} overdue` : nextDueSchedule ? `Next due ${formatDate(nextDueSchedule.due_date)}` : "No installment due"}
                                         tone={overdueSchedules.length || dueNowAmount > 0 ? "warning" : "success"}
                                     />
                                 </Grid>
@@ -372,8 +370,9 @@ export function MemberLoanWorkspaceCard({
                                     <LoanMiniMetric
                                         icon={AccountBalanceWalletRoundedIcon}
                                         label="Still owed"
-                                        value={formatCurrency(totalOutstanding)}
-                                        helper={selectedLoan ? `Principal ${formatCurrency(selectedLoan.outstanding_principal)} · interest ${formatCurrency(selectedLoan.accrued_interest)}` : "Choose a facility to view balances."}
+                                        value={formatCurrencyCompact(totalOutstanding)}
+                                        valueTitle={formatCurrency(totalOutstanding)}
+                                        helper={selectedLoan ? `Principal ${formatCurrencyCompact(selectedLoan.outstanding_principal)} · interest ${formatCurrencyCompact(selectedLoan.accrued_interest)}` : "Select a facility"}
                                         tone={totalOutstanding > 0 ? "primary" : "success"}
                                     />
                                 </Grid>
@@ -382,7 +381,7 @@ export function MemberLoanWorkspaceCard({
                                         icon={ScheduleRoundedIcon}
                                         label="Schedule"
                                         value={selectedLoan ? `${remainingInstallments} open` : "No schedule"}
-                                        helper={selectedLoan ? `${paidInstallments}/${selectedLoan.term_count} installment(s) settled` : "Installment schedule unavailable."}
+                                        helper={selectedLoan ? `${paidInstallments}/${selectedLoan.term_count} settled` : "Schedule unavailable"}
                                         tone="primary"
                                     />
                                 </Grid>
@@ -505,8 +504,8 @@ export function MemberLoanWorkspaceCard({
                                         </Stack>
                                     </Stack>
                                     {!loanRepaymentEnabled ? (
-                                        <Alert severity="info" variant="outlined">
-                                            Mobile money self-service loan repayment is currently turned off by the tenant super admin.
+                                        <Alert severity="info" variant="outlined" sx={{ borderRadius: 2 }}>
+                                            Self-service repayment is turned off.
                                         </Alert>
                                     ) : null}
                                     {canShowLoanRepaymentOption ? (

@@ -99,7 +99,7 @@ import { NotificationBell } from "../components/notifications/NotificationBell";
 import { SearchableSelect } from "../components/SearchableSelect";
 import { useToast } from "../components/Toast";
 import { ProfileAvatarUploader } from "../components/ProfileAvatarUploader";
-import { AppLoader } from "../components/AppLoader";
+import { MemberPortalSkeleton } from "../components/MemberPortalSkeleton";
 import { findLocationByName, useTanzaniaLocations } from "../hooks/useTanzaniaLocations";
 import { api, getApiErrorCode, getApiErrorDetails, getApiErrorMessage } from "../lib/api";
 import {
@@ -144,7 +144,7 @@ import {
     NEXT_OF_KIN_RELATIONSHIP_OPTIONS,
     NEXT_OF_KIN_RELATIONSHIP_VALUES
 } from "../utils/nextOfKin";
-import { formatCurrency, formatDate, formatRole } from "../utils/format";
+import { formatCurrency, formatCurrencyCompact, formatDate, formatRole } from "../utils/format";
 import { annualToMonthlyRate, formatMonthlyLoanRate } from "../utils/loanInterest";
 import { DEFAULT_SACCO_FINANCIAL_YEAR_SETTINGS, resolveFinancialYearPeriod } from "../utils/financialYear";
 import {
@@ -441,9 +441,18 @@ function isAdultPortalDate(value: string) {
     return dob <= minimumBirthDate;
 }
 
+// Optional free-text field that, WHEN filled, must meet the backend's minimum length —
+// so the member sees the problem inline (highlighted field) instead of a server
+// "Request validation failed" with no explanation.
+const optionalText = (min: number, max: number, label: string) =>
+    z.string().trim().max(max, `${label} is too long.`).optional().or(z.literal(""))
+        .refine((value) => !value || value.trim().length >= min, `${label} must be at least ${min} characters.`);
+
 const memberProfileCompletionSchema = z.object({
     full_name: z.string().trim().min(3, "Full name is required.").max(120, "Full name is too long."),
-    dob: z.string().optional().or(z.literal("")).refine((value) => !value || isAdultPortalDate(value), "Member must be at least 18 years old."),
+    dob: z.string().optional().or(z.literal(""))
+        .refine((value) => !value || /^\d{4}-\d{2}-\d{2}$/.test(value), "Use date format YYYY-MM-DD.")
+        .refine((value) => !value || isAdultPortalDate(value), "Member must be at least 18 years old."),
     phone: z.string().trim().optional().or(z.literal("")).refine(
         (value) => !value || memberProfileCompletionPhonePattern.test(value),
         "Use 2557XXXXXXXX or 2556XXXXXXXX."
@@ -454,29 +463,31 @@ const memberProfileCompletionSchema = z.object({
     ),
     gender: z.enum(["male", "female"]).or(z.literal("")),
     marital_status: z.enum(["single", "married", "divorced", "widowed"]).or(z.literal("")),
-    occupation: z.string().trim().max(160, "Occupation is too long.").optional().or(z.literal("")),
-    employer: z.string().trim().max(160, "Employer name is too long.").optional().or(z.literal("")),
-    national_id: z.string().trim().max(50, "National ID is too long.").optional().or(z.literal("")),
+    occupation: optionalText(2, 160, "Occupation"),
+    employer: optionalText(2, 160, "Employer name"),
+    id_type: z.enum(["nida", "voter", "license", "passport"]).default("nida"),
+    national_id: optionalText(5, 50, "ID number"),
+    nida_no: z.string().trim().max(50, "NIDA number is too long.").optional().or(z.literal("")),
     tin_no: z.string().trim().max(50, "TIN number is too long.").optional().or(z.literal("")),
     region_id: z.string().uuid().optional().or(z.literal("")),
     district_id: z.string().uuid().optional().or(z.literal("")),
     ward_id: z.string().uuid().optional().or(z.literal("")),
     village_id: z.string().uuid().optional().or(z.literal("")),
-    region: z.string().trim().max(120, "Region is too long.").optional().or(z.literal("")),
-    district: z.string().trim().max(120, "District is too long.").optional().or(z.literal("")),
-    ward: z.string().trim().max(120, "Ward is too long.").optional().or(z.literal("")),
-    street_or_village: z.string().trim().max(160, "Street or village is too long.").optional().or(z.literal("")),
-    residential_address: z.string().trim().max(255, "Residential address is too long.").optional().or(z.literal("")),
-    next_of_kin_name: z.string().trim().max(120, "Next of kin name is too long.").optional().or(z.literal("")),
-    next_of_kin_phone: z.string().trim().max(30, "Next of kin phone is too long.").optional().or(z.literal("")),
-    next_of_kin_relationship: z.string().trim().max(80, "Relationship is too long.").optional().or(z.literal("")),
-    next_of_kin_address: z.string().trim().max(255, "Next of kin address is too long.").optional().or(z.literal("")),
+    region: optionalText(2, 120, "Region"),
+    district: optionalText(2, 120, "District"),
+    ward: optionalText(2, 120, "Ward"),
+    street_or_village: optionalText(2, 160, "Street or village"),
+    residential_address: optionalText(3, 255, "Residential address"),
+    next_of_kin_name: optionalText(3, 120, "Next of kin name"),
+    next_of_kin_phone: optionalText(7, 30, "Next of kin phone"),
+    next_of_kin_relationship: optionalText(2, 80, "Relationship"),
+    next_of_kin_address: optionalText(3, 255, "Next of kin address"),
     // By-law fields so existing members can complete the same data as new applicants.
     ilboru_completion_year: z.union([z.literal(""), z.coerce.number().int().min(1980, "Year must be 1980–2022.").max(2022, "Year must be 1980–2022.")]).optional(),
-    heir_name: z.string().trim().max(120, "Heir name is too long.").optional().or(z.literal("")),
-    heir_phone: z.string().trim().max(30, "Heir phone is too long.").optional().or(z.literal("")),
-    heir_relationship: z.string().trim().max(80, "Heir relationship is too long.").optional().or(z.literal("")),
-    heir_address: z.string().trim().max(255, "Heir address is too long.").optional().or(z.literal("")),
+    heir_name: optionalText(3, 120, "Heir name"),
+    heir_phone: optionalText(7, 30, "Heir phone"),
+    heir_relationship: optionalText(2, 80, "Heir relationship"),
+    heir_address: optionalText(3, 255, "Heir address"),
     legitimate_income_declared: z.boolean().optional(),
     no_conflicting_business_declared: z.boolean().optional()
 }).superRefine((value, ctx) => {
@@ -494,7 +505,7 @@ const memberProfileCompletionSchema = z.object({
     requireText("marital_status", "Marital status");
     requireText("occupation", "Occupation");
     requireText("phone", "Phone number");
-    requireText("national_id", "National ID (NIDA)");
+    requireText("national_id", "Identity number");
     requireText("region_id", "Region");
     requireText("district_id", "District");
     requireText("ward_id", "Ward");
@@ -512,6 +523,17 @@ const memberProfileCompletionSchema = z.object({
     }
     if (!value.no_conflicting_business_declared) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["no_conflicting_business_declared"], message: "Confirm you have no conflicting savings or lending business (by-laws §10f)." });
+    }
+
+    // NIDA / National ID is a 20-digit number; other ID types are free-form.
+    const idNumber = (value.national_id || "").replace(/\s/g, "");
+    if (value.id_type === "nida" && idNumber && !/^\d{20}$/.test(idNumber)) {
+        ctx.addIssue({ path: ["national_id"], code: z.ZodIssueCode.custom, message: "NIDA / National ID must be exactly 20 digits." });
+    }
+    // TIN is always a 9-digit number when provided.
+    const tin = (value.tin_no || "").replace(/\s/g, "");
+    if (tin && !/^\d{9}$/.test(tin)) {
+        ctx.addIssue({ path: ["tin_no"], code: z.ZodIssueCode.custom, message: "TIN number must be exactly 9 digits." });
     }
 });
 
@@ -810,25 +832,25 @@ const portalSections = [
     {
         id: "member-overview",
         label: "Overview",
-        subtitle: "Review your balances, obligations, and recent financial position.",
+        subtitle: "Balances and financial position.",
         icon: AutoGraphRoundedIcon
     },
     {
         id: "member-accounts",
         label: "Accounts",
-        subtitle: "Inspect savings and share accounts linked to your membership.",
+        subtitle: "Savings and share accounts.",
         icon: WalletRoundedIcon
     },
     {
         id: "member-loans",
         label: "Loans",
-        subtitle: "Track outstanding facilities, accrued interest, and repayment position.",
+        subtitle: "Facilities and repayment.",
         icon: CreditScoreRoundedIcon
     },
     {
         id: "member-transactions",
         label: "Transactions",
-        subtitle: "Review posted transaction activity and running balances.",
+        subtitle: "Transaction activity and balances.",
         icon: TimelineRoundedIcon
     },
     {
@@ -863,6 +885,7 @@ interface MetricCardProps {
     icon: typeof WalletRoundedIcon;
     label: string;
     value: string | number;
+    valueTitle?: string;
     helper: string;
     tone: "primary" | "success" | "warning" | "danger";
     delta?: string;
@@ -933,7 +956,7 @@ function getToneStyles(tone: MetricCardProps["tone"], mode: "light" | "dark") {
     };
 }
 
-function MetricCard({ icon: Icon, label, value, helper, tone, delta }: MetricCardProps) {
+function MetricCard({ icon: Icon, label, value, valueTitle, helper, tone, delta }: MetricCardProps) {
     const theme = useTheme();
     const toneStyles = getToneStyles(tone, theme.palette.mode);
 
@@ -958,12 +981,12 @@ function MetricCard({ icon: Icon, label, value, helper, tone, delta }: MetricCar
                 }
             }}
         >
-            <CardContent sx={{ p: 2.25 }}>
-                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1.5}>
+            <CardContent sx={{ p: 1.5, "&:last-child": { pb: 1.5 } }}>
+                <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1.5}>
                     <Box
                         sx={{
-                            width: 46,
-                            height: 46,
+                            width: 38,
+                            height: 38,
                             borderRadius: 2.2,
                             display: "grid",
                             placeItems: "center",
@@ -990,13 +1013,13 @@ function MetricCard({ icon: Icon, label, value, helper, tone, delta }: MetricCar
                         {delta || "Live"}
                     </Typography>
                 </Stack>
-                <Typography variant="h5" sx={{ mt: 2.25, mb: 0.35, fontWeight: 700 }}>
+                <Typography variant="h5" title={valueTitle} sx={{ mt: 0.75, mb: 0, fontWeight: 800, fontSize: "1.5rem", fontVariantNumeric: "tabular-nums", lineHeight: 1.15 }}>
                     {value}
                 </Typography>
-                <Typography variant="overline" color="text.secondary">
+                <Typography variant="overline" color="text.secondary" sx={{ display: "block", lineHeight: 1.3 }}>
                     {label}
                 </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.25 }}>
                     {helper}
                 </Typography>
             </CardContent>
@@ -1004,7 +1027,7 @@ function MetricCard({ icon: Icon, label, value, helper, tone, delta }: MetricCar
     );
 }
 
-function AccountSummaryCard({ icon: Icon, label, value, helper, tone, delta }: MetricCardProps) {
+function AccountSummaryCard({ icon: Icon, label, value, valueTitle, helper, tone, delta }: MetricCardProps) {
     const theme = useTheme();
     const toneStyles = getToneStyles(tone, theme.palette.mode);
 
@@ -1028,8 +1051,8 @@ function AccountSummaryCard({ icon: Icon, label, value, helper, tone, delta }: M
                 }
             }}
         >
-            <CardContent sx={{ p: 2.25, height: "100%", display: "flex" }}>
-                <Stack spacing={1.4} sx={{ width: 1 }}>
+            <CardContent sx={{ p: 1.5, height: "100%", display: "flex", "&:last-child": { pb: 1.5 } }}>
+                <Stack spacing={0.9} sx={{ width: 1 }}>
                     <Stack direction="row" justifyContent="space-between" alignItems="center">
                         <Chip
                             size="small"
@@ -1044,8 +1067,8 @@ function AccountSummaryCard({ icon: Icon, label, value, helper, tone, delta }: M
                         />
                         <Box
                             sx={{
-                                width: 38,
-                                height: 38,
+                                width: 32,
+                                height: 32,
                                 borderRadius: 1.5,
                                 display: "grid",
                                 placeItems: "center",
@@ -1058,14 +1081,11 @@ function AccountSummaryCard({ icon: Icon, label, value, helper, tone, delta }: M
                         </Box>
                     </Stack>
 
-                    <Typography variant="h4" sx={{ fontWeight: 800, lineHeight: 1.1 }}>
+                    <Typography title={valueTitle} sx={{ fontWeight: 800, lineHeight: 1.15, fontSize: "1.4rem", fontVariantNumeric: "tabular-nums", overflowWrap: "anywhere" }}>
                         {value}
                     </Typography>
                     <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
                         {label}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                        {helper}
                     </Typography>
 
                     <Box sx={{ mt: "auto", height: 4, borderRadius: 999, bgcolor: alpha(toneStyles.color, 0.18) }}>
@@ -1242,6 +1262,7 @@ export function MemberPortalPage() {
             marital_status: "",
             occupation: "",
             employer: "",
+            id_type: "nida",
             national_id: "",
             tin_no: "",
             region_id: "",
@@ -2189,7 +2210,9 @@ export function MemberPortalPage() {
             marital_status: memberRecord?.marital_status || "",
             occupation: memberRecord?.occupation || "",
             employer: memberRecord?.employer || "",
+            id_type: ((memberRecord as { id_type?: string } | null | undefined)?.id_type as "nida" | "voter" | "license" | "passport") || "nida",
             national_id: memberRecord?.national_id || memberRecord?.nida_no || "",
+            nida_no: memberRecord?.nida_no || "",
             tin_no: memberRecord?.tin_no || "",
             region_id: memberRecord?.region_id || "",
             district_id: memberRecord?.district_id || "",
@@ -2383,7 +2406,11 @@ export function MemberPortalPage() {
                 marital_status: values.marital_status || null,
                 occupation: toNullableProfileValue(values.occupation),
                 employer: toNullableProfileValue(values.employer),
-                national_id: toNullableProfileValue(values.national_id),
+                id_type: values.id_type,
+                national_id: toNullableProfileValue(values.national_id?.replace(/\s/g, "")),
+                // NIDA number and National ID are the same value in Tanzania; mirror the
+                // single ID field into nida_no when the chosen ID type is NIDA/National ID.
+                nida_no: values.id_type === "nida" ? toNullableProfileValue(values.national_id?.replace(/\s/g, "")) : null,
                 tin_no: toNullableProfileValue(values.tin_no),
                 region_id: toNullableProfileValue(values.region_id),
                 district_id: toNullableProfileValue(values.district_id),
@@ -4633,7 +4660,7 @@ export function MemberPortalPage() {
                 gridTemplateColumns: {
                     xs: "minmax(0, 1fr)",
                     sm: "repeat(2, minmax(0, 1fr))",
-                    xl: "repeat(4, minmax(0, 1fr))"
+                    lg: "repeat(4, minmax(0, 1fr))"
                 }
             }}
         >
@@ -4641,8 +4668,9 @@ export function MemberPortalPage() {
                 <MetricCard
                     icon={WalletRoundedIcon}
                     label="Net Position"
-                    value={formatCurrency(netPosition)}
-                    helper={`${transactionCount} posted statement entries`}
+                    value={formatCurrencyCompact(netPosition)}
+                    valueTitle={formatCurrency(netPosition)}
+                    helper={`${transactionCount} entries`}
                     tone="primary"
                     delta={netPosition >= 0 ? "Positive" : "Negative"}
                 />
@@ -4651,8 +4679,9 @@ export function MemberPortalPage() {
                 <MetricCard
                     icon={TrendingUpRoundedIcon}
                     label="Savings"
-                    value={formatCurrency(totalSavings)}
-                    helper={`${Math.round(savingsTargetProgress)}% of ${formatCurrency(annualSavingsTarget)}`}
+                    value={formatCurrencyCompact(totalSavings)}
+                    valueTitle={formatCurrency(totalSavings)}
+                    helper={`${Math.round(savingsTargetProgress)}% of ${formatCurrencyCompact(annualSavingsTarget)}`}
                     tone="success"
                     delta={savingsTargetLevel.label}
                 />
@@ -4661,8 +4690,9 @@ export function MemberPortalPage() {
                 <MetricCard
                     icon={TrendingUpRoundedIcon}
                     label="Dividends"
-                    value={formatCurrency(totalDividends)}
-                    helper="Posted dividend allocations"
+                    value={formatCurrencyCompact(totalDividends)}
+                    valueTitle={formatCurrency(totalDividends)}
+                    helper="Allocations posted"
                     tone="success"
                     delta={totalDividends > 0 ? "Credited" : "Building"}
                 />
@@ -4671,8 +4701,9 @@ export function MemberPortalPage() {
                 <MetricCard
                     icon={CreditScoreRoundedIcon}
                     label="Loans"
-                    value={formatCurrency(totalOutstandingLoans)}
-                    helper={activeLoanCount ? `${activeLoanCount} active facility` : "No active loan exposure"}
+                    value={formatCurrencyCompact(totalOutstandingLoans)}
+                    valueTitle={formatCurrency(totalOutstandingLoans)}
+                    helper={activeLoanCount ? `${activeLoanCount} active` : "No exposure"}
                     tone="danger"
                     delta={activeLoanCount ? "Monitor" : "Clear"}
                 />
@@ -4689,10 +4720,10 @@ export function MemberPortalPage() {
                 borderRadius: 4
             }}
         >
-            <CardContent sx={{ p: { xs: 2.4, md: 2.8 }, display: "grid", gap: 2 }}>
+            <CardContent sx={{ p: 1.75, display: "grid", gap: 1.25, "&:last-child": { pb: 1.75 } }}>
                 <Stack
                     direction={{ xs: "column", md: "row" }}
-                    spacing={1.5}
+                    spacing={1}
                     justifyContent="space-between"
                     alignItems={{ xs: "flex-start", md: "center" }}
                 >
@@ -4700,7 +4731,7 @@ export function MemberPortalPage() {
                         <Typography variant="overline" sx={{ letterSpacing: "0.18em", color: "text.secondary" }}>
                             Your Borrowing Capacity
                         </Typography>
-                        <Typography variant="h5" sx={{ fontWeight: 800, mt: 0.35 }}>
+                        <Typography variant="subtitle1" sx={{ fontWeight: 800, mt: 0.25, lineHeight: 1.2 }}>
                             {dashboardLoanCapacityLoading
                                 ? "Refreshing current limits..."
                                 : dashboardLoanProduct?.name
@@ -4744,22 +4775,22 @@ export function MemberPortalPage() {
                     }}
                 >
                     <Box sx={{ minWidth: 0 }}>
-                        <Paper variant="outlined" sx={{ p: 1.75, borderRadius: 2.5, height: "100%" }}>
+                        <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2, height: "100%" }}>
                             <Typography variant="caption" color="text.secondary">
                                 Maximum Loan Available
                             </Typography>
-                            <Typography variant="h6" sx={{ mt: 0.5, fontWeight: 800 }}>
-                                {formatCurrency(dashboardMaximumBorrowable)}
+                            <Typography title={formatCurrency(dashboardMaximumBorrowable)} sx={{ mt: 0.25, fontWeight: 800, fontSize: "1.2rem", lineHeight: 1.2, fontVariantNumeric: "tabular-nums" }}>
+                                {formatCurrencyCompact(dashboardMaximumBorrowable)}
                             </Typography>
                         </Paper>
                     </Box>
                     <Box sx={{ minWidth: 0 }}>
-                        <Paper variant="outlined" sx={{ p: 1.75, borderRadius: 2.5, height: "100%" }}>
+                        <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2, height: "100%" }}>
                             <Typography variant="caption" color="text.secondary">
                                 Current Loan Exposure
                             </Typography>
-                            <Typography variant="h6" sx={{ mt: 0.5, fontWeight: 800 }}>
-                                {formatCurrency(dashboardCurrentLoanExposure)}
+                            <Typography title={formatCurrency(dashboardCurrentLoanExposure)} sx={{ mt: 0.25, fontWeight: 800, fontSize: "1.2rem", lineHeight: 1.2, fontVariantNumeric: "tabular-nums" }}>
+                                {formatCurrencyCompact(dashboardCurrentLoanExposure)}
                             </Typography>
                         </Paper>
                     </Box>
@@ -4767,8 +4798,8 @@ export function MemberPortalPage() {
                         <Paper
                             variant="outlined"
                             sx={{
-                                p: 1.75,
-                                borderRadius: 2.5,
+                                p: 1.25,
+                                borderRadius: 2,
                                 height: "100%",
                                 bgcolor: alpha(memberAccent, isDarkMode ? 0.14 : 0.06),
                                 borderColor: alpha(memberAccent, 0.24)
@@ -4777,16 +4808,16 @@ export function MemberPortalPage() {
                             <Typography variant="caption" color="text.secondary">
                                 Remaining Borrow Capacity
                             </Typography>
-                            <Typography variant="h6" sx={{ mt: 0.5, fontWeight: 800 }}>
-                                {formatCurrency(dashboardRemainingBorrowCapacity)}
+                            <Typography title={formatCurrency(dashboardRemainingBorrowCapacity)} sx={{ mt: 0.25, fontWeight: 800, fontSize: "1.2rem", lineHeight: 1.2, fontVariantNumeric: "tabular-nums" }}>
+                                {formatCurrencyCompact(dashboardRemainingBorrowCapacity)}
                             </Typography>
                         </Paper>
                     </Box>
                 </Box>
-                <Typography variant="body2" color="text.secondary">
+                <Typography variant="caption" color="text.secondary">
                     {dashboardLoanCapacityError
                         ? dashboardLoanCapacityError
-                        : "This view is informational. Final approval still goes through branch appraisal and approval workflow."}
+                        : "Informational — final approval via branch appraisal."}
                 </Typography>
             </CardContent>
         </MotionCard>
@@ -4851,15 +4882,17 @@ export function MemberPortalPage() {
                                 </Typography>
                                 <Typography
                                     variant="h4"
+                                    title={formatCurrency(totalSavings)}
                                     sx={{
                                         mt: 0.75,
                                         fontWeight: 800,
-                                        lineHeight: 1.08,
-                                        fontSize: { xs: "2rem", md: "2.35rem" },
+                                        lineHeight: 1.1,
+                                        fontSize: { xs: "1.5rem", md: "1.65rem" },
+                                        fontVariantNumeric: "tabular-nums",
                                         overflowWrap: "anywhere"
                                     }}
                                 >
-                                    {formatCurrency(totalSavings)}
+                                    {formatCurrencyCompact(totalSavings)}
                                 </Typography>
                                 <Typography
                                     variant="body2"
@@ -4869,7 +4902,7 @@ export function MemberPortalPage() {
                                         overflowWrap: "anywhere"
                                     }}
                                 >
-                                    {profile?.full_name || "Member"} has reached {Math.round(savingsTargetProgress)}% of the annual savings target.
+                                    {Math.round(savingsTargetProgress)}% of annual target
                                 </Typography>
                             </Box>
                             <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ minWidth: 0 }}>
@@ -5362,7 +5395,8 @@ export function MemberPortalPage() {
                     <AccountSummaryCard
                         icon={SavingsRoundedIcon}
                         label="Savings Balance"
-                        value={formatCurrency(totalSavings)}
+                        value={formatCurrencyCompact(totalSavings)}
+                        valueTitle={formatCurrency(totalSavings)}
                         helper="Visible savings accounts combined."
                         tone="primary"
                     />
@@ -5490,7 +5524,7 @@ export function MemberPortalPage() {
             <Grid container spacing={2}>
                 <Grid size={{ xs: 12, md: 6 }}>
                     <MotionCard variant="outlined" sx={contentCardSx}>
-                        <CardContent sx={{ p: 2.25 }}>
+                        <CardContent sx={{ p: 1.75 }}>
                             <Stack spacing={1.5}>
                                 <Stack direction="row" spacing={1} alignItems="center">
                                     <Box
@@ -5511,23 +5545,23 @@ export function MemberPortalPage() {
                                     </Typography>
                                 </Stack>
 
-                                <Stack spacing={1}>
+                                <Stack spacing={0.75}>
                                     {[
-                                        "Savings minimum balance: TSh 50,000 (tenant policy)",
-                                        "Withdrawal limit: branch policy with teller review threshold",
-                                        "Dormant accounts: no qualifying movement in policy period"
+                                        "Savings minimum balance: TSh 50,000",
+                                        "Withdrawal limit: branch teller-review threshold",
+                                        "Dormant: no qualifying movement in period"
                                     ].map((rule) => (
                                         <Paper
                                             key={rule}
                                             variant="outlined"
                                             sx={{
-                                                p: 1.1,
-                                                borderRadius: 1.4,
+                                                p: 1,
+                                                borderRadius: 1.5,
                                                 display: "flex",
                                                 alignItems: "center",
                                                 gap: 1,
-                                                borderColor: alpha(memberAccent, 0.24),
-                                                bgcolor: alpha(memberAccent, 0.08)
+                                                borderColor: "divider",
+                                                bgcolor: "transparent"
                                             }}
                                         >
                                             <TaskAltRoundedIcon sx={{ fontSize: 16, color: memberAccent }} />
@@ -5543,7 +5577,7 @@ export function MemberPortalPage() {
                 </Grid>
                 <Grid size={{ xs: 12, md: 6 }}>
                     <MotionCard variant="outlined" sx={contentCardSx}>
-                        <CardContent sx={{ p: 2.25 }}>
+                        <CardContent sx={{ p: 1.75 }}>
                             <Stack spacing={1.5}>
                                 <Stack direction="row" spacing={1} alignItems="center">
                                     <Box
@@ -5571,7 +5605,7 @@ export function MemberPortalPage() {
                                         gridTemplateColumns: { xs: "repeat(2, minmax(0, 1fr))", sm: "repeat(4, minmax(0, 1fr))" }
                                     }}
                                 >
-                                    <Paper variant="outlined" sx={{ p: 1.15, borderRadius: 1.4, textAlign: "center" }}>
+                                    <Paper variant="outlined" sx={{ py: 0.85, px: 1, borderRadius: 1.5, textAlign: "center" }}>
                                         <Typography variant="h6" sx={{ fontWeight: 800, color: brandColors.success }}>
                                             {Math.max(filteredAccounts.length - accountDormancyCount, 0)}
                                         </Typography>
@@ -5579,7 +5613,7 @@ export function MemberPortalPage() {
                                             active
                                         </Typography>
                                     </Paper>
-                                    <Paper variant="outlined" sx={{ p: 1.15, borderRadius: 1.4, textAlign: "center" }}>
+                                    <Paper variant="outlined" sx={{ py: 0.85, px: 1, borderRadius: 1.5, textAlign: "center" }}>
                                         <Typography variant="h6" sx={{ fontWeight: 800, color: accountDormancyCount ? "#9A6700" : "text.primary" }}>
                                             {accountDormancyCount}
                                         </Typography>
@@ -5587,7 +5621,7 @@ export function MemberPortalPage() {
                                             dormant
                                         </Typography>
                                     </Paper>
-                                    <Paper variant="outlined" sx={{ p: 1.15, borderRadius: 1.4, textAlign: "center" }}>
+                                    <Paper variant="outlined" sx={{ py: 0.85, px: 1, borderRadius: 1.5, textAlign: "center" }}>
                                         <Typography variant="h6" sx={{ fontWeight: 800, color: memberAccent }}>
                                             {filteredInterestHistory.length}
                                         </Typography>
@@ -5595,7 +5629,7 @@ export function MemberPortalPage() {
                                             interest postings
                                         </Typography>
                                     </Paper>
-                                    <Paper variant="outlined" sx={{ p: 1.15, borderRadius: 1.4, textAlign: "center" }}>
+                                    <Paper variant="outlined" sx={{ py: 0.85, px: 1, borderRadius: 1.5, textAlign: "center" }}>
                                         <Typography variant="h6" sx={{ fontWeight: 800, color: memberAccentAlt }}>
                                             {filteredDividendMapping.length}
                                         </Typography>
@@ -5606,10 +5640,10 @@ export function MemberPortalPage() {
                                 </Box>
 
                                 <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25} sx={{ pt: 0.5 }}>
-                                    <Button variant="outlined" startIcon={<DownloadRoundedIcon />} onClick={handleDownloadStatement}>
-                                        Export Savings Statement
+                                    <Button size="small" variant="outlined" startIcon={<DownloadRoundedIcon />} onClick={handleDownloadStatement}>
+                                        Export Statement
                                     </Button>
-                                    <Button variant="outlined" startIcon={<PrintRoundedIcon />} onClick={() => window.print()}>
+                                    <Button size="small" variant="outlined" startIcon={<PrintRoundedIcon />} onClick={() => window.print()}>
                                         Printable View
                                     </Button>
                                 </Stack>
@@ -5621,7 +5655,7 @@ export function MemberPortalPage() {
 
             <ChartPanel
                 title="Savings History"
-                subtitle="Posted running balance trend across your visible member transactions."
+                subtitle="Running balance trend"
                 data={{
                     labels: chartLabels,
                     datasets: [
@@ -5755,12 +5789,6 @@ export function MemberPortalPage() {
                                 spacing={1.25}
                                 sx={{ flexShrink: 0 }}
                             >
-                                <Typography
-                                    variant="caption"
-                                    sx={{ color: alpha("#FFFFFF", 0.74), maxWidth: 230, display: { xs: "none", lg: "block" } }}
-                                >
-                                    Moves through appraisal, approval, and controlled disbursement.
-                                </Typography>
                                 <Button
                                     variant="contained"
                                     onClick={openLoanApplicationDraft}
@@ -5788,14 +5816,9 @@ export function MemberPortalPage() {
 
             {canApplyForLoan ? (
                 <MotionCard variant="outlined" sx={contentCardSx}>
-                    <CardContent>
-                        <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={2} sx={{ mb: 2 }}>
-                            <Box>
-                                <Typography variant="h6">My Loan Applications</Typography>
-                                <Typography variant="body2" color="text.secondary">
-                                    Track applications through appraisal, approval, and disbursement readiness.
-                                </Typography>
-                            </Box>
+                    <CardContent sx={{ p: 1.75 }}>
+                        <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" alignItems="center" spacing={2} sx={{ mb: 1.5 }}>
+                            <Typography variant="h6">My Loan Applications</Typography>
                             <Chip label={`${pendingLoanApplications.length} open application(s)`} variant="outlined" />
                         </Stack>
                         <Grid container spacing={2} sx={{ mb: 2.5 }}>
@@ -6093,7 +6116,7 @@ export function MemberPortalPage() {
     const renderTransactionsView = () => (
         <Stack spacing={3} data-tour="member-portal-transactions">
             <MotionCard variant="outlined" sx={contentCardSx}>
-                <CardContent sx={{ p: 2.25 }}>
+                <CardContent sx={{ p: 1.75, "&:last-child": { pb: 1.75 } }}>
                     <Stack spacing={1.5}>
                         <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
                             <Stack direction="row" spacing={1} alignItems="center">
@@ -6150,15 +6173,16 @@ export function MemberPortalPage() {
                                 onChange={(event) => setTransactionSearch(event.target.value)}
                                 sx={{ minWidth: { xs: 0, md: 220 } }}
                             />
-                            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+                            <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ ml: { md: "auto" } }}>
                                 <Button
+                                    size="small"
                                     variant="outlined"
                                     startIcon={<DownloadRoundedIcon />}
                                     onClick={() => handleDownloadFilteredStatement(filteredTransactions, "Transaction statement")}
                                 >
                                     Export Statement PDF
                                 </Button>
-                                <Button variant="outlined" startIcon={<PrintRoundedIcon />} onClick={() => window.print()}>
+                                <Button size="small" variant="outlined" startIcon={<PrintRoundedIcon />} onClick={() => window.print()}>
                                     Printable View
                                 </Button>
                             </Stack>
@@ -6181,7 +6205,8 @@ export function MemberPortalPage() {
                     <AccountSummaryCard
                         icon={WalletRoundedIcon}
                         label="Latest Balance"
-                        value={formatCurrency(latestFilteredTransaction?.running_balance || 0)}
+                        value={formatCurrencyCompact(latestFilteredTransaction?.running_balance || 0)}
+                        valueTitle={formatCurrency(latestFilteredTransaction?.running_balance || 0)}
                         helper="Most recent running balance in filtered statements."
                         tone="success"
                     />
@@ -6197,8 +6222,8 @@ export function MemberPortalPage() {
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6, lg: 3 }} sx={{ display: "flex" }}>
                     <MotionCard variant="outlined" sx={{ ...contentCardSx, height: "100%", width: 1 }}>
-                        <CardContent sx={{ p: 2.25, height: "100%", display: "flex" }}>
-                            <Stack spacing={1.4} sx={{ width: 1 }}>
+                        <CardContent sx={{ p: 1.5, height: "100%", display: "flex", "&:last-child": { pb: 1.5 } }}>
+                            <Stack spacing={0.9} sx={{ width: 1 }}>
                                 <Stack direction="row" justifyContent="space-between" alignItems="center">
                                     <Box
                                         sx={{
@@ -6224,10 +6249,10 @@ export function MemberPortalPage() {
                                 <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
                                     Running Balance Validation
                                 </Typography>
-                                <Typography variant="body2" color="text.secondary">
+                                <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
                                     {runningBalanceMismatches
-                                        ? `${runningBalanceMismatches} mismatch(es) detected`
-                                        : "All posted balances reconcile across the full ledger."}
+                                        ? `${runningBalanceMismatches} mismatch(es)`
+                                        : "All balances reconcile"}
                                 </Typography>
                                 <Box sx={{ mt: "auto", height: 4, borderRadius: 999, bgcolor: alpha(runningBalanceMismatches ? brandColors.warning : brandColors.success, 0.16) }}>
                                     <Box
@@ -6247,7 +6272,7 @@ export function MemberPortalPage() {
 
             <ChartPanel
                 title="Transaction Balance Trend"
-                subtitle="Running balance trend from the selected transaction window."
+                subtitle="Balance across the window"
                 data={{
                     labels: transactionTrendLabels.length ? transactionTrendLabels : chartLabels,
                     datasets: [
@@ -6625,7 +6650,7 @@ export function MemberPortalPage() {
                 <Grid container spacing={2}>
                     <Grid size={{ xs: 12, md: 6 }}>
                         <MotionCard variant="outlined" sx={contentCardSx}>
-                            <CardContent sx={{ p: 2.25 }}>
+                            <CardContent sx={{ p: 1.75 }}>
                                 <Stack spacing={1.4}>
                                     <Stack direction="row" spacing={1} alignItems="center">
                                         <Box
@@ -6666,7 +6691,7 @@ export function MemberPortalPage() {
                     </Grid>
                     <Grid size={{ xs: 12, md: 6 }}>
                         <MotionCard variant="outlined" sx={contentCardSx}>
-                            <CardContent sx={{ p: 2.25 }}>
+                            <CardContent sx={{ p: 1.75 }}>
                                 <Stack spacing={1.4}>
                                     <Stack direction="row" spacing={1} alignItems="center">
                                         <Box
@@ -6738,7 +6763,7 @@ export function MemberPortalPage() {
                     </Grid>
                     <Grid size={{ xs: 12, md: 6 }}>
                         <MotionCard variant="outlined" sx={contentCardSx}>
-                            <CardContent sx={{ p: 2.25 }}>
+                            <CardContent sx={{ p: 1.75 }}>
                                 <Stack spacing={1.2}>
                                     <Stack direction="row" spacing={1} alignItems="center">
                                         <Box
@@ -7150,9 +7175,9 @@ export function MemberPortalPage() {
                                         sx={{
                                             position: "relative",
                                             overflow: "hidden",
-                                            mb: 0.7,
-                                            minHeight: collapsed ? 48 : 58,
-                                            borderRadius: 2.4,
+                                            mb: 0.5,
+                                            minHeight: 46,
+                                            borderRadius: 2,
                                             justifyContent: collapsed ? "center" : "flex-start",
                                             px: collapsed ? 0.85 : 1.15,
                                             transition: "all 180ms ease",
@@ -7215,17 +7240,11 @@ export function MemberPortalPage() {
                                         {!collapsed ? (
                                             <ListItemText
                                                 primary={section.label}
-                                                secondary={section.subtitle}
                                                 primaryTypographyProps={{
-                                                    fontSize: 14,
+                                                    fontSize: 14.5,
                                                     fontWeight: active ? 700 : 600,
+                                                    letterSpacing: "0.01em",
                                                     color: active ? "#FFFFFF" : undefined
-                                                }}
-                                                secondaryTypographyProps={{
-                                                    fontSize: 11.5,
-                                                    lineHeight: 1.25,
-                                                    mt: 0.25,
-                                                    color: active ? alpha("#FFFFFF", 0.8) : "text.secondary"
                                                 }}
                                             />
                                         ) : null}
@@ -7269,9 +7288,9 @@ export function MemberPortalPage() {
                                 <Typography
                                     variant="caption"
                                     color="text.secondary"
-                                    sx={{ display: "block", textAlign: "center", lineHeight: 1.45, fontSize: 11 }}
+                                    sx={{ display: "block", textAlign: "center", lineHeight: 1.4, fontSize: 11 }}
                                 >
-                                    Real-time balances, loan tracking, and self-service payments in one place.
+                                    Encrypted & real-time
                                 </Typography>
                             </Stack>
                         )}
@@ -7282,7 +7301,7 @@ export function MemberPortalPage() {
     );
 
     if (loading) {
-        return <AppLoader message="Loading member portal..." />;
+        return <MemberPortalSkeleton />;
     }
 
     if (error) {
@@ -9570,7 +9589,7 @@ export function MemberPortalPage() {
                                                         fullWidth
                                                         label="Gender"
                                                         InputLabelProps={{ shrink: true }}
-                                                        defaultValue=""
+                                                        value={memberProfileCompletionForm.watch("gender") ?? ""}
                                                         {...memberProfileCompletionForm.register("gender")}
                                                     >
                                                         <MenuItem value="">Not set</MenuItem>
@@ -9603,7 +9622,7 @@ export function MemberPortalPage() {
                                                         fullWidth
                                                         label="Marital status"
                                                         InputLabelProps={{ shrink: true }}
-                                                        defaultValue=""
+                                                        value={memberProfileCompletionForm.watch("marital_status") ?? ""}
                                                         {...memberProfileCompletionForm.register("marital_status")}
                                                     >
                                                         <MenuItem value="">Not set</MenuItem>
@@ -9620,10 +9639,38 @@ export function MemberPortalPage() {
                                                     <TextField fullWidth label="Employer name" {...memberProfileCompletionForm.register("employer")} />
                                                 </Grid>
                                                 <Grid size={{ xs: 12, md: 4 }}>
-                                                    <TextField fullWidth label="National ID (NIDA)" {...memberProfileCompletionForm.register("national_id")} />
+                                                    <TextField
+                                                        select
+                                                        fullWidth
+                                                        label="ID type"
+                                                        InputLabelProps={{ shrink: true }}
+                                                        value={memberProfileCompletionForm.watch("id_type") ?? "nida"}
+                                                        {...memberProfileCompletionForm.register("id_type")}
+                                                    >
+                                                        <MenuItem value="nida">NIDA / National ID</MenuItem>
+                                                        <MenuItem value="voter">Voter ID</MenuItem>
+                                                        <MenuItem value="license">Driver's license</MenuItem>
+                                                        <MenuItem value="passport">Passport</MenuItem>
+                                                    </TextField>
                                                 </Grid>
                                                 <Grid size={{ xs: 12, md: 4 }}>
-                                                    <TextField fullWidth label="TIN number" {...memberProfileCompletionForm.register("tin_no")} />
+                                                    <TextField
+                                                        fullWidth
+                                                        label={memberProfileCompletionForm.watch("id_type") === "nida" ? "NIDA / National ID number" : "ID number"}
+                                                        {...memberProfileCompletionForm.register("national_id")}
+                                                        error={Boolean(memberProfileCompletionForm.formState.errors.national_id)}
+                                                        helperText={memberProfileCompletionForm.formState.errors.national_id?.message
+                                                            || (memberProfileCompletionForm.watch("id_type") === "nida" ? "20 digits" : undefined)}
+                                                    />
+                                                </Grid>
+                                                <Grid size={{ xs: 12, md: 4 }}>
+                                                    <TextField
+                                                        fullWidth
+                                                        label="TIN number"
+                                                        {...memberProfileCompletionForm.register("tin_no")}
+                                                        error={Boolean(memberProfileCompletionForm.formState.errors.tin_no)}
+                                                        helperText={memberProfileCompletionForm.formState.errors.tin_no?.message || "9 digits"}
+                                                    />
                                                 </Grid>
                                             </Grid>
                                         </Stack>

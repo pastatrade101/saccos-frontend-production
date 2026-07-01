@@ -43,18 +43,18 @@ function MetricCard({
 }) {
     return (
         <MotionCard variant="outlined" sx={{ height: "100%" }}>
-            <CardContent>
+            <CardContent sx={{ p: 1.75, "&:last-child": { pb: 1.75 } }}>
                 <Stack direction="row" justifyContent="space-between" spacing={2}>
-                    <Stack spacing={0.75}>
+                    <Stack spacing={0.5}>
                         <Typography variant="overline" color="text.secondary">
                             {label}
                         </Typography>
-                        <Typography variant="h5">{value}</Typography>
-                        <Typography variant="body2" color="text.secondary">
+                        <Typography sx={{ fontWeight: 800, fontSize: "1.45rem", lineHeight: 1.2, fontVariantNumeric: "tabular-nums" }}>{value}</Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.3 }}>
                             {helper}
                         </Typography>
                     </Stack>
-                    <Avatar variant="rounded" sx={{ width: 42, height: 42, borderRadius: 2, bgcolor: "action.hover", color: "text.primary" }}>
+                    <Avatar variant="rounded" sx={{ width: 36, height: 36, borderRadius: 2, bgcolor: "action.hover", color: "text.primary" }}>
                         {icon}
                     </Avatar>
                 </Stack>

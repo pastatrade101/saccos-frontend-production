@@ -8,7 +8,7 @@ import { Line } from "react-chartjs-2";
 
 import { registerCharts } from "../../lib/charts";
 import { MotionCard } from "../../ui/motion";
-import { formatCurrency } from "../../utils/format";
+import { formatCurrency, formatCurrencyCompact } from "../../utils/format";
 
 registerCharts();
 
@@ -54,7 +54,7 @@ export function KpiCard({
     statusLabel,
     sparkline,
     tone = "neutral",
-    formatter = formatCurrency
+    formatter = formatCurrencyCompact
 }: KpiCardProps) {
     const theme = useTheme();
     const colors = getToneColors(tone, theme);
@@ -108,14 +108,17 @@ export function KpiCard({
                 background: `linear-gradient(180deg, ${alpha(colors.main, theme.palette.mode === "dark" ? 0.14 : 0.06)}, ${theme.palette.background.paper})`
             }}
         >
-            <CardContent sx={{ pb: 2 }}>
-                <Stack spacing={2}>
+            <CardContent sx={{ p: 1.75, "&:last-child": { pb: 1.75 } }}>
+                <Stack spacing={1.5}>
                     <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
                         <Box>
                             <Typography variant="overline" color="text.secondary">
                                 {label}
                             </Typography>
-                            <Typography variant="h5" sx={{ mt: 0.5 }}>
+                            <Typography
+                                title={formatCurrency(value)}
+                                sx={{ mt: 0.25, fontSize: "1.4rem", fontWeight: 800, lineHeight: 1.15, letterSpacing: "-0.01em", fontVariantNumeric: "tabular-nums" }}
+                            >
                                 {formatter(value)}
                             </Typography>
                         </Box>
