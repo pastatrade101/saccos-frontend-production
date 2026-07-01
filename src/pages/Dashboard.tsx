@@ -50,6 +50,7 @@ import { KpiCard } from "../components/teller/KpiCard";
 import { WaterfallCard } from "../components/teller/WaterfallCard";
 import { DataTable, type Column } from "../components/DataTable";
 import { api, getApiErrorMessage } from "../lib/api";
+import { cachedGet } from "../lib/apiCache";
 import {
     endpoints,
     type BranchesListResponse,
@@ -308,6 +309,11 @@ async function loadDashboardMembers(tenantId: string) {
 // loading every transaction (now thousands after history imports) made the
 // dashboard take ages to load.
 const DASHBOARD_STATEMENT_MAX_PAGES = 3;
+
+// Revisiting the dashboard within this window serves cached data instantly and
+// refreshes in the background (stale-while-revalidate), instead of re-running every
+// paginated read from scratch on each visit.
+const DASHBOARD_CACHE_TTL_MS = 60_000;
 
 async function loadDashboardStatements(tenantId: string) {
     const statements: StatementRow[] = [];
@@ -1816,21 +1822,40 @@ export function DashboardPage() {
             setSupplementalLoading(false);
             setError(null);
 
+            const cacheScope = `${selectedTenantId}:${branchScopeKey}`;
+            const activeSchedules = (rows: LoanSchedule[]) =>
+                rows.filter((schedule) => ["pending", "partial", "overdue"].includes(schedule.status));
+
             try {
-                const [
-                    membersList,
-                    { data: loansResponse },
-                    { data: schedulesResponse },
-                    memberAccounts
-                ] = await Promise.all([
-                    loadDashboardMembers(selectedTenantId),
-                    api.get<LoansResponse>(endpoints.finance.loanPortfolio(), {
-                        params: { tenant_id: selectedTenantId, page: 1, limit: 100 }
-                    }),
-                    api.get<LoanSchedulesResponse>(endpoints.finance.loanSchedules(), {
-                        params: { tenant_id: selectedTenantId, page: 1, limit: 100 }
-                    }),
-                    loadDashboardMemberAccounts(selectedTenantId)
+                const [membersList, loansData, schedulesData, memberAccounts] = await Promise.all([
+                    cachedGet(
+                        `dash:members:${cacheScope}`,
+                        () => loadDashboardMembers(selectedTenantId),
+                        DASHBOARD_CACHE_TTL_MS,
+                        (fresh) => { if (isActive) setState((current) => ({ ...current, members: fresh })); }
+                    ),
+                    cachedGet(
+                        `dash:loans:${cacheScope}`,
+                        async () => (await api.get<LoansResponse>(endpoints.finance.loanPortfolio(), {
+                            params: { tenant_id: selectedTenantId, page: 1, limit: 100 }
+                        })).data.data || [],
+                        DASHBOARD_CACHE_TTL_MS,
+                        (fresh) => { if (isActive) setState((current) => ({ ...current, loans: fresh })); }
+                    ),
+                    cachedGet(
+                        `dash:schedules:${cacheScope}`,
+                        async () => (await api.get<LoanSchedulesResponse>(endpoints.finance.loanSchedules(), {
+                            params: { tenant_id: selectedTenantId, page: 1, limit: 100 }
+                        })).data.data || [],
+                        DASHBOARD_CACHE_TTL_MS,
+                        (fresh) => { if (isActive) setState((current) => ({ ...current, schedules: activeSchedules(fresh) })); }
+                    ),
+                    cachedGet(
+                        `dash:accounts:${cacheScope}`,
+                        () => loadDashboardMemberAccounts(selectedTenantId),
+                        DASHBOARD_CACHE_TTL_MS,
+                        (fresh) => { if (isActive) setState((current) => ({ ...current, memberAccounts: fresh })); }
+                    )
                 ]);
 
                 if (!isActive) {
@@ -1841,8 +1866,8 @@ export function DashboardPage() {
                     members: membersList,
                     memberAccounts,
                     statements: [],
-                    loans: loansResponse.data || [],
-                    schedules: (schedulesResponse.data || []).filter((schedule) => ["pending", "partial", "overdue"].includes(schedule.status)),
+                    loans: loansData,
+                    schedules: activeSchedules(schedulesData),
                     loanApplications: [],
                     memberApplications: [],
                     staffUsers: [],
@@ -1860,7 +1885,12 @@ export function DashboardPage() {
 
                 // Recent statements feed only the activity chart + cash-flow tiles and are
                 // the heaviest read, so they load on their own and the chart fills in later.
-                void loadDashboardStatements(selectedTenantId)
+                void cachedGet(
+                    `dash:statements:${cacheScope}`,
+                    () => loadDashboardStatements(selectedTenantId),
+                    DASHBOARD_CACHE_TTL_MS,
+                    (fresh) => { if (isActive) setState((current) => ({ ...current, statements: fresh })); }
+                )
                     .then((statementsList) => {
                         if (isActive) {
                             setState((current) => ({ ...current, statements: statementsList }));
@@ -1907,11 +1937,16 @@ export function DashboardPage() {
         }
         (async () => {
             try {
-                const { data } = await api.get<import("../lib/endpoints").FundingSourceSummaryResponse>(
-                    endpoints.reports.fundingSources()
+                const data = await cachedGet(
+                    `dash:funding:${selectedTenantId}:${branchScopeKey}`,
+                    async () => (await api.get<import("../lib/endpoints").FundingSourceSummaryResponse>(
+                        endpoints.reports.fundingSources()
+                    )).data.data,
+                    DASHBOARD_CACHE_TTL_MS,
+                    (fresh) => { if (isActive) setFundingSources(fresh); }
                 );
                 if (isActive) {
-                    setFundingSources(data.data);
+                    setFundingSources(data);
                 }
             } catch {
                 if (isActive) {
