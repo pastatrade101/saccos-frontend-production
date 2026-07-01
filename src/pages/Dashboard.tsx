@@ -11,6 +11,7 @@ import {
     LinearProgress,
     MenuItem,
     Select,
+    Skeleton,
     Stack,
     Table,
     TableBody,
@@ -41,7 +42,6 @@ import { useNavigate } from "react-router-dom";
 import { Bar } from "react-chartjs-2";
 
 import { useAuth } from "../auth/AuthContext";
-import { AppLoader } from "../components/AppLoader";
 import { ChartPanel } from "../components/ChartPanel";
 import { AlertsPanel } from "../components/teller/AlertsPanel";
 import { CashFlowChart } from "../components/teller/CashFlowChart";
@@ -249,58 +249,53 @@ function formatSignedPercent(value: number) {
 }
 
 async function loadDashboardMemberAccounts(tenantId: string) {
-    const accounts: MemberAccount[] = [];
-    let page = 1;
-
-    while (page <= 20) {
-        const { data } = await api.get<MemberAccountsResponse & { pagination?: { total: number; limit: number; page: number } }>(
+    const fetchPage = (page: number) =>
+        api.get<MemberAccountsResponse & { pagination?: { total: number; limit: number; page: number } }>(
             endpoints.members.accounts(),
-            {
-                params: {
-                    tenant_id: tenantId,
-                    page,
-                    limit: DASHBOARD_ACCOUNTS_PAGE_LIMIT
-                }
-            }
+            { params: { tenant_id: tenantId, page, limit: DASHBOARD_ACCOUNTS_PAGE_LIMIT } }
         );
-        const rows = data.data || [];
-        accounts.push(...rows);
 
-        if (data.pagination?.total && accounts.length >= data.pagination.total) {
-            break;
-        }
+    // Page 1 reveals the total; against the remote DB each page is ~1-2s, so fetch
+    // the remaining pages concurrently instead of walking them one at a time.
+    const first = await fetchPage(1);
+    const firstRows = first.data.data || [];
+    const total = first.data.pagination?.total;
 
-        if (rows.length < DASHBOARD_ACCOUNTS_PAGE_LIMIT) {
-            break;
-        }
-
-        page += 1;
+    if (firstRows.length < DASHBOARD_ACCOUNTS_PAGE_LIMIT || !total || firstRows.length >= total) {
+        return firstRows;
     }
 
-    return accounts;
+    const totalPages = Math.min(Math.ceil(total / DASHBOARD_ACCOUNTS_PAGE_LIMIT), 20);
+    const restPages = await Promise.all(
+        Array.from({ length: totalPages - 1 }, (_, index) => fetchPage(index + 2).then((res) => res.data.data || []))
+    );
+
+    return firstRows.concat(...restPages);
 }
 
 // Paginate members so snapshot totals (count, savings actual, target, reach) cover
 // the whole member base — a single limit:100 fetch silently dropped members beyond
 // 100, making every dashboard total undercount.
 async function loadDashboardMembers(tenantId: string) {
-    const members: Member[] = [];
-    let page = 1;
-    while (page <= 30) {
-        const { data } = await api.get<MembersResponse & { pagination?: { total: number; limit: number; page: number } }>(endpoints.members.list(), {
+    const fetchPage = (page: number) =>
+        api.get<MembersResponse & { pagination?: { total: number; limit: number; page: number } }>(endpoints.members.list(), {
             params: { tenant_id: tenantId, page, limit: DASHBOARD_ACCOUNTS_PAGE_LIMIT }
         });
-        const rows = data.data || [];
-        members.push(...rows);
-        if (data.pagination?.total && members.length >= data.pagination.total) {
-            break;
-        }
-        if (rows.length < DASHBOARD_ACCOUNTS_PAGE_LIMIT) {
-            break;
-        }
-        page += 1;
+
+    const first = await fetchPage(1);
+    const firstRows = first.data.data || [];
+    const total = first.data.pagination?.total;
+
+    if (firstRows.length < DASHBOARD_ACCOUNTS_PAGE_LIMIT || !total || firstRows.length >= total) {
+        return firstRows;
     }
-    return members;
+
+    const totalPages = Math.min(Math.ceil(total / DASHBOARD_ACCOUNTS_PAGE_LIMIT), 30);
+    const restPages = await Promise.all(
+        Array.from({ length: totalPages - 1 }, (_, index) => fetchPage(index + 2).then((res) => res.data.data || []))
+    );
+
+    return firstRows.concat(...restPages);
 }
 
 // The dashboard only needs RECENT statements (7-day cash-flow chart + today's
@@ -1096,7 +1091,29 @@ function MemberPerformanceTargetPanel({
 }
 
 function DashboardLoadingState() {
-    return <AppLoader fullscreen={false} minHeight="72vh" message="Loading dashboard..." />;
+    // Mirror the real dashboard layout (header + 4 KPI cards + 2 charts) with
+    // skeletons instead of a centered spinner, so the structure is visible while
+    // the data loads and there's no jump when the real content replaces it.
+    return (
+        <Stack spacing={3}>
+            <Skeleton variant="rounded" height={92} sx={{ borderRadius: 2 }} />
+            <Grid container spacing={2}>
+                {Array.from({ length: 4 }).map((_, index) => (
+                    <Grid key={index} size={{ xs: 12, sm: 6, md: 3 }}>
+                        <Skeleton variant="rounded" height={150} sx={{ borderRadius: 2 }} />
+                    </Grid>
+                ))}
+            </Grid>
+            <Grid container spacing={2}>
+                <Grid size={{ xs: 12, lg: 8 }}>
+                    <Skeleton variant="rounded" height={340} sx={{ borderRadius: 2 }} />
+                </Grid>
+                <Grid size={{ xs: 12, lg: 4 }}>
+                    <Skeleton variant="rounded" height={340} sx={{ borderRadius: 2 }} />
+                </Grid>
+            </Grid>
+        </Stack>
+    );
 }
 
 function BranchActivityPanel({

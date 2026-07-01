@@ -15,6 +15,7 @@ import {
     type BackendSignInResponse,
     type MeResponse
 } from "../lib/endpoints";
+import { invalidateCache } from "../lib/apiCache";
 import { clearStaleSupabaseSession, supabase } from "../lib/supabase";
 import type { ApiErrorPayload, AuthMe } from "../types/api";
 import { AuthContext, type AuthContextValue } from "./AuthContext";
@@ -84,6 +85,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
         setBranchIds([]);
         setSelectedTenantIdState(null);
         setSelectedTenantNameState(null);
+        // Drop cached dashboard/read data so a different user signing in on the same
+        // tab never sees the previous session's cached values.
+        invalidateCache();
     }, []);
 
     const discardInvalidSession = useCallback(async () => {
