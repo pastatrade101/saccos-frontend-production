@@ -23,8 +23,12 @@ import {
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { alpha } from "@mui/material/styles";
+
 import { useToast } from "../components/Toast";
 import { AppLoader } from "../components/AppLoader";
+import { DashboardHero } from "../components/DashboardHero";
+import { crestGold } from "../theme/colors";
 import { getAuditorReasonMeta, getSeverityScore } from "../components/auditor/auditorUtils";
 import { api, getApiErrorMessage } from "../lib/api";
 import { endpoints, type AuditorExceptionTrendsResponse, type AuditorExceptionsResponse, type AuditorRiskSummaryResponse, type AuditorSummaryResponse, type AuditorWorkstationOverviewResponse } from "../lib/endpoints";
@@ -168,39 +172,50 @@ export function AuditorDashboardPage() {
 
     return (
         <Stack spacing={3}>
-            <MotionCard variant="outlined">
-                <CardContent>
-                    <Stack
-                        direction={{ xs: "column", lg: "row" }}
-                        justifyContent="space-between"
-                        spacing={3}
-                        alignItems={{ xs: "flex-start", lg: "center" }}
-                    >
-                        <Stack spacing={1}>
-                            <Typography variant="overline" color="primary.main" sx={{ letterSpacing: "0.16em" }}>
-                                CONTROL POSTURE
-                            </Typography>
-                            <Typography variant="h4" fontWeight={800}>
-                                Auditor Dashboard
-                            </Typography>
-                            <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 760 }}>
-                                Investigate control breaches, posting quality, and audit traceability from one risk-first workspace.
-                            </Typography>
-                        </Stack>
-                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25}>
-                            <Button variant="contained" onClick={() => navigate("/auditor/exceptions")}>
-                                Review exceptions
-                            </Button>
-                            <Button variant="outlined" onClick={() => navigate("/auditor/workbench")}>
-                                Open workbench
-                            </Button>
-                            <Button variant="outlined" onClick={() => navigate("/auditor/reports")}>
-                                Export evidence
-                            </Button>
-                        </Stack>
-                    </Stack>
-                </CardContent>
-            </MotionCard>
+            <DashboardHero
+                eyebrow="Control posture"
+                title="Auditor Dashboard"
+                subtitle="Investigate control breaches, posting quality, and audit traceability from one risk-first workspace."
+                actions={(
+                    <>
+                        <Button
+                            variant="contained"
+                            onClick={() => navigate("/auditor/exceptions")}
+                            sx={{
+                                bgcolor: crestGold.main,
+                                color: "#050338",
+                                fontWeight: 800,
+                                boxShadow: "none",
+                                "&:hover": { bgcolor: crestGold.light, boxShadow: "none" }
+                            }}
+                        >
+                            Review exceptions
+                        </Button>
+                        <Button
+                            variant="outlined"
+                            onClick={() => navigate("/auditor/workbench")}
+                            sx={{
+                                color: "#fff",
+                                borderColor: alpha("#FFFFFF", 0.28),
+                                "&:hover": { borderColor: alpha("#FFFFFF", 0.5), bgcolor: alpha("#FFFFFF", 0.06) }
+                            }}
+                        >
+                            Open workbench
+                        </Button>
+                        <Button
+                            variant="outlined"
+                            onClick={() => navigate("/auditor/reports")}
+                            sx={{
+                                color: "#fff",
+                                borderColor: alpha("#FFFFFF", 0.28),
+                                "&:hover": { borderColor: alpha("#FFFFFF", 0.5), bgcolor: alpha("#FFFFFF", 0.06) }
+                            }}
+                        >
+                            Export evidence
+                        </Button>
+                    </>
+                )}
+            />
 
             <Grid container spacing={2}>
                 <Grid size={{ xs: 12, sm: 6, lg: 4 }}>

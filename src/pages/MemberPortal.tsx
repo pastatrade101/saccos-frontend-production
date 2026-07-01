@@ -131,7 +131,7 @@ import {
     type SaccoFinancialYearSettingsResponse,
     type SaccoPerformanceTargetSettingsResponse
 } from "../lib/endpoints";
-import { brandColors, darkThemeColors } from "../theme/colors";
+import { brandColors, crestGold, darkThemeColors, displayFontFamily, inkPanel } from "../theme/colors";
 import { useUI } from "../ui/UIProvider";
 import type { Loan, LoanApplication, LoanCapacitySummary, LoanProduct, LoanSchedule, LoanTransaction, Member, MemberAccount, MemberApplication, MemberApplicationStatus, MemberPortalPaymentControls, PaymentOrder, SaccoFinancialYearSettings, SaccoPerformanceTargetSettings, StatementRow } from "../types/api";
 import { downloadLoanStatementPdf, downloadMemberStatementPdf, loadReportLogoDataUrl } from "../utils/memberStatementPdf";
@@ -878,6 +878,10 @@ const contentCardSx = {
 } as const;
 const DARK_MEMBER_ACCENT = "#D9B273";
 const DARK_MEMBER_ACCENT_DEEP = "#C89B52";
+// Crest Gold + ink indigo: the passbook identity shared with the auth pages.
+const CREST_GOLD = crestGold.main;
+const CREST_GOLD_LIGHT = crestGold.light;
+const PORTAL_DISPLAY_FONT = displayFontFamily;
 
 type PortalSectionId = (typeof portalSections)[number]["id"];
 
@@ -896,9 +900,7 @@ function getToneStyles(tone: MetricCardProps["tone"], mode: "light" | "dark") {
         return {
             color: brandColors.success,
             bg: alpha(brandColors.success, mode === "dark" ? 0.16 : 0.1),
-            softBg: mode === "dark"
-                ? `linear-gradient(180deg, ${alpha(brandColors.success, 0.14)} 0%, ${alpha(darkThemeColors.paper, 0.82)} 100%)`
-                : `linear-gradient(180deg, ${alpha("#F3FBF6", 0.98)} 0%, ${alpha("#FFFFFF", 0.96)} 100%)`,
+            softBg: mode === "dark" ? darkThemeColors.paper : "#FFFFFF",
             border: alpha(brandColors.success, mode === "dark" ? 0.24 : 0.16),
             shadow: mode === "dark"
                 ? `0 14px 28px ${alpha(brandColors.success, 0.08)}`
@@ -911,9 +913,7 @@ function getToneStyles(tone: MetricCardProps["tone"], mode: "light" | "dark") {
         return {
             color: brandColors.warning,
             bg: alpha(brandColors.warning, mode === "dark" ? 0.18 : 0.12),
-            softBg: mode === "dark"
-                ? `linear-gradient(180deg, ${alpha(brandColors.warning, 0.14)} 0%, ${alpha(darkThemeColors.paper, 0.82)} 100%)`
-                : `linear-gradient(180deg, ${alpha("#FFF8EB", 0.98)} 0%, ${alpha("#FFFFFF", 0.96)} 100%)`,
+            softBg: mode === "dark" ? darkThemeColors.paper : "#FFFFFF",
             border: alpha(brandColors.warning, mode === "dark" ? 0.24 : 0.16),
             shadow: mode === "dark"
                 ? `0 14px 28px ${alpha(brandColors.warning, 0.08)}`
@@ -926,9 +926,7 @@ function getToneStyles(tone: MetricCardProps["tone"], mode: "light" | "dark") {
         return {
             color: brandColors.danger,
             bg: alpha(brandColors.danger, mode === "dark" ? 0.16 : 0.1),
-            softBg: mode === "dark"
-                ? `linear-gradient(180deg, ${alpha(brandColors.danger, 0.12)} 0%, ${alpha(darkThemeColors.paper, 0.84)} 100%)`
-                : `linear-gradient(180deg, ${alpha("#FFF4F4", 0.98)} 0%, ${alpha("#FFFFFF", 0.96)} 100%)`,
+            softBg: mode === "dark" ? darkThemeColors.paper : "#FFFFFF",
             border: alpha(brandColors.danger, mode === "dark" ? 0.22 : 0.15),
             shadow: mode === "dark"
                 ? `0 14px 28px ${alpha(brandColors.danger, 0.08)}`
@@ -945,9 +943,7 @@ function getToneStyles(tone: MetricCardProps["tone"], mode: "light" | "dark") {
         bg: mode === "dark"
             ? alpha(DARK_MEMBER_ACCENT, 0.2)
             : alpha(brandColors.primary[500], 0.1),
-        softBg: mode === "dark"
-            ? `linear-gradient(180deg, ${alpha(DARK_MEMBER_ACCENT, 0.16)} 0%, ${alpha(darkThemeColors.paper, 0.82)} 100%)`
-            : `linear-gradient(180deg, ${alpha("#F3F7FF", 0.98)} 0%, ${alpha("#FFFFFF", 0.96)} 100%)`,
+        softBg: mode === "dark" ? darkThemeColors.paper : "#FFFFFF",
         border: alpha(primaryTint, mode === "dark" ? 0.24 : 0.16),
         shadow: mode === "dark"
             ? `0 14px 28px ${alpha(primaryTint, 0.08)}`
@@ -3008,6 +3004,36 @@ export function MemberPortalPage() {
     }, [activeSection, canUsePortalPayments, paymentOrders.length, showContributionDialog]);
 
     const savingsAccounts = useMemo(() => accounts.filter((account) => account.product_type === "savings"), [accounts]);
+
+    // Monthly mandatory savings: same rule as the backend loan-submission guard —
+    // savings-account deposits within the current calendar month must reach the
+    // member's committed amount before a loan application can be submitted.
+    const monthlyCommitment = useMemo(() => {
+        const amount = Number(memberRecord?.monthly_savings_commitment || 0);
+        const now = new Date();
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const monthLabel = now.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+        const savingsAccountIds = new Set(savingsAccounts.map((account) => account.id));
+        const paid = statements.reduce((sum, row) => {
+            if (row.direction !== "in" || row.transaction_type !== "deposit") {
+                return sum;
+            }
+            if (!savingsAccountIds.has(row.account_id)) {
+                return sum;
+            }
+            return new Date(row.transaction_date) >= monthStart ? sum + Number(row.amount || 0) : sum;
+        }, 0);
+        const met = amount <= 0 || paid >= amount;
+
+        return {
+            amount,
+            paid,
+            remaining: Math.max(0, amount - paid),
+            met,
+            monthLabel,
+            progressPercent: amount > 0 ? Math.min(100, (paid / amount) * 100) : 100
+        };
+    }, [memberRecord, savingsAccounts, statements]);
     const totalSavings = useMemo(
         () => savingsAccounts.reduce((sum, account) => sum + account.available_balance + account.locked_balance, 0),
         [savingsAccounts]
@@ -4216,6 +4242,16 @@ export function MemberPortalPage() {
     };
 
     const openLoanApplicationDraft = () => {
+        if (!monthlyCommitment.met) {
+            pushToast({
+                type: "error",
+                title: "Monthly savings due",
+                message: `Deposit the remaining ${formatCurrency(monthlyCommitment.remaining)} of your ${monthlyCommitment.monthLabel} mandatory savings before applying for a loan.`
+            });
+            handleSectionSelect("member-contributions");
+            return;
+        }
+
         if (selectedLoanDraft) {
             openLoanApplicationEditor(selectedLoanDraft);
             return;
@@ -4728,7 +4764,7 @@ export function MemberPortalPage() {
                     alignItems={{ xs: "flex-start", md: "center" }}
                 >
                     <Box>
-                        <Typography variant="overline" sx={{ letterSpacing: "0.18em", color: "text.secondary" }}>
+                        <Typography variant="overline" sx={{ letterSpacing: "0.2em", fontWeight: 700, color: isDarkMode ? CREST_GOLD_LIGHT : "#A17F1A" }}>
                             Your Borrowing Capacity
                         </Typography>
                         <Typography variant="subtitle1" sx={{ fontWeight: 800, mt: 0.25, lineHeight: 1.2 }}>
@@ -4801,8 +4837,8 @@ export function MemberPortalPage() {
                                 p: 1.25,
                                 borderRadius: 2,
                                 height: "100%",
-                                bgcolor: alpha(memberAccent, isDarkMode ? 0.14 : 0.06),
-                                borderColor: alpha(memberAccent, 0.24)
+                                bgcolor: alpha(CREST_GOLD, isDarkMode ? 0.12 : 0.08),
+                                borderColor: alpha(CREST_GOLD, 0.35)
                             }}
                         >
                             <Typography variant="caption" color="text.secondary">
@@ -4831,6 +4867,16 @@ export function MemberPortalPage() {
             { label: "Needed now", value: savingsTargetNextRequired > 0 ? formatCurrency(savingsTargetNextRequired) : "Clear" }
         ];
         const positionRows = [
+            ...(monthlyCommitment.amount > 0
+                ? [{
+                    icon: SavingsRoundedIcon,
+                    label: `Monthly savings · ${monthlyCommitment.monthLabel}`,
+                    value: monthlyCommitment.met
+                        ? "Active — paid in full"
+                        : `${formatCurrency(monthlyCommitment.remaining)} due`,
+                    tone: monthlyCommitment.met ? ("success" as const) : ("danger" as const)
+                }]
+                : []),
             { icon: TrendingUpRoundedIcon, label: "Dividends", value: formatCurrency(totalDividends), tone: "success" as const },
             { icon: CreditScoreRoundedIcon, label: "Loan exposure", value: formatCurrency(totalOutstandingLoans), tone: "danger" as const },
             { icon: EventRoundedIcon, label: "Next loan due", value: nextPaymentDue ? `${formatDate(nextPaymentDue)} · ${formatCurrency(monthlyInstallment)}` : "No due installment", tone: "primary" as const }
@@ -4844,20 +4890,24 @@ export function MemberPortalPage() {
                     minWidth: 0,
                     maxWidth: { xs: "calc(100vw - 20px)", sm: "100%" },
                     borderRadius: { xs: 2.4, md: 3 },
-                    color: theme.palette.mode === "dark" ? "#fff" : brandColors.neutral.textPrimary,
+                    color: "#fff",
                     overflow: "hidden",
-                    border: theme.palette.mode === "dark"
-                        ? "1px solid rgba(255,255,255,0.08)"
-                        : `1px solid ${alpha(brandColors.primary[300], 0.3)}`,
-                    background: theme.palette.mode === "dark"
-                        ? `linear-gradient(135deg, ${darkThemeColors.elevated}, ${alpha(memberAccentStrong, 0.2)})`
-                        : `linear-gradient(135deg, ${alpha("#FFFFFF", 0.99)} 0%, ${alpha("#F7FAFF", 0.98)} 100%)`,
-                    boxShadow: theme.palette.mode === "dark"
-                        ? `0 14px 30px ${alpha("#020617", 0.22)}`
-                        : `0 14px 30px ${alpha(brandColors.primary[300], 0.12)}`
+                    position: "relative",
+                    border: `1px solid ${alpha(CREST_GOLD, 0.28)}`,
+                    // Passbook cover: the same ink gradient and gold ledger
+                    // ruling as the sign-in panel, in both color modes.
+                    background: "linear-gradient(160deg, #0A0573 0%, #050338 68%, #040229 100%)",
+                    boxShadow: `0 18px 40px ${alpha("#050338", 0.35)}`,
+                    "&::before": {
+                        content: '""',
+                        position: "absolute",
+                        inset: 0,
+                        pointerEvents: "none",
+                        background: `repeating-linear-gradient(180deg, transparent 0, transparent 33px, ${alpha(CREST_GOLD_LIGHT, 0.07)} 33px, ${alpha(CREST_GOLD_LIGHT, 0.07)} 34px)`
+                    }
                 }}
             >
-                <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
+                <CardContent sx={{ p: { xs: 2, md: 2.5 }, position: "relative" }}>
                     <Box
                         sx={{
                             display: "grid",
@@ -4874,8 +4924,9 @@ export function MemberPortalPage() {
                                 <Typography
                                     variant="overline"
                                     sx={{
-                                        color: theme.palette.mode === "dark" ? alpha("#FFFFFF", 0.72) : alpha(brandColors.neutral.textSecondary, 0.9),
-                                        letterSpacing: "0.14em"
+                                        color: CREST_GOLD_LIGHT,
+                                        letterSpacing: "0.22em",
+                                        fontWeight: 700
                                     }}
                                 >
                                     Member Financial Level
@@ -4885,11 +4936,13 @@ export function MemberPortalPage() {
                                     title={formatCurrency(totalSavings)}
                                     sx={{
                                         mt: 0.75,
+                                        fontFamily: PORTAL_DISPLAY_FONT,
                                         fontWeight: 800,
-                                        lineHeight: 1.1,
-                                        fontSize: { xs: "1.5rem", md: "1.65rem" },
+                                        lineHeight: 1.05,
+                                        fontSize: { xs: "1.9rem", md: "2.3rem" },
                                         fontVariantNumeric: "tabular-nums",
-                                        overflowWrap: "anywhere"
+                                        overflowWrap: "anywhere",
+                                        color: "#fff"
                                     }}
                                 >
                                     {formatCurrencyCompact(totalSavings)}
@@ -4898,7 +4951,7 @@ export function MemberPortalPage() {
                                     variant="body2"
                                     sx={{
                                         mt: 0.7,
-                                        color: theme.palette.mode === "dark" ? alpha("#FFFFFF", 0.76) : brandColors.neutral.textSecondary,
+                                        color: alpha("#FFFFFF", 0.72),
                                         overflowWrap: "anywhere"
                                     }}
                                 >
@@ -4909,8 +4962,8 @@ export function MemberPortalPage() {
                                 <Chip
                                     label={selectedBranchName || "Assigned branch"}
                                     sx={{
-                                        bgcolor: theme.palette.mode === "dark" ? alpha("#FFFFFF", 0.12) : alpha(brandColors.primary[100], 0.92),
-                                        color: theme.palette.mode === "dark" ? "#fff" : brandColors.primary[900],
+                                        bgcolor: alpha("#FFFFFF", 0.12),
+                                        color: "#fff",
                                         borderRadius: 1.5,
                                         fontWeight: 700
                                     }}
@@ -4918,8 +4971,8 @@ export function MemberPortalPage() {
                                 <Chip
                                     label={hasNoVisibleFinancialData ? "Awaiting first activity" : savingsTargetLevel.label}
                                     sx={{
-                                        bgcolor: hasNoVisibleFinancialData ? alpha(brandColors.warning, 0.12) : alpha(brandColors.success, 0.12),
-                                        color: hasNoVisibleFinancialData ? "#9A6700" : brandColors.success,
+                                        bgcolor: hasNoVisibleFinancialData ? alpha(brandColors.warning, 0.22) : alpha(brandColors.success, 0.22),
+                                        color: hasNoVisibleFinancialData ? "#FBD38D" : "#86EFAC",
                                         borderRadius: 1.5,
                                         fontWeight: 700
                                     }}
@@ -4937,12 +4990,12 @@ export function MemberPortalPage() {
                                     sx={{
                                         borderRadius: 1.5,
                                         px: 2,
-                                        bgcolor: theme.palette.mode === "dark" ? memberAccent : brandColors.primary[700],
-                                        color: "#fff",
+                                        bgcolor: CREST_GOLD,
+                                        color: "#050338",
                                         boxShadow: "none",
-                                        fontWeight: 700,
+                                        fontWeight: 800,
                                         "&:hover": {
-                                            bgcolor: theme.palette.mode === "dark" ? memberAccentAlt : brandColors.primary[900],
+                                            bgcolor: CREST_GOLD_LIGHT,
                                             boxShadow: "none"
                                         }
                                     }}
@@ -4956,11 +5009,13 @@ export function MemberPortalPage() {
                                     sx={{
                                         borderRadius: 1.5,
                                         px: 2,
-                                        color: theme.palette.mode === "dark" ? "#fff" : brandColors.primary[900],
-                                        borderColor: theme.palette.mode === "dark"
-                                            ? alpha("#FFFFFF", 0.22)
-                                            : alpha(brandColors.primary[300], 0.5),
-                                        fontWeight: 700
+                                        color: "#fff",
+                                        borderColor: alpha("#FFFFFF", 0.28),
+                                        fontWeight: 700,
+                                        "&:hover": {
+                                            borderColor: alpha("#FFFFFF", 0.5),
+                                            bgcolor: alpha("#FFFFFF", 0.06)
+                                        }
                                     }}
                                 >
                                     Loans
@@ -4974,15 +5029,13 @@ export function MemberPortalPage() {
                                 minWidth: 0,
                                 p: { xs: 1.5, md: 1.75 },
                                 borderRadius: 2,
-                                bgcolor: theme.palette.mode === "dark" ? alpha("#030712", 0.22) : alpha("#FFFFFF", 0.88),
-                                borderColor: theme.palette.mode === "dark"
-                                    ? alpha("#FFFFFF", 0.12)
-                                    : alpha(brandColors.primary[300], 0.3)
+                                bgcolor: alpha("#FFFFFF", 0.06),
+                                borderColor: alpha("#FFFFFF", 0.14)
                             }}
                         >
                             <Stack spacing={1.35}>
                                 <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center">
-                                    <Typography variant="overline" sx={{ color: "text.secondary", letterSpacing: "0.12em" }}>
+                                    <Typography variant="overline" sx={{ color: alpha("#FFFFFF", 0.66), letterSpacing: "0.16em" }}>
                                         Savings Target
                                     </Typography>
                                     <Chip
@@ -4990,8 +5043,8 @@ export function MemberPortalPage() {
                                         label={`${Math.round(savingsTargetProgress)}%`}
                                         sx={{
                                             borderRadius: 1.2,
-                                            bgcolor: alpha(brandColors.primary[100], 0.9),
-                                            color: brandColors.primary[900],
+                                            bgcolor: alpha(CREST_GOLD, 0.2),
+                                            color: CREST_GOLD_LIGHT,
                                             fontWeight: 800
                                         }}
                                     />
@@ -5002,14 +5055,14 @@ export function MemberPortalPage() {
                                     sx={{
                                         height: 9,
                                         borderRadius: 999,
-                                        bgcolor: alpha(brandColors.success, 0.14),
+                                        bgcolor: alpha("#FFFFFF", 0.12),
                                         "& .MuiLinearProgress-bar": {
                                             borderRadius: 999,
-                                            bgcolor: brandColors.success
+                                            background: `linear-gradient(90deg, ${CREST_GOLD}, ${CREST_GOLD_LIGHT})`
                                         }
                                     }}
                                 />
-                                <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: "anywhere" }}>
+                                <Typography variant="body2" sx={{ color: alpha("#FFFFFF", 0.72), overflowWrap: "anywhere" }}>
                                     {savingsTargetRemaining > 0
                                         ? `${formatCurrency(savingsTargetRemaining)} remaining before the target is complete.`
                                         : `${formatCurrency(totalSavings - annualSavingsTarget)} above target.`}
@@ -5026,11 +5079,11 @@ export function MemberPortalPage() {
                                                 minWidth: 0,
                                                 py: 0.65,
                                                 borderBottom: "1px solid",
-                                                borderColor: "divider",
+                                                borderColor: alpha("#FFFFFF", 0.12),
                                                 "&:last-of-type": { borderBottom: 0 }
                                             }}
                                         >
-                                            <Typography variant="body2" color="text.secondary" sx={{ flexShrink: 0 }}>
+                                            <Typography variant="body2" sx={{ color: alpha("#FFFFFF", 0.66), flexShrink: 0 }}>
                                                 {row.label}
                                             </Typography>
                                             <Typography
@@ -5039,7 +5092,8 @@ export function MemberPortalPage() {
                                                     minWidth: 0,
                                                     fontWeight: 800,
                                                     textAlign: "right",
-                                                    overflowWrap: "anywhere"
+                                                    overflowWrap: "anywhere",
+                                                    color: "#fff"
                                                 }}
                                             >
                                                 {row.value}
@@ -5056,23 +5110,22 @@ export function MemberPortalPage() {
                                 minWidth: 0,
                                 p: { xs: 1.5, md: 1.75 },
                                 borderRadius: 2,
-                                bgcolor: theme.palette.mode === "dark" ? alpha("#030712", 0.18) : alpha("#FFFFFF", 0.86),
-                                borderColor: theme.palette.mode === "dark"
-                                    ? alpha("#FFFFFF", 0.1)
-                                    : alpha(brandColors.primary[300], 0.26)
+                                bgcolor: alpha("#FFFFFF", 0.06),
+                                borderColor: alpha("#FFFFFF", 0.14)
                             }}
                         >
                             <Stack spacing={1.1}>
-                                <Typography variant="overline" sx={{ color: "text.secondary", letterSpacing: "0.12em" }}>
+                                <Typography variant="overline" sx={{ color: alpha("#FFFFFF", 0.66), letterSpacing: "0.16em" }}>
                                     Current Position
                                 </Typography>
                                 {positionRows.map((item) => {
                                     const Icon = item.icon;
+                                    // Lightened tones: legible against the ink panel in both modes.
                                     const toneColor = item.tone === "success"
-                                        ? brandColors.success
+                                        ? "#4ADE80"
                                         : item.tone === "danger"
-                                            ? brandColors.danger
-                                            : memberAccent;
+                                            ? "#FCA5A5"
+                                            : CREST_GOLD_LIGHT;
 
                                     return (
                                         <Stack
@@ -5084,7 +5137,7 @@ export function MemberPortalPage() {
                                                 minWidth: 0,
                                                 p: 0.95,
                                                 borderRadius: 1.5,
-                                                bgcolor: theme.palette.mode === "dark" ? alpha("#FFFFFF", 0.05) : alpha(brandColors.primary[100], 0.36)
+                                                bgcolor: alpha("#FFFFFF", 0.05)
                                             }}
                                         >
                                             <Box
@@ -5095,17 +5148,17 @@ export function MemberPortalPage() {
                                                     borderRadius: 1.4,
                                                     display: "grid",
                                                     placeItems: "center",
-                                                    bgcolor: alpha(toneColor, 0.12),
+                                                    bgcolor: alpha(toneColor, 0.16),
                                                     color: toneColor
                                                 }}
                                             >
                                                 <Icon fontSize="small" />
                                             </Box>
                                             <Box sx={{ minWidth: 0 }}>
-                                                <Typography variant="caption" color="text.secondary">
+                                                <Typography variant="caption" sx={{ color: alpha("#FFFFFF", 0.66) }}>
                                                     {item.label}
                                                 </Typography>
-                                                <Typography variant="body2" sx={{ fontWeight: 800, overflowWrap: "anywhere" }}>
+                                                <Typography variant="body2" sx={{ fontWeight: 800, overflowWrap: "anywhere", color: "#fff" }}>
                                                     {item.value}
                                                 </Typography>
                                             </Box>
@@ -5300,38 +5353,149 @@ export function MemberPortalPage() {
 
     const renderSectionLead = () => (
         <MotionCard
-            variant="outlined"
             sx={{
                 ...contentCardSx,
                 borderRadius: 3,
-                background: theme.palette.mode === "dark"
-                    ? `linear-gradient(135deg, ${alpha(darkThemeColors.elevated, 0.92)}, ${alpha(memberAccentStrong, 0.18)})`
-                    : `linear-gradient(135deg, ${alpha("#FFFFFF", 0.98)}, ${alpha(brandColors.primary[100], 0.76)})`
+                position: "relative",
+                overflow: "hidden",
+                color: "#fff",
+                borderColor: inkPanel.border,
+                background: inkPanel.background,
+                boxShadow: `0 18px 40px ${alpha("#050338", 0.35)}`,
+                "&::before": {
+                    content: '""',
+                    position: "absolute",
+                    inset: 0,
+                    pointerEvents: "none",
+                    background: inkPanel.ruling
+                }
             }}
         >
-            <CardContent sx={{ p: { xs: 2.25, md: 2.75 } }}>
+            <CardContent sx={{ p: { xs: 2.25, md: 2.75 }, position: "relative" }}>
                 <Stack direction={{ xs: "column", lg: "row" }} spacing={2} justifyContent="space-between" alignItems={{ lg: "center" }}>
                     <Box sx={{ maxWidth: 720 }}>
-                        <Typography variant="overline" sx={{ color: memberAccent, letterSpacing: "0.16em" }}>
+                        <Typography variant="overline" sx={{ color: CREST_GOLD_LIGHT, letterSpacing: "0.22em", fontWeight: 700 }}>
                             Current section
                         </Typography>
-                        <Typography variant="h5" sx={{ mt: 0.7, fontWeight: 800, letterSpacing: "-0.02em" }}>
+                        <Typography variant="h5" sx={{ mt: 0.7, fontFamily: PORTAL_DISPLAY_FONT, fontWeight: 800, letterSpacing: "-0.01em", color: "#fff" }}>
                             {currentView.label}
                         </Typography>
-                        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.8 }}>
+                        <Typography variant="body2" sx={{ mt: 0.8, color: alpha("#FFFFFF", 0.72) }}>
                             {currentView.subtitle}
                         </Typography>
                     </Box>
                     <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ "& > *": { maxWidth: "100%" } }}>
-                        <Chip label={selectedBranchName || "Assigned branch"} variant="outlined" />
-                        <Chip label={standing.label} variant="outlined" />
-                        <Chip label={`${pendingPaymentCount} pending payment${pendingPaymentCount === 1 ? "" : "s"}`} variant="outlined" />
-                        <Chip label={`${activeLoanCount} active loan${activeLoanCount === 1 ? "" : "s"}`} variant="outlined" />
+                        <Chip label={selectedBranchName || "Assigned branch"} sx={{ bgcolor: alpha(CREST_GOLD, 0.18), color: CREST_GOLD_LIGHT, fontWeight: 700, border: `1px solid ${alpha(CREST_GOLD, 0.35)}` }} />
+                        <Chip label={standing.label} sx={{ bgcolor: alpha("#FFFFFF", 0.1), color: alpha("#FFFFFF", 0.85), border: `1px solid ${alpha("#FFFFFF", 0.16)}` }} />
+                        <Chip label={`${pendingPaymentCount} pending payment${pendingPaymentCount === 1 ? "" : "s"}`} sx={{ bgcolor: alpha("#FFFFFF", 0.1), color: alpha("#FFFFFF", 0.85), border: `1px solid ${alpha("#FFFFFF", 0.16)}` }} />
+                        <Chip label={`${activeLoanCount} active loan${activeLoanCount === 1 ? "" : "s"}`} sx={{ bgcolor: alpha("#FFFFFF", 0.1), color: alpha("#FFFFFF", 0.85), border: `1px solid ${alpha("#FFFFFF", 0.16)}` }} />
                     </Stack>
                 </Stack>
             </CardContent>
         </MotionCard>
     );
+
+    // Monthly mandatory savings status: keeps demanding until the month is paid,
+    // then flips to a slim "Active" confirmation.
+    const renderMonthlyCommitmentBanner = () => {
+        if (monthlyCommitment.amount <= 0) {
+            return null;
+        }
+
+        if (monthlyCommitment.met) {
+            return (
+                <MotionCard
+                    variant="outlined"
+                    sx={{
+                        ...contentCardSx,
+                        borderColor: alpha(brandColors.success, 0.35),
+                        bgcolor: alpha(brandColors.success, isDarkMode ? 0.1 : 0.05)
+                    }}
+                >
+                    <CardContent sx={{ p: 1.5, "&:last-child": { pb: 1.5 } }}>
+                        <Stack direction="row" spacing={1.25} alignItems="center" justifyContent="space-between" flexWrap="wrap" useFlexGap>
+                            <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
+                                <Box sx={{ width: 36, height: 36, borderRadius: 1.5, display: "grid", placeItems: "center", bgcolor: alpha(brandColors.success, 0.16), color: brandColors.success, flexShrink: 0 }}>
+                                    <TaskAltRoundedIcon fontSize="small" />
+                                </Box>
+                                <Box sx={{ minWidth: 0 }}>
+                                    <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                                        Monthly savings active
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary">
+                                        {monthlyCommitment.monthLabel} commitment of {formatCurrency(monthlyCommitment.amount)} is fully paid.
+                                    </Typography>
+                                </Box>
+                            </Stack>
+                            <Chip
+                                label="Active"
+                                size="small"
+                                sx={{ bgcolor: alpha(brandColors.success, 0.16), color: brandColors.success, fontWeight: 800 }}
+                            />
+                        </Stack>
+                    </CardContent>
+                </MotionCard>
+            );
+        }
+
+        return (
+            <MotionCard
+                variant="outlined"
+                data-tour="member-portal-monthly-commitment"
+                sx={{
+                    ...contentCardSx,
+                    borderColor: alpha(brandColors.warning, 0.5),
+                    bgcolor: alpha(brandColors.warning, isDarkMode ? 0.12 : 0.07)
+                }}
+            >
+                <CardContent sx={{ p: { xs: 1.75, md: 2 }, "&:last-child": { pb: { xs: 1.75, md: 2 } } }}>
+                    <Stack direction={{ xs: "column", md: "row" }} spacing={2} justifyContent="space-between" alignItems={{ md: "center" }}>
+                        <Stack direction="row" spacing={1.5} alignItems="flex-start" sx={{ minWidth: 0, flex: 1 }}>
+                            <Box sx={{ width: 40, height: 40, borderRadius: 1.6, display: "grid", placeItems: "center", bgcolor: alpha(brandColors.warning, 0.2), color: "#9A6700", flexShrink: 0 }}>
+                                <HourglassTopRoundedIcon fontSize="small" />
+                            </Box>
+                            <Box sx={{ minWidth: 0, flex: 1 }}>
+                                <Typography variant="overline" sx={{ color: "#9A6700", letterSpacing: "0.16em", fontWeight: 700 }}>
+                                    Monthly mandatory savings · {monthlyCommitment.monthLabel}
+                                </Typography>
+                                <Typography variant="subtitle1" sx={{ fontWeight: 800, lineHeight: 1.25 }}>
+                                    {formatCurrency(monthlyCommitment.remaining)} still due
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+                                    Paid {formatCurrency(monthlyCommitment.paid)} of {formatCurrency(monthlyCommitment.amount)}. Loan applications stay locked until this month's savings is complete.
+                                </Typography>
+                                <LinearProgress
+                                    variant="determinate"
+                                    value={monthlyCommitment.progressPercent}
+                                    sx={{
+                                        mt: 1,
+                                        height: 7,
+                                        borderRadius: 999,
+                                        bgcolor: alpha(brandColors.warning, 0.18),
+                                        "& .MuiLinearProgress-bar": { borderRadius: 999, bgcolor: brandColors.warning }
+                                    }}
+                                />
+                            </Box>
+                        </Stack>
+                        <Button
+                            variant="contained"
+                            onClick={() => handleSectionSelect("member-contributions")}
+                            sx={{
+                                flexShrink: 0,
+                                bgcolor: CREST_GOLD,
+                                color: "#050338",
+                                fontWeight: 800,
+                                boxShadow: "none",
+                                "&:hover": { bgcolor: CREST_GOLD_LIGHT, boxShadow: "none" }
+                            }}
+                        >
+                            Deposit now
+                        </Button>
+                    </Stack>
+                </CardContent>
+            </MotionCard>
+        );
+    };
 
     const renderOverviewView = () => (
         <MemberOverview
@@ -5418,7 +5582,7 @@ export function MemberPortalPage() {
                         <Grid container spacing={2.5} alignItems="center">
                             <Grid size={{ xs: 12, md: 7 }}>
                                 <Stack spacing={1.15}>
-                                    <Typography variant="overline" sx={{ color: memberAccent, letterSpacing: 1.4 }}>
+                                    <Typography variant="overline" sx={{ color: isDarkMode ? CREST_GOLD_LIGHT : crestGold.onLight, letterSpacing: "0.18em", fontWeight: 700 }}>
                                         Mobile Money Deposit
                                     </Typography>
                                     <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: "-0.02em" }}>
@@ -5737,12 +5901,7 @@ export function MemberPortalPage() {
                 data-tour="member-portal-loan-workspace"
                 sx={{
                     ...contentCardSx,
-                    background: theme.palette.mode === "dark"
-                        ? `linear-gradient(135deg, ${alpha(memberAccentStrong, 0.44)}, ${alpha(memberAccentAlt, 0.24)})`
-                        : `linear-gradient(135deg, ${alpha(brandColors.primary[900], 0.96)}, ${alpha(brandColors.accent[500], 0.86)})`,
-                    color: "#fff",
-                    borderColor: "transparent",
-                    boxShadow: `0 18px 38px ${alpha(memberAccentStrong, 0.22)}`
+                    borderColor: alpha(CREST_GOLD, 0.35)
                 }}
             >
                 <CardContent sx={{ p: { xs: 2, sm: 2.25 }, "&:last-child": { pb: { xs: 2, sm: 2.25 } } }}>
@@ -5753,7 +5912,7 @@ export function MemberPortalPage() {
                         spacing={2}
                     >
                         <Stack spacing={1} sx={{ minWidth: 0 }}>
-                            <Typography variant="overline" sx={{ color: alpha("#FFFFFF", 0.76), letterSpacing: 1.4, lineHeight: 1.2 }}>
+                            <Typography variant="overline" sx={{ color: isDarkMode ? CREST_GOLD_LIGHT : crestGold.onLight, letterSpacing: "0.18em", fontWeight: 700, lineHeight: 1.2 }}>
                                 Lending workspace
                             </Typography>
                             <Typography variant="h6" sx={{ fontWeight: 800, lineHeight: 1.2 }}>
@@ -5762,24 +5921,30 @@ export function MemberPortalPage() {
                             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                                 <Chip
                                     size="small"
+                                    variant="outlined"
                                     label={filteredActiveLoanCount ? `${filteredActiveLoanCount} active loan(s)` : "No active loans"}
-                                    sx={{
-                                        borderRadius: 1.5,
-                                        bgcolor: alpha("#FFFFFF", 0.14),
-                                        color: "#fff",
-                                        border: `1px solid ${alpha("#FFFFFF", 0.2)}`
-                                    }}
+                                    sx={{ borderRadius: 1.5, fontWeight: 600 }}
                                 />
                                 <Chip
                                     size="small"
+                                    variant="outlined"
                                     label={`${pendingLoanApplications.length} open application(s)`}
-                                    sx={{
-                                        borderRadius: 1.5,
-                                        bgcolor: alpha("#FFFFFF", 0.1),
-                                        color: "#fff",
-                                        border: `1px solid ${alpha("#FFFFFF", 0.16)}`
-                                    }}
+                                    sx={{ borderRadius: 1.5, fontWeight: 600 }}
                                 />
+                                {monthlyCommitment.amount > 0 ? (
+                                    <Chip
+                                        size="small"
+                                        label={monthlyCommitment.met
+                                            ? "Monthly savings active"
+                                            : `Locked · ${formatCurrency(monthlyCommitment.remaining)} savings due`}
+                                        sx={{
+                                            borderRadius: 1.5,
+                                            fontWeight: 700,
+                                            bgcolor: alpha(monthlyCommitment.met ? brandColors.success : brandColors.warning, 0.14),
+                                            color: monthlyCommitment.met ? brandColors.success : "#9A6700"
+                                        }}
+                                    />
+                                ) : null}
                             </Stack>
                         </Stack>
                         {canApplyForLoan ? (
@@ -5794,11 +5959,13 @@ export function MemberPortalPage() {
                                     onClick={openLoanApplicationDraft}
                                     sx={{
                                         flexShrink: 0,
-                                        bgcolor: "#fff",
-                                        color: memberAccentStrong,
-                                        fontWeight: 700,
+                                        bgcolor: CREST_GOLD,
+                                        color: "#050338",
+                                        fontWeight: 800,
+                                        boxShadow: "none",
                                         "&:hover": {
-                                            bgcolor: alpha("#FFFFFF", 0.92)
+                                            bgcolor: CREST_GOLD_LIGHT,
+                                            boxShadow: "none"
                                         }
                                     }}
                                 >
@@ -5806,7 +5973,7 @@ export function MemberPortalPage() {
                                 </Button>
                             </Stack>
                         ) : (
-                            <Typography variant="caption" sx={{ color: alpha("#FFFFFF", 0.72), flexShrink: 0 }}>
+                            <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
                                 Loan applications are currently unavailable.
                             </Typography>
                         )}
@@ -6419,7 +6586,7 @@ export function MemberPortalPage() {
                         <Grid container spacing={2.5} alignItems="center">
                             <Grid size={{ xs: 12, md: 7 }}>
                                 <Stack spacing={1.15}>
-                                    <Typography variant="overline" sx={{ color: memberAccent, letterSpacing: 1.4 }}>
+                                    <Typography variant="overline" sx={{ color: isDarkMode ? CREST_GOLD_LIGHT : crestGold.onLight, letterSpacing: "0.18em", fontWeight: 700 }}>
                                         Mobile Money Deposits
                                     </Typography>
                                     <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: "-0.02em" }}>
@@ -8000,11 +8167,17 @@ export function MemberPortalPage() {
                                 {activeSection === "member-overview" ? (
                                     <>
                                         {renderHero()}
+                                        {renderMonthlyCommitmentBanner()}
                                         {renderStatGrid()}
                                         {renderBorrowingCapacityCard()}
                                     </>
                                 ) : null}
-                                {activeSection !== "member-overview" ? renderSectionLead() : null}
+                                {activeSection !== "member-overview" ? (
+                                    <>
+                                        {renderSectionLead()}
+                                        {renderMonthlyCommitmentBanner()}
+                                    </>
+                                ) : null}
                                 {renderActiveView()}
                         </Box>
                     </Stack>

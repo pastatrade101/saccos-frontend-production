@@ -36,6 +36,23 @@ export const chartColors = {
 
 export const fintechGradient = `linear-gradient(135deg, ${brandColors.primary[900]}, ${brandColors.accent[500]})`;
 
+// Crest Gold — from the gold ring in the SACCO crest. Shared by the auth
+// pages, member portal, and staff dashboards as the passbook identity.
+export const crestGold = {
+    main: "#C9A227",
+    light: "#E8C95C",
+    onLight: "#A17F1A"
+} as const;
+
+// Ink passbook panel: identical in light and dark modes.
+export const inkPanel = {
+    background: "linear-gradient(160deg, #0A0573 0%, #050338 68%, #040229 100%)",
+    border: "rgba(201, 162, 39, 0.28)",
+    ruling: "repeating-linear-gradient(180deg, transparent 0, transparent 33px, rgba(232, 201, 92, 0.07) 33px, rgba(232, 201, 92, 0.07) 34px)"
+} as const;
+
+export const displayFontFamily = "\"Bricolage Grotesque\", \"Inter\", \"Segoe UI\", sans-serif";
+
 export const darkThemeColors = {
     background: "#081122",
     paper: "#0E1730",

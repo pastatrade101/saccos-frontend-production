@@ -615,24 +615,20 @@ export function SignupPage() {
         }
     });
 
-    const surfaceBorder = muiTheme.palette.mode === "dark"
-        ? alpha("#FFFFFF", 0.12)
-        : alpha("#AFC7FF", 0.42);
+    const surfaceBorder = "var(--border-subtle)";
     const mutedText = muiTheme.palette.mode === "dark"
         ? alpha("#FFFFFF", 0.72)
         : "#5B6B85";
-    const shellOverlay = muiTheme.palette.mode === "dark"
-        ? `linear-gradient(135deg, ${alpha("#06101D", 0.74)} 0%, ${alpha("#091628", 0.62)} 44%, ${alpha("#0E1D32", 0.68)} 100%)`
-        : `linear-gradient(135deg, ${alpha("#F5F9FF", 0.72)} 0%, ${alpha("#EEF5FF", 0.54)} 42%, ${alpha("#E5F1FF", 0.6)} 100%)`;
-    const cardBackground = muiTheme.palette.mode === "dark"
-        ? alpha("#0F172A", 0.68)
-        : alpha("#FFFFFF", 0.84);
-    const headerBackground = muiTheme.palette.mode === "dark"
-        ? `linear-gradient(180deg, ${alpha("#FFFFFF", 0.04)} 0%, ${alpha("#FFFFFF", 0.02)} 100%)`
-        : `linear-gradient(180deg, ${alpha("#FFFFFF", 0.72)} 0%, ${alpha("#F7FAFF", 0.58)} 100%)`;
-    const sectionBackground = muiTheme.palette.mode === "dark"
-        ? alpha("#091221", 0.18)
-        : alpha("#FFFFFF", 0.34);
+    // Same canvas as the sign-in page: token background with faint blue and
+    // Crest Gold whispers, so the two auth pages read as one family.
+    const shellOverlay = `radial-gradient(circle at top left, rgba(31, 168, 230, 0.14), transparent 30%),
+        radial-gradient(circle at bottom right, rgba(201, 162, 39, 0.09), transparent 34%),
+        var(--shell-bg)`;
+    const cardBackground = "var(--surface-panel)";
+    const headerBackground = "transparent";
+    const sectionBackground = "var(--surface-soft)";
+    const brandGoldText = muiTheme.palette.mode === "dark" ? "#E8C95C" : "#A17F1A";
+    const displayFontFamily = "\"Bricolage Grotesque\", \"Inter\", \"Segoe UI\", sans-serif";
     const footerActionSx = muiTheme.palette.mode === "dark"
         ? {
             color: "#FFFFFF",
@@ -1320,22 +1316,7 @@ export function SignupPage() {
                 placeItems: "center",
                 px: { xs: 1.25, md: 2 },
                 py: { xs: 1.25, md: 1 },
-                backgroundImage: `${shellOverlay}, url('/bk.jpg')`,
-                backgroundSize: "cover",
-                backgroundPosition: "center",
-                backgroundRepeat: "no-repeat",
-                position: "relative",
-                "&::before": {
-                    content: '""',
-                    position: "absolute",
-                    inset: 0,
-                    background: muiTheme.palette.mode === "dark"
-                        ? `radial-gradient(circle at 16% 18%, ${alpha("#1FA8E6", 0.1)} 0%, transparent 22%),
-                            radial-gradient(circle at 84% 10%, ${alpha("#7DD3FC", 0.07)} 0%, transparent 18%)`
-                        : `radial-gradient(circle at 12% 14%, ${alpha("#D8E9FF", 0.56)} 0%, transparent 24%),
-                            radial-gradient(circle at 88% 10%, ${alpha("#E3F5FF", 0.5)} 0%, transparent 18%)`,
-                    pointerEvents: "none"
-                }
+                background: shellOverlay
             }}
         >
             <Paper
@@ -1349,10 +1330,17 @@ export function SignupPage() {
                     border: `1px solid ${surfaceBorder}`,
                     maxHeight: { md: "calc(100dvh - 16px)" },
                     bgcolor: cardBackground,
-                    backdropFilter: "blur(14px)",
                     boxShadow: muiTheme.palette.mode === "dark"
                         ? `0 30px 90px ${alpha("#020617", 0.42)}`
-                        : `0 30px 80px ${alpha("#5E7DAE", 0.18)}`
+                        : `0 30px 80px ${alpha("#0A0573", 0.14)}`,
+                    // Passbook cover band: the same Crest Gold that signs the login page.
+                    "&::before": {
+                        content: '""',
+                        display: "block",
+                        height: 3,
+                        flexShrink: 0,
+                        background: "linear-gradient(90deg, #C9A227, #E8C95C)"
+                    }
                 }}
             >
                 <Box
@@ -1360,7 +1348,7 @@ export function SignupPage() {
                         px: { xs: 2, md: 3, lg: 3.5 },
                         py: { xs: 1.75, md: 1.8, lg: 2.1 },
                         flexShrink: 0,
-                        borderBottom: `1px solid ${alpha(surfaceBorder, 0.9)}`,
+                        borderBottom: `1px solid ${surfaceBorder}`,
                         background: headerBackground
                     }}
                 >
@@ -1373,13 +1361,13 @@ export function SignupPage() {
                                         <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: "-0.02em", fontSize: { xs: "1.12rem", md: "1.2rem" } }}>
                                             ILBORU ALUMNI SACCOS LTD
                                         </Typography>
-                                        <Typography variant="body2" sx={{ color: mutedText, fontSize: "0.8rem", fontWeight: 700 }}>
+                                        <Typography variant="body2" sx={{ color: brandGoldText, fontSize: "0.66rem", fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", mt: 0.3 }}>
                                             Further Together
                                         </Typography>
                                     </Box>
                                 </Stack>
                                 <Box>
-                                    <Typography variant="h2" sx={{ mt: 0.2, fontSize: { xs: "1.55rem", md: "1.9rem", lg: "2.1rem" }, lineHeight: 0.98, letterSpacing: "-0.045em", fontWeight: 800 }}>
+                                    <Typography variant="h2" sx={{ mt: 0.2, fontFamily: displayFontFamily, fontSize: { xs: "1.55rem", md: "1.9rem", lg: "2.1rem" }, lineHeight: 1.05, letterSpacing: "-0.02em", fontWeight: 800 }}>
                                         Apply for membership
                                     </Typography>
                                     <Typography variant="body1" sx={{ mt: 0.45, maxWidth: 720, color: mutedText, fontSize: { xs: "0.88rem", md: "0.92rem" }, lineHeight: 1.36 }}>
@@ -1410,8 +1398,7 @@ export function SignupPage() {
                     sx={{
                         px: { xs: 2.25, md: 3.5 },
                         py: { xs: 2.25, md: 2.2 },
-                        overflowY: { md: "auto" },
-                        background: muiTheme.palette.mode === "dark" ? alpha("#08111F", 0.08) : alpha("#FFFFFF", 0.12)
+                        overflowY: { md: "auto" }
                     }}
                 >
                     <form onSubmit={onSubmit}>

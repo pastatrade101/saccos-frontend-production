@@ -361,7 +361,7 @@ export function SignInPage() {
         <div className={pageStyles.authShell}>
             <div className={`${pageStyles.authFrame} ${pageStyles.authFrameSplit}`}>
                 <section className={`${pageStyles.authPanel} ${pageStyles.authPanelForm}`}>
-                    <div className={`${pageStyles.authBrandRow} ${pageStyles.authBrandRowCentered}`}>
+                    <div className={pageStyles.authBrandRowSplit}>
                         <div className={pageStyles.authBrandIdentity}>
                             <img
                                 src="/icon-ilboru.png"
@@ -370,7 +370,7 @@ export function SignInPage() {
                             />
                             <div>
                                 <span className={pageStyles.authBrandText}>ILBORU ALUMNI SACCOS LTD</span>
-                                <span className={pageStyles.authBrandSubtext}>Further Together</span>
+                                <span className={pageStyles.authBrandMotto}>Further Together</span>
                             </div>
                         </div>
                         <button
@@ -381,6 +381,11 @@ export function SignInPage() {
                         >
                             {theme === "dark" ? <LightModeRoundedIcon fontSize="small" /> : <DarkModeRoundedIcon fontSize="small" />}
                         </button>
+                    </div>
+
+                    <div className={pageStyles.authIntro}>
+                        <h1 className={pageStyles.authHeading}>Welcome back</h1>
+                        <p className={pageStyles.authSubcopy}>Sign in to your member account.</p>
                     </div>
 
                     <form className={pageStyles.form} onSubmit={onSubmit}>
@@ -410,11 +415,11 @@ export function SignInPage() {
                             </div>
                         </FormField>
                         <button
-                            className="primary-button"
+                            className={`primary-button ${pageStyles.authSubmit}`}
                             disabled={submitting}
                             type="submit"
                         >
-                            {submitting ? "Signing in..." : "Sign In"}
+                            {submitting ? "Signing in..." : "Sign in"}
                         </button>
                     </form>
 
@@ -457,7 +462,9 @@ export function SignInPage() {
                         />
                     ))}
                     <div className={pageStyles.authVisualOverlay} aria-hidden="true" />
+                    <div className={pageStyles.authVisualTexture} aria-hidden="true" />
                     <div className={pageStyles.authVisualContent}>
+                        <span className={pageStyles.authVisualMotto}>Member portal</span>
                         <div className={pageStyles.authVisualCaption} key={activeSlide}>
                             <span className={pageStyles.authVisualEyebrow}>{AUTH_SLIDES[activeSlide].eyebrow}</span>
                             <h2 className={pageStyles.authVisualTitle}>{AUTH_SLIDES[activeSlide].title}</h2>

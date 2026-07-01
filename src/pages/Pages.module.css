@@ -5,9 +5,9 @@
   justify-content: center;
   padding: 0.75rem 1rem;
   background:
-    radial-gradient(circle at top left, rgba(31, 168, 230, 0.18), transparent 24%),
-    linear-gradient(180deg, rgba(10, 5, 115, 0.08), rgba(31, 168, 230, 0.04)),
-    var(--surface-canvas);
+    radial-gradient(circle at top left, rgba(31, 168, 230, 0.14), transparent 30%),
+    radial-gradient(circle at bottom right, rgba(201, 162, 39, 0.09), transparent 34%),
+    var(--shell-bg);
 }
 
 .authFrame {
@@ -15,7 +15,7 @@
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(360px, 1.08fr) minmax(420px, 0.92fr);
-  background: var(--surface-card);
+  background: var(--surface-panel);
   border: 1px solid var(--border-subtle);
   border-radius: 1.5rem;
   overflow: hidden;
@@ -27,19 +27,21 @@
   grid-template-columns: 1fr;
 }
 
-/* Split sign-in: form column on the left, image slider on the right. */
+/* Split sign-in: form column on the left, passbook panel on the right. */
 .authFrameSplit {
-  width: min(1040px, 100%);
-  grid-template-columns: minmax(340px, 0.92fr) minmax(380px, 1.08fr);
-  min-height: min(600px, 88vh);
+  width: min(1080px, 100%);
+  grid-template-columns: minmax(380px, 0.95fr) minmax(400px, 1.05fr);
+  min-height: min(640px, 90vh);
 }
 
 .authPanelForm {
   border-left: 0;
   justify-content: center;
-  padding: 2.4rem 2.6rem;
+  padding: 2.6rem 3rem;
 }
 
+/* Slides render as indigo duotones: luminosity blend against the panel's ink
+   base keeps every photo on-brand without a heavy darkening overlay. */
 .authSlide {
   position: absolute;
   inset: 0;
@@ -48,10 +50,11 @@
   opacity: 0;
   transform: scale(1.06);
   transition: opacity 1.1s ease, transform 6s ease;
+  mix-blend-mode: luminosity;
 }
 
 .authSlideActive {
-  opacity: 1;
+  opacity: 0.5;
   transform: scale(1);
 }
 
@@ -63,22 +66,22 @@
 
 .authSliderDot {
   width: 28px;
-  height: 5px;
+  height: 4px;
   padding: 0;
   border: 0;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.34);
+  background: rgba(232, 201, 92, 0.28);
   cursor: pointer;
   transition: background 0.25s ease, width 0.25s ease;
 }
 
 .authSliderDot:hover {
-  background: rgba(255, 255, 255, 0.6);
+  background: rgba(232, 201, 92, 0.55);
 }
 
 .authSliderDotActive {
   width: 40px;
-  background: #ffffff;
+  background: #e8c95c;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -99,7 +102,7 @@
   isolation: isolate;
   min-height: 100%;
   overflow: hidden;
-  background: var(--primary-900);
+  background: linear-gradient(180deg, #0a0573 0%, #050338 62%, #040229 100%);
 }
 
 .authVisualImage {
@@ -113,15 +116,37 @@
 .authVisualOverlay {
   position: absolute;
   inset: 0;
-  /* Keep the top of the image clearly visible and only darken toward the bottom
-     where the slide captions sit, so they stay readable. */
+  /* Slides are already ink-tinted by the blend mode; this only deepens the
+     bottom half so captions stay readable over any photo. */
   background: linear-gradient(
     180deg,
-    rgba(10, 5, 115, 0.06) 0%,
-    rgba(10, 5, 115, 0.16) 42%,
-    rgba(10, 5, 115, 0.68) 74%,
-    rgba(10, 5, 115, 0.92) 100%
+    rgba(5, 3, 56, 0.12) 0%,
+    rgba(5, 3, 56, 0.3) 45%,
+    rgba(5, 3, 56, 0.74) 76%,
+    rgba(4, 2, 41, 0.92) 100%
   );
+}
+
+/* Passbook page: faint gold ledger ruling plus a single margin rule. The
+   texture is decorative only, so it sits between the overlay and content. */
+.authVisualTexture {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(
+      90deg,
+      transparent calc(1.8rem - 1px),
+      rgba(201, 162, 39, 0.38) calc(1.8rem - 1px),
+      rgba(201, 162, 39, 0.38) 1.8rem,
+      transparent 1.8rem
+    ),
+    repeating-linear-gradient(
+      180deg,
+      transparent 0,
+      transparent 33px,
+      rgba(232, 201, 92, 0.08) 33px,
+      rgba(232, 201, 92, 0.08) 34px
+    );
 }
 
 .authVisualContent {
@@ -130,10 +155,19 @@
   height: 100%;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 1rem;
-  padding: 2rem;
+  padding: 2.2rem 2.4rem 2.2rem 2.9rem;
   color: white;
+}
+
+.authVisualMotto {
+  align-self: flex-end;
+  color: rgba(232, 201, 92, 0.9);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
 }
 
 .authVisualCaption {
@@ -156,29 +190,38 @@
 
 .authVisualEyebrow {
   display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
   width: fit-content;
-  padding: 0.45rem 0.75rem;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.14);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  font-size: 0.75rem;
+  color: #e8c95c;
+  font-size: 0.72rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.24em;
   text-transform: uppercase;
+}
+
+.authVisualEyebrow::before {
+  content: "";
+  width: 2rem;
+  height: 1px;
+  background: #c9a227;
 }
 
 .authVisualTitle {
   margin: 0.6rem 0 0;
-  font-size: clamp(1.7rem, 3vw, 2.4rem);
-  line-height: 1.02;
-  letter-spacing: -0.06em;
+  font-family: "Bricolage Grotesque", "Inter", "Segoe UI", sans-serif;
+  font-size: clamp(1.9rem, 3.2vw, 2.7rem);
+  font-weight: 800;
+  line-height: 1.04;
+  letter-spacing: -0.02em;
 }
 
 .authVisualCopy {
-  margin: 0.15rem 0 0;
-  color: rgba(255, 255, 255, 0.84);
+  margin: 0.3rem 0 0;
+  max-width: 44ch;
+  color: rgba(255, 255, 255, 0.8);
   font-size: 0.95rem;
-  line-height: 1.55;
+  line-height: 1.6;
 }
 
 .authVisualAssistRow {
@@ -238,10 +281,8 @@
   flex-direction: column;
   justify-content: flex-start;
   padding: 1.75rem 2rem;
-  background:
-    radial-gradient(circle at top right, rgba(31, 168, 230, 0.08), transparent 35%),
-    color-mix(in srgb, var(--surface-card) 97%, white);
-  border-left: 1px solid color-mix(in srgb, var(--border-subtle) 75%, var(--accent-100));
+  background: var(--surface-panel);
+  border-left: 1px solid var(--border-subtle);
 }
 
 .authPanelLogin {
@@ -275,44 +316,57 @@
   border: 1px solid color-mix(in srgb, var(--border-subtle) 65%, var(--accent-300));
 }
 
-.authBrandRowCentered {
-  position: relative;
-  justify-content: center;
-  min-height: 0;
-  margin-bottom: 1.6rem;
-  padding: 0;
-  background: transparent;
-  border: 0;
+/* Compact lockup for the split sign-in: identity reads as a letterhead line,
+   leaving the vertical space to the heading and form. */
+.authBrandRowSplit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 2.1rem;
 }
 
-.authBrandRowCentered .authBrandIdentity {
-  width: 100%;
-  flex-direction: column;
-  justify-content: center;
-  text-align: center;
-  gap: 0.7rem;
+.authBrandRowSplit .authBrandLogo {
+  width: 2.9rem;
+  height: 2.9rem;
 }
 
-.authBrandRowCentered .authBrandLogo {
-  width: 5rem;
-  height: 5rem;
+.authBrandRowSplit .authBrandText {
+  font-size: 0.98rem;
 }
 
-.authBrandRowCentered .authBrandText {
-  font-size: 1.18rem;
-  line-height: 1.12;
-}
-
-.authBrandRowCentered .authBrandSubtext {
-  margin-top: 0.35rem;
-  font-size: 0.95rem;
+.authBrandMotto {
+  margin-top: 0.28rem;
+  color: #a17f1a;
+  font-size: 0.66rem;
   font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
 }
 
-.authBrandRowCentered .authThemeToggle {
-  position: absolute;
-  top: 0;
-  right: 0;
+:global(html[data-theme="dark"]) .authBrandMotto {
+  color: #e8c95c;
+}
+
+.authIntro {
+  margin-bottom: 1.6rem;
+}
+
+.authHeading {
+  margin: 0;
+  font-family: "Bricolage Grotesque", "Inter", "Segoe UI", sans-serif;
+  font-size: clamp(1.7rem, 2.4vw, 2.1rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.08;
+  color: var(--text-primary);
+}
+
+.authSubcopy {
+  margin: 0.45rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  line-height: 1.55;
 }
 
 .authBrandIdentity {
@@ -398,11 +452,37 @@
 
 .form {
   display: grid;
-  gap: 0.68rem;
+  gap: 0.85rem;
 }
 
 .form :global(input) {
-  height: 2.6rem;
+  height: 2.75rem;
+}
+
+.authSubmit {
+  margin-top: 0.35rem;
+  background: linear-gradient(135deg, #0a0573, #1a0fa3);
+  box-shadow: 0 10px 22px rgba(10, 5, 115, 0.24);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.authSubmit:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px rgba(10, 5, 115, 0.3);
+}
+
+.authSubmit:active {
+  transform: translateY(0);
+  box-shadow: 0 6px 14px rgba(10, 5, 115, 0.24);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .authSubmit,
+  .authSubmit:hover,
+  .authSubmit:active {
+    transform: none;
+    transition: none;
+  }
 }
 
 .passwordField {
@@ -588,11 +668,12 @@
 
 .authLoginLinks {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 0.5rem;
-  margin-top: 1.15rem;
-  padding-top: 1.1rem;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin-top: 1.3rem;
+  padding-top: 1.15rem;
   border-top: 1px solid var(--border-subtle);
 }
 
@@ -919,7 +1000,7 @@
 
   .authPanel {
     border-left: 0;
-    border-top: 1px solid color-mix(in srgb, var(--border-subtle) 80%, var(--accent-100));
+    border-top: 1px solid var(--border-subtle);
   }
 
   .authPanelLogin {
@@ -941,9 +1022,17 @@
     height: 2.75rem;
   }
 
-  .authBrandRowCentered .authBrandLogo {
-    width: 4.5rem;
-    height: 4.5rem;
+  .authBrandRowSplit {
+    margin-bottom: 1.5rem;
+  }
+
+  .authBrandRowSplit .authBrandLogo {
+    width: 2.5rem;
+    height: 2.5rem;
+  }
+
+  .authIntro {
+    margin-bottom: 1.2rem;
   }
 
   .authAssistRow {

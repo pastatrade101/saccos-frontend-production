@@ -43,12 +43,14 @@ import { Bar } from "react-chartjs-2";
 
 import { useAuth } from "../auth/AuthContext";
 import { ChartPanel } from "../components/ChartPanel";
+import { DashboardHero } from "../components/DashboardHero";
 import { AlertsPanel } from "../components/teller/AlertsPanel";
 import { CashFlowChart } from "../components/teller/CashFlowChart";
 import { DistributionChart } from "../components/teller/DistributionChart";
 import { KpiCard } from "../components/teller/KpiCard";
 import { WaterfallCard } from "../components/teller/WaterfallCard";
 import { DataTable, type Column } from "../components/DataTable";
+import { crestGold } from "../theme/colors";
 import { api, getApiErrorMessage } from "../lib/api";
 import { cachedGet } from "../lib/apiCache";
 import {
@@ -2827,26 +2829,33 @@ export function DashboardPage() {
 
     return (
         <Stack spacing={3}>
-            <MotionCard variant="outlined" inView>
-                <CardContent>
-                    <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={2}>
-                        <div>
-                            <Typography variant="h5">
-                                {showPlatformDashboard ? "Platform Owner" : formatRole(role || "staff")} Dashboard
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                                {showPlatformDashboard
-                                    ? "Platform oversight for workspace operations, service health, and rollout visibility."
-                                    : `${selectedTenantName || selectedTenantId} operations summary with branch scope ${branchIds.length || "all"}.`}
-                            </Typography>
-                        </div>
-                        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                            <Chip label={showPlatformDashboard ? "Platform Owner" : role ? formatRole(role) : "Internal Ops"} color="primary" variant="outlined" />
-                            {supplementalLoading ? <Chip label="Refreshing workflow data..." size="small" variant="outlined" /> : null}
-                        </Stack>
-                    </Stack>
-                </CardContent>
-            </MotionCard>
+            <DashboardHero
+                eyebrow={showPlatformDashboard ? "Platform oversight" : "Staff workspace"}
+                title={`${showPlatformDashboard ? "Platform Owner" : formatRole(role || "staff")} Dashboard`}
+                subtitle={showPlatformDashboard
+                    ? "Platform oversight for workspace operations, service health, and rollout visibility."
+                    : `${selectedTenantName || selectedTenantId} operations summary with branch scope ${branchIds.length || "all"}.`}
+                actions={(
+                    <>
+                        <Chip
+                            label={showPlatformDashboard ? "Platform Owner" : role ? formatRole(role) : "Internal Ops"}
+                            sx={{
+                                bgcolor: alpha(crestGold.main, 0.18),
+                                color: crestGold.light,
+                                fontWeight: 700,
+                                border: `1px solid ${alpha(crestGold.main, 0.35)}`
+                            }}
+                        />
+                        {supplementalLoading ? (
+                            <Chip
+                                label="Refreshing workflow data..."
+                                size="small"
+                                sx={{ bgcolor: alpha("#FFFFFF", 0.1), color: alpha("#FFFFFF", 0.8) }}
+                            />
+                        ) : null}
+                    </>
+                )}
+            />
 
             {showPlatformDashboard ? (
                 <>
