@@ -799,25 +799,25 @@ const portalSections = [
     {
         id: "member-overview",
         label: "Overview",
-        subtitle: "Review your balances, obligations, and recent financial position.",
+        subtitle: "Balances and financial position.",
         icon: AutoGraphRoundedIcon
     },
     {
         id: "member-accounts",
         label: "Accounts",
-        subtitle: "Inspect savings and share accounts linked to your membership.",
+        subtitle: "Savings and share accounts.",
         icon: WalletRoundedIcon
     },
     {
         id: "member-loans",
         label: "Loans",
-        subtitle: "Track outstanding facilities, accrued interest, and repayment position.",
+        subtitle: "Facilities and repayment.",
         icon: CreditScoreRoundedIcon
     },
     {
         id: "member-transactions",
         label: "Transactions",
-        subtitle: "Review posted transaction activity and running balances.",
+        subtitle: "Transaction activity and balances.",
         icon: TimelineRoundedIcon
     },
     {
@@ -1053,9 +1053,6 @@ function AccountSummaryCard({ icon: Icon, label, value, valueTitle, helper, tone
                     </Typography>
                     <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
                         {label}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
-                        {helper}
                     </Typography>
 
                     <Box sx={{ mt: "auto", height: 4, borderRadius: 999, bgcolor: alpha(toneStyles.color, 0.18) }}>
@@ -5492,7 +5489,7 @@ export function MemberPortalPage() {
             <Grid container spacing={2}>
                 <Grid size={{ xs: 12, md: 6 }}>
                     <MotionCard variant="outlined" sx={contentCardSx}>
-                        <CardContent sx={{ p: 2.25 }}>
+                        <CardContent sx={{ p: 1.75 }}>
                             <Stack spacing={1.5}>
                                 <Stack direction="row" spacing={1} alignItems="center">
                                     <Box
@@ -5513,23 +5510,23 @@ export function MemberPortalPage() {
                                     </Typography>
                                 </Stack>
 
-                                <Stack spacing={1}>
+                                <Stack spacing={0.75}>
                                     {[
-                                        "Savings minimum balance: TSh 50,000 (tenant policy)",
-                                        "Withdrawal limit: branch policy with teller review threshold",
-                                        "Dormant accounts: no qualifying movement in policy period"
+                                        "Savings minimum balance: TSh 50,000",
+                                        "Withdrawal limit: branch teller-review threshold",
+                                        "Dormant: no qualifying movement in period"
                                     ].map((rule) => (
                                         <Paper
                                             key={rule}
                                             variant="outlined"
                                             sx={{
-                                                p: 1.1,
-                                                borderRadius: 1.4,
+                                                p: 1,
+                                                borderRadius: 1.5,
                                                 display: "flex",
                                                 alignItems: "center",
                                                 gap: 1,
-                                                borderColor: alpha(memberAccent, 0.24),
-                                                bgcolor: alpha(memberAccent, 0.08)
+                                                borderColor: "divider",
+                                                bgcolor: "transparent"
                                             }}
                                         >
                                             <TaskAltRoundedIcon sx={{ fontSize: 16, color: memberAccent }} />
@@ -5545,7 +5542,7 @@ export function MemberPortalPage() {
                 </Grid>
                 <Grid size={{ xs: 12, md: 6 }}>
                     <MotionCard variant="outlined" sx={contentCardSx}>
-                        <CardContent sx={{ p: 2.25 }}>
+                        <CardContent sx={{ p: 1.75 }}>
                             <Stack spacing={1.5}>
                                 <Stack direction="row" spacing={1} alignItems="center">
                                     <Box
@@ -5573,7 +5570,7 @@ export function MemberPortalPage() {
                                         gridTemplateColumns: { xs: "repeat(2, minmax(0, 1fr))", sm: "repeat(4, minmax(0, 1fr))" }
                                     }}
                                 >
-                                    <Paper variant="outlined" sx={{ p: 1.15, borderRadius: 1.4, textAlign: "center" }}>
+                                    <Paper variant="outlined" sx={{ py: 0.85, px: 1, borderRadius: 1.5, textAlign: "center" }}>
                                         <Typography variant="h6" sx={{ fontWeight: 800, color: brandColors.success }}>
                                             {Math.max(filteredAccounts.length - accountDormancyCount, 0)}
                                         </Typography>
@@ -5581,7 +5578,7 @@ export function MemberPortalPage() {
                                             active
                                         </Typography>
                                     </Paper>
-                                    <Paper variant="outlined" sx={{ p: 1.15, borderRadius: 1.4, textAlign: "center" }}>
+                                    <Paper variant="outlined" sx={{ py: 0.85, px: 1, borderRadius: 1.5, textAlign: "center" }}>
                                         <Typography variant="h6" sx={{ fontWeight: 800, color: accountDormancyCount ? "#9A6700" : "text.primary" }}>
                                             {accountDormancyCount}
                                         </Typography>
@@ -5589,7 +5586,7 @@ export function MemberPortalPage() {
                                             dormant
                                         </Typography>
                                     </Paper>
-                                    <Paper variant="outlined" sx={{ p: 1.15, borderRadius: 1.4, textAlign: "center" }}>
+                                    <Paper variant="outlined" sx={{ py: 0.85, px: 1, borderRadius: 1.5, textAlign: "center" }}>
                                         <Typography variant="h6" sx={{ fontWeight: 800, color: memberAccent }}>
                                             {filteredInterestHistory.length}
                                         </Typography>
@@ -5597,7 +5594,7 @@ export function MemberPortalPage() {
                                             interest postings
                                         </Typography>
                                     </Paper>
-                                    <Paper variant="outlined" sx={{ p: 1.15, borderRadius: 1.4, textAlign: "center" }}>
+                                    <Paper variant="outlined" sx={{ py: 0.85, px: 1, borderRadius: 1.5, textAlign: "center" }}>
                                         <Typography variant="h6" sx={{ fontWeight: 800, color: memberAccentAlt }}>
                                             {filteredDividendMapping.length}
                                         </Typography>
@@ -5608,10 +5605,10 @@ export function MemberPortalPage() {
                                 </Box>
 
                                 <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25} sx={{ pt: 0.5 }}>
-                                    <Button variant="outlined" startIcon={<DownloadRoundedIcon />} onClick={handleDownloadStatement}>
-                                        Export Savings Statement
+                                    <Button size="small" variant="outlined" startIcon={<DownloadRoundedIcon />} onClick={handleDownloadStatement}>
+                                        Export Statement
                                     </Button>
-                                    <Button variant="outlined" startIcon={<PrintRoundedIcon />} onClick={() => window.print()}>
+                                    <Button size="small" variant="outlined" startIcon={<PrintRoundedIcon />} onClick={() => window.print()}>
                                         Printable View
                                     </Button>
                                 </Stack>
@@ -5623,7 +5620,7 @@ export function MemberPortalPage() {
 
             <ChartPanel
                 title="Savings History"
-                subtitle="Posted running balance trend across your visible member transactions."
+                subtitle="Running balance trend"
                 data={{
                     labels: chartLabels,
                     datasets: [
@@ -5757,12 +5754,6 @@ export function MemberPortalPage() {
                                 spacing={1.25}
                                 sx={{ flexShrink: 0 }}
                             >
-                                <Typography
-                                    variant="caption"
-                                    sx={{ color: alpha("#FFFFFF", 0.74), maxWidth: 230, display: { xs: "none", lg: "block" } }}
-                                >
-                                    Moves through appraisal, approval, and controlled disbursement.
-                                </Typography>
                                 <Button
                                     variant="contained"
                                     onClick={openLoanApplicationDraft}
@@ -5790,14 +5781,9 @@ export function MemberPortalPage() {
 
             {canApplyForLoan ? (
                 <MotionCard variant="outlined" sx={contentCardSx}>
-                    <CardContent>
-                        <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={2} sx={{ mb: 2 }}>
-                            <Box>
-                                <Typography variant="h6">My Loan Applications</Typography>
-                                <Typography variant="body2" color="text.secondary">
-                                    Track applications through appraisal, approval, and disbursement readiness.
-                                </Typography>
-                            </Box>
+                    <CardContent sx={{ p: 1.75 }}>
+                        <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" alignItems="center" spacing={2} sx={{ mb: 1.5 }}>
+                            <Typography variant="h6">My Loan Applications</Typography>
                             <Chip label={`${pendingLoanApplications.length} open application(s)`} variant="outlined" />
                         </Stack>
                         <Grid container spacing={2} sx={{ mb: 2.5 }}>
@@ -6095,7 +6081,7 @@ export function MemberPortalPage() {
     const renderTransactionsView = () => (
         <Stack spacing={3} data-tour="member-portal-transactions">
             <MotionCard variant="outlined" sx={contentCardSx}>
-                <CardContent sx={{ p: 2.25 }}>
+                <CardContent sx={{ p: 1.75, "&:last-child": { pb: 1.75 } }}>
                     <Stack spacing={1.5}>
                         <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
                             <Stack direction="row" spacing={1} alignItems="center">
@@ -6152,15 +6138,16 @@ export function MemberPortalPage() {
                                 onChange={(event) => setTransactionSearch(event.target.value)}
                                 sx={{ minWidth: { xs: 0, md: 220 } }}
                             />
-                            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+                            <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ ml: { md: "auto" } }}>
                                 <Button
+                                    size="small"
                                     variant="outlined"
                                     startIcon={<DownloadRoundedIcon />}
                                     onClick={() => handleDownloadFilteredStatement(filteredTransactions, "Transaction statement")}
                                 >
                                     Export Statement PDF
                                 </Button>
-                                <Button variant="outlined" startIcon={<PrintRoundedIcon />} onClick={() => window.print()}>
+                                <Button size="small" variant="outlined" startIcon={<PrintRoundedIcon />} onClick={() => window.print()}>
                                     Printable View
                                 </Button>
                             </Stack>
@@ -6200,8 +6187,8 @@ export function MemberPortalPage() {
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6, lg: 3 }} sx={{ display: "flex" }}>
                     <MotionCard variant="outlined" sx={{ ...contentCardSx, height: "100%", width: 1 }}>
-                        <CardContent sx={{ p: 2.25, height: "100%", display: "flex" }}>
-                            <Stack spacing={1.4} sx={{ width: 1 }}>
+                        <CardContent sx={{ p: 1.5, height: "100%", display: "flex", "&:last-child": { pb: 1.5 } }}>
+                            <Stack spacing={0.9} sx={{ width: 1 }}>
                                 <Stack direction="row" justifyContent="space-between" alignItems="center">
                                     <Box
                                         sx={{
@@ -6227,10 +6214,10 @@ export function MemberPortalPage() {
                                 <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
                                     Running Balance Validation
                                 </Typography>
-                                <Typography variant="body2" color="text.secondary">
+                                <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
                                     {runningBalanceMismatches
-                                        ? `${runningBalanceMismatches} mismatch(es) detected`
-                                        : "All posted balances reconcile across the full ledger."}
+                                        ? `${runningBalanceMismatches} mismatch(es)`
+                                        : "All balances reconcile"}
                                 </Typography>
                                 <Box sx={{ mt: "auto", height: 4, borderRadius: 999, bgcolor: alpha(runningBalanceMismatches ? brandColors.warning : brandColors.success, 0.16) }}>
                                     <Box
@@ -6250,7 +6237,7 @@ export function MemberPortalPage() {
 
             <ChartPanel
                 title="Transaction Balance Trend"
-                subtitle="Running balance trend from the selected transaction window."
+                subtitle="Balance across the window"
                 data={{
                     labels: transactionTrendLabels.length ? transactionTrendLabels : chartLabels,
                     datasets: [
@@ -6628,7 +6615,7 @@ export function MemberPortalPage() {
                 <Grid container spacing={2}>
                     <Grid size={{ xs: 12, md: 6 }}>
                         <MotionCard variant="outlined" sx={contentCardSx}>
-                            <CardContent sx={{ p: 2.25 }}>
+                            <CardContent sx={{ p: 1.75 }}>
                                 <Stack spacing={1.4}>
                                     <Stack direction="row" spacing={1} alignItems="center">
                                         <Box
@@ -6669,7 +6656,7 @@ export function MemberPortalPage() {
                     </Grid>
                     <Grid size={{ xs: 12, md: 6 }}>
                         <MotionCard variant="outlined" sx={contentCardSx}>
-                            <CardContent sx={{ p: 2.25 }}>
+                            <CardContent sx={{ p: 1.75 }}>
                                 <Stack spacing={1.4}>
                                     <Stack direction="row" spacing={1} alignItems="center">
                                         <Box
@@ -6741,7 +6728,7 @@ export function MemberPortalPage() {
                     </Grid>
                     <Grid size={{ xs: 12, md: 6 }}>
                         <MotionCard variant="outlined" sx={contentCardSx}>
-                            <CardContent sx={{ p: 2.25 }}>
+                            <CardContent sx={{ p: 1.75 }}>
                                 <Stack spacing={1.2}>
                                     <Stack direction="row" spacing={1} alignItems="center">
                                         <Box
