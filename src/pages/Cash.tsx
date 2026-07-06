@@ -344,6 +344,16 @@ export function CashPage() {
     const [batchRows, setBatchRows] = useState<OperationalBatchRowRequest[]>([]);
     const [batchResult, setBatchResult] = useState<OperationalBatchResult | null>(null);
     const [batchParseError, setBatchParseError] = useState<string | null>(null);
+    // Collect Membership Fee: approved applicants awaiting the joining fee. The
+    // backend posts the fee to this teller's session and activates the member once
+    // the fee is fully paid (collectFeeRevenue + applyMembershipFeePayment).
+    const [feeDialogOpen, setFeeDialogOpen] = useState(false);
+    const [pendingFeeMembers, setPendingFeeMembers] = useState<Member[]>([]);
+    const [loadingPendingFeeMembers, setLoadingPendingFeeMembers] = useState(false);
+    const [feeMemberId, setFeeMemberId] = useState("");
+    const [feeAmount, setFeeAmount] = useState("");
+    const [feeReference, setFeeReference] = useState("");
+    const [collectingFee, setCollectingFee] = useState(false);
     const [pendingApprovalNotice, setPendingApprovalNotice] = useState<{
         requestId: string;
         payload: CashRequest;
@@ -458,6 +468,82 @@ export function CashPage() {
     useEffect(() => {
         openSessionForm.setValue("branch_id", selectedBranchId || "");
     }, [selectedBranchId]);
+
+    // Load approved-pending-payment members when the fee dialog opens so the teller
+    // can pick who is paying their joining fee.
+    useEffect(() => {
+        if (!feeDialogOpen || !selectedTenantId) {
+            return;
+        }
+        let isActive = true;
+        setLoadingPendingFeeMembers(true);
+        api.get<MembersResponse>(endpoints.members.list(), {
+            params: { tenant_id: selectedTenantId, status: "approved_pending_payment", page: 1, limit: 100 }
+        })
+            .then(({ data }) => {
+                if (isActive) {
+                    setPendingFeeMembers(data.data || []);
+                }
+            })
+            .catch(() => {
+                if (isActive) {
+                    setPendingFeeMembers([]);
+                }
+            })
+            .finally(() => {
+                if (isActive) {
+                    setLoadingPendingFeeMembers(false);
+                }
+            });
+        return () => {
+            isActive = false;
+        };
+    }, [feeDialogOpen, selectedTenantId]);
+
+    const collectMembershipFee = async () => {
+        if (!selectedTenantId || !feeMemberId) {
+            return;
+        }
+        const trimmedAmount = feeAmount.trim();
+        const amountValue = trimmedAmount === "" ? undefined : Number(trimmedAmount);
+        if (amountValue !== undefined && (!Number.isFinite(amountValue) || amountValue <= 0)) {
+            pushToast({
+                type: "error",
+                title: "Invalid amount",
+                message: "Enter an amount greater than zero, or leave blank to charge the configured membership fee."
+            });
+            return;
+        }
+
+        setCollectingFee(true);
+        try {
+            await api.post(endpoints.finance.feeRevenue(), {
+                tenant_id: selectedTenantId,
+                member_id: feeMemberId,
+                fee_rule_code: "MEMBERSHIP_FEE",
+                ...(amountValue !== undefined ? { amount: amountValue } : {}),
+                ...(feeReference.trim() ? { reference: feeReference.trim() } : {})
+            });
+            pushToast({
+                type: "success",
+                title: "Membership fee collected",
+                message: "The fee was posted to your teller session. The member activates once the fee is fully paid."
+            });
+            setFeeDialogOpen(false);
+            setFeeMemberId("");
+            setFeeAmount("");
+            setFeeReference("");
+            await loadCashData();
+        } catch (error) {
+            pushToast({
+                type: "error",
+                title: "Unable to collect membership fee",
+                message: getApiErrorMessage(error)
+            });
+        } finally {
+            setCollectingFee(false);
+        }
+    };
 
     const accountOptions = useMemo(
         () =>
@@ -999,6 +1085,20 @@ export function CashPage() {
                                 sx={theme.palette.mode === "dark" ? { borderColor: alpha(cashDeskAccent, 0.44), color: cashDeskAccent, "&:hover": { borderColor: alpha(cashDeskAccent, 0.78), bgcolor: alpha(cashDeskAccent, 0.1) } } : undefined}
                             >
                                 Batch Posting
+                            </Button>
+                            <Button
+                                variant="outlined"
+                                startIcon={<WalletRoundedIcon />}
+                                onClick={() => {
+                                    setFeeDialogOpen(true);
+                                    setFeeMemberId("");
+                                    setFeeAmount("");
+                                    setFeeReference("");
+                                }}
+                                disabled={tellerSessionRequired}
+                                sx={theme.palette.mode === "dark" ? { borderColor: alpha(cashDeskAccent, 0.44), color: cashDeskAccent, "&:hover": { borderColor: alpha(cashDeskAccent, 0.78), bgcolor: alpha(cashDeskAccent, 0.1) } } : undefined}
+                            >
+                                Membership Fee
                             </Button>
                             {!currentSession ? (
                                 <Button
@@ -1725,6 +1825,57 @@ export function CashPage() {
                                 : actionDialog === "withdraw"
                                     ? "Post Withdrawal"
                                     : "Post Share Contribution"}
+                    </Button>
+                </DialogActions>
+            </MotionModal>
+
+            <MotionModal open={feeDialogOpen} onClose={collectingFee ? undefined : () => setFeeDialogOpen(false)} maxWidth="sm" fullWidth>
+                <DialogTitle>Collect membership fee</DialogTitle>
+                <DialogContent dividers>
+                    <Stack spacing={2} sx={{ pt: 0.5 }}>
+                        <Alert severity="info" variant="outlined">
+                            Approved applicants stay pending until the joining fee is received. Collecting it here posts the fee to your teller session and activates the member once fully paid.
+                        </Alert>
+                        <SearchableSelect
+                            label="Applicant awaiting payment"
+                            value={feeMemberId}
+                            onChange={(value) => setFeeMemberId(value)}
+                            options={pendingFeeMembers.map((member) => ({
+                                value: member.id,
+                                label: `${member.full_name}${member.member_no ? ` — ${member.member_no}` : ""}`,
+                                secondary: member.phone || undefined
+                            }))}
+                        />
+                        {!loadingPendingFeeMembers && !pendingFeeMembers.length ? (
+                            <Alert severity="success" variant="outlined">
+                                No approved applicants are waiting for a membership fee right now.
+                            </Alert>
+                        ) : null}
+                        <TextField
+                            fullWidth
+                            type="number"
+                            label="Amount received"
+                            value={feeAmount}
+                            onChange={(event) => setFeeAmount(event.target.value)}
+                            helperText="Leave blank to charge the SACCO's configured membership fee. Enter a smaller amount for a partial payment."
+                        />
+                        <TextField
+                            fullWidth
+                            label="Reference (optional)"
+                            value={feeReference}
+                            onChange={(event) => setFeeReference(event.target.value)}
+                            helperText="Receipt or slip number, if any."
+                        />
+                    </Stack>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setFeeDialogOpen(false)} disabled={collectingFee}>Cancel</Button>
+                    <Button
+                        variant="contained"
+                        onClick={() => void collectMembershipFee()}
+                        disabled={collectingFee || !feeMemberId}
+                    >
+                        {collectingFee ? "Collecting..." : "Collect Fee"}
                     </Button>
                 </DialogActions>
             </MotionModal>

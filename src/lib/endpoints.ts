@@ -1004,7 +1004,7 @@ export interface CreateMemberApplicationRequest {
     notes?: string | null;
     kyc_status?: "pending" | "verified" | "rejected" | "waived";
     kyc_reason?: string | null;
-    membership_fee_amount?: number;
+    membership_fee_amount?: number | null;
     membership_fee_paid?: number;
 }
 

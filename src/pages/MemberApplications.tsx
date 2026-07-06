@@ -192,7 +192,9 @@ export function MemberApplicationsPage() {
             residential_address: "",
             address_line1: "",
             notes: "",
-            membership_fee_amount: 10000,
+            // Blank on purpose: the backend fills the tenant's configured membership
+            // fee rule (e.g. TZS 200,000) so a stale form default can't undercharge.
+            membership_fee_amount: undefined,
             membership_fee_paid: 0,
             kyc_status: "pending"
         }
@@ -240,7 +242,7 @@ export function MemberApplicationsPage() {
             address_line1: "",
             employer: "",
             notes: "",
-            membership_fee_amount: 10000,
+            membership_fee_amount: undefined,
             membership_fee_paid: 0,
             kyc_status: "pending"
         });
@@ -455,7 +457,12 @@ export function MemberApplicationsPage() {
             national_id: toNullableText(values.national_id),
             nida_no: toNullableText(values.nida_no),
             employer: toNullableText(values.employer),
-            notes: toNullableText(values.notes)
+            notes: toNullableText(values.notes),
+            // Empty number input arrives as NaN; send null so the backend charges the
+            // tenant's configured membership fee rule instead.
+            membership_fee_amount: Number.isFinite(Number(values.membership_fee_amount))
+                ? Number(values.membership_fee_amount)
+                : null
         };
 
         setSubmitting(true);
@@ -834,7 +841,7 @@ export function MemberApplicationsPage() {
                             <TextField fullWidth label="Address note / plot" {...createForm.register("address_line1")} helperText="Optional internal address note." />
                         </Grid>
                         <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label="Employer" {...createForm.register("employer")} /></Grid>
-                        <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth type="number" label="Membership fee" {...createForm.register("membership_fee_amount", { valueAsNumber: true })} /></Grid>
+                        <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth type="number" label="Membership fee" helperText="Leave blank to charge the SACCO's configured membership fee." {...createForm.register("membership_fee_amount", { valueAsNumber: true })} /></Grid>
                         <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth type="number" label="Fee paid" {...createForm.register("membership_fee_paid", { valueAsNumber: true })} /></Grid>
                         <Grid size={{ xs: 12, md: 4 }}><TextField select fullWidth label="KYC status" defaultValue="pending" {...createForm.register("kyc_status")}><MenuItem value="pending">Pending</MenuItem><MenuItem value="verified">Verified</MenuItem><MenuItem value="rejected">Rejected</MenuItem><MenuItem value="waived">Waived</MenuItem></TextField></Grid>
                         <Grid size={{ xs: 12 }}><TextField fullWidth multiline minRows={3} label="Notes" {...createForm.register("notes")} /></Grid>
