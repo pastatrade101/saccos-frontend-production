@@ -1384,7 +1384,7 @@ export interface PaymentOrder {
     updated_at: string;
 }
 
-export type TellerPaymentTransactionType = "deposit" | "withdraw" | "share_contribution" | "loan_repay" | "loan_disburse" | "fee_revenue";
+export type TellerPaymentTransactionType = "deposit" | "withdraw" | "share_contribution" | "loan_repay" | "loan_disburse" | "fee_revenue" | "expense_payment";
 
 export interface TellerPaymentTransaction {
     id: string;
@@ -1458,7 +1458,7 @@ export interface ReceiptPolicy {
     max_receipts_per_tx: number;
     allowed_mime_types: string[];
     max_file_size_mb: number;
-    enforce_on_types: Array<"deposit" | "withdraw" | "loan_repay" | "loan_disburse" | "share_contribution" | "fee_revenue">;
+    enforce_on_types: Array<"deposit" | "withdraw" | "loan_repay" | "loan_disburse" | "share_contribution" | "fee_revenue" | "expense_payment">;
     created_at: string;
     updated_at: string;
 }
@@ -1469,7 +1469,7 @@ export interface TransactionReceipt {
     branch_id: string;
     journal_id?: string | null;
     member_id?: string | null;
-    transaction_type: "deposit" | "withdraw" | "loan_repay" | "loan_disburse" | "share_contribution" | "fee_revenue";
+    transaction_type: "deposit" | "withdraw" | "loan_repay" | "loan_disburse" | "share_contribution" | "fee_revenue" | "expense_payment";
     draft_token: string;
     storage_bucket: string;
     storage_path: string;
@@ -1504,6 +1504,7 @@ export interface DailyCashSummary {
     loan_repayment_total?: number;
     loan_disbursement_total?: number;
     fee_revenue_total?: number;
+    expense_payment_total?: number;
     net_movement: number;
     expected_cash_total: number;
     closing_cash_total: number;

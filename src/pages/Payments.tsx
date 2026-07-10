@@ -50,7 +50,8 @@ type PaymentOperation =
     | "loan_repayment"
     | "loan_disbursement"
     | "membership_fee"
-    | "fee_revenue";
+    | "fee_revenue"
+    | "expense_payment";
 
 interface FlatPagedEnvelope<T> {
     data: T[];
@@ -98,7 +99,8 @@ function formatPaymentOperation(operation: string) {
         loan_repayment: "Loan repayment",
         loan_disbursement: "Loan disbursement",
         membership_fee: "Membership fee",
-        fee_revenue: "Fee / revenue"
+        fee_revenue: "Fee / revenue",
+        expense_payment: "SACCO expense"
     };
 
     return labels[operation] || operation.replace(/_/g, " ");
@@ -154,6 +156,10 @@ function normalizeTellerOperation(transactionType: TellerPaymentTransaction["tra
 
     if (transactionType === "fee_revenue") {
         return "fee_revenue";
+    }
+
+    if (transactionType === "expense_payment") {
+        return "expense_payment";
     }
 
     return "savings_deposit";
@@ -711,6 +717,7 @@ export function PaymentsPage() {
                                     <MenuItem value="loan_disbursement">Loan disbursements</MenuItem>
                                     <MenuItem value="membership_fee">Membership fees</MenuItem>
                                     <MenuItem value="fee_revenue">Fee / revenue</MenuItem>
+                                    <MenuItem value="expense_payment">SACCO expenses</MenuItem>
                                 </TextField>
                                 <TextField select label="Channel" value={channelFilter} onChange={(event) => setChannelFilter(event.target.value)} sx={{ minWidth: 160 }}>
                                     <MenuItem value="all">All channels</MenuItem>

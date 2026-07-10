@@ -39,7 +39,8 @@ const controlledTransactionTypes: UpdateReceiptPolicyRequest["enforce_on_types"]
     "withdraw",
     "loan_repay",
     "loan_disburse",
-    "fee_revenue"
+    "fee_revenue",
+    "expense_payment"
 ];
 
 const transactionTypeLabels: Record<UpdateReceiptPolicyRequest["enforce_on_types"][number], string> = {
@@ -48,7 +49,8 @@ const transactionTypeLabels: Record<UpdateReceiptPolicyRequest["enforce_on_types
     share_contribution: "Legacy contribution",
     loan_repay: "Loan repayment",
     loan_disburse: "Loan disbursement",
-    fee_revenue: "Fee / revenue"
+    fee_revenue: "Fee / revenue",
+    expense_payment: "SACCO expense"
 };
 
 function statusChip(status: TellerSession["status"]) {
@@ -151,6 +153,7 @@ export function CashControlPage() {
                 acc.loanRepayments += Number(row.loan_repayment_total || 0);
                 acc.loanDisbursements += Number(row.loan_disbursement_total || 0);
                 acc.feeRevenue += Number(row.fee_revenue_total || 0);
+                acc.expensePayments += Number(row.expense_payment_total || 0);
                 acc.variance += Number(row.variance_total || 0);
                 acc.transactions += Number(row.transaction_count || 0);
                 acc.receipts += Number(row.receipt_count || 0);
@@ -164,6 +167,7 @@ export function CashControlPage() {
                 loanRepayments: 0,
                 loanDisbursements: 0,
                 feeRevenue: 0,
+                expensePayments: 0,
                 variance: 0,
                 transactions: 0,
                 receipts: 0
@@ -241,7 +245,7 @@ export function CashControlPage() {
 
             <Grid container spacing={2}>
                 <Grid size={{ xs: 12, md: 3 }}><MotionCard variant="outlined"><CardContent><Typography variant="overline">Cash Inflow</Typography><Typography variant="h5">{formatCurrency(totals.inflow)}</Typography><Typography variant="body2" color="text.secondary">Savings, loan repayments, and fee revenue.</Typography></CardContent></MotionCard></Grid>
-                <Grid size={{ xs: 12, md: 3 }}><MotionCard variant="outlined"><CardContent><Typography variant="overline">Cash Outflow</Typography><Typography variant="h5">{formatCurrency(totals.outflow)}</Typography><Typography variant="body2" color="text.secondary">Withdrawals and loan disbursements.</Typography></CardContent></MotionCard></Grid>
+                <Grid size={{ xs: 12, md: 3 }}><MotionCard variant="outlined"><CardContent><Typography variant="overline">Cash Outflow</Typography><Typography variant="h5">{formatCurrency(totals.outflow)}</Typography><Typography variant="body2" color="text.secondary">Withdrawals, expenses, and loan disbursements.</Typography></CardContent></MotionCard></Grid>
                 <Grid size={{ xs: 12, md: 3 }}><MotionCard variant="outlined"><CardContent><Typography variant="overline">Net Movement</Typography><Typography variant="h5">{formatCurrency(totals.inflow - totals.outflow)}</Typography><Typography variant="body2" color="text.secondary">{totals.transactions} posted action(s), {totals.receipts} confirmed receipt(s).</Typography></CardContent></MotionCard></Grid>
                 <Grid size={{ xs: 12, md: 3 }}><MotionCard variant="outlined"><CardContent><Typography variant="overline">Variance</Typography><Typography variant="h5">{formatCurrency(totals.variance)}</Typography></CardContent></MotionCard></Grid>
             </Grid>
@@ -251,6 +255,7 @@ export function CashControlPage() {
                 <Grid size={{ xs: 12, sm: 6, lg: 2 }}><MotionCard variant="outlined"><CardContent><Typography variant="overline">Savings Out</Typography><Typography variant="h6">{formatCurrency(totals.savingsWithdrawals)}</Typography></CardContent></MotionCard></Grid>
                 <Grid size={{ xs: 12, sm: 6, lg: 2 }}><MotionCard variant="outlined"><CardContent><Typography variant="overline">Loan Repayments</Typography><Typography variant="h6">{formatCurrency(totals.loanRepayments)}</Typography></CardContent></MotionCard></Grid>
                 <Grid size={{ xs: 12, sm: 6, lg: 2 }}><MotionCard variant="outlined"><CardContent><Typography variant="overline">Fee Revenue</Typography><Typography variant="h6">{formatCurrency(totals.feeRevenue)}</Typography></CardContent></MotionCard></Grid>
+                <Grid size={{ xs: 12, sm: 6, lg: 2 }}><MotionCard variant="outlined"><CardContent><Typography variant="overline">Expenses</Typography><Typography variant="h6">{formatCurrency(totals.expensePayments)}</Typography></CardContent></MotionCard></Grid>
                 <Grid size={{ xs: 12, sm: 6, lg: 2 }}><MotionCard variant="outlined"><CardContent><Typography variant="overline">Loan Disbursed</Typography><Typography variant="h6">{formatCurrency(totals.loanDisbursements)}</Typography></CardContent></MotionCard></Grid>
             </Grid>
 
@@ -456,6 +461,7 @@ export function CashControlPage() {
                                         { key: "savings", header: "Savings", render: (row) => `${formatCurrency(row.savings_deposit_total || 0)} in / ${formatCurrency(row.savings_withdrawal_total || 0)} out` },
                                         { key: "loan_repay", header: "Loan Repay", render: (row) => formatCurrency(row.loan_repayment_total || 0) },
                                         { key: "fee_revenue", header: "Fee Revenue", render: (row) => formatCurrency(row.fee_revenue_total || 0) },
+                                        { key: "expense_payment", header: "Expenses", render: (row) => formatCurrency(row.expense_payment_total || 0) },
                                         { key: "loan_disburse", header: "Loan Disbursed", render: (row) => formatCurrency(row.loan_disbursement_total || 0) },
                                         { key: "net", header: "Net", render: (row) => formatCurrency(row.net_movement) },
                                         { key: "variance", header: "Variance", render: (row) => formatCurrency(row.variance_total) }

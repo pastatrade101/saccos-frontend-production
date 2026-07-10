@@ -19,6 +19,7 @@ import {
     Grid,
     InputAdornment,
     InputLabel,
+    MenuItem,
     Pagination,
     Stack,
     TextField,
@@ -44,6 +45,11 @@ import {
     type CashResponse,
     type CloseTellerSessionRequest,
     type DailyCashSummaryResponse,
+    type ExpenseAccountsResponse,
+    type ExpensePaymentRequest,
+    type FeeRulesResponse,
+    type LoanRepaymentRequest,
+    type LoansResponse,
     type MemberAccountsResponse,
     type MembersResponse,
     type OpenTellerSessionRequest,
@@ -59,20 +65,53 @@ import {
     type TellerSessionResponse
 } from "../lib/endpoints";
 import { supabase } from "../lib/supabase";
-import type { ApiEnvelope, DailyCashSummary, Member, MemberAccount, ReceiptPolicy, StatementRow, TellerSession } from "../types/api";
+import type { ApiEnvelope, ChartOfAccountOption, DailyCashSummary, FeeRule, Loan, Member, MemberAccount, ReceiptPolicy, StatementRow, TellerSession, TellerPaymentTransactionType } from "../types/api";
 import { formatCurrency, formatDate } from "../utils/format";
 
+const depositKindSchema = z.enum(["savings_deposit", "loan_repayment", "membership_fee", "fee_revenue"]);
+const uuidValue = z.string().uuid();
+
 const actionSchema = z.object({
-    account_id: z.string().uuid("Select an account."),
+    deposit_kind: depositKindSchema.default("savings_deposit"),
+    account_id: z.string().optional().or(z.literal("")),
+    loan_id: z.string().optional().or(z.literal("")),
+    member_id: z.string().optional().or(z.literal("")),
+    fee_rule_code: z.string().max(80).optional().or(z.literal("")),
     amount: z.coerce.number().positive("Amount must be greater than zero."),
+    reference: z.string().max(80).optional().or(z.literal("")),
+    description: z.string().max(255).optional().or(z.literal("")),
+    value_date: z.string().optional().or(z.literal(""))
+}).superRefine((values, ctx) => {
+    const kind = values.deposit_kind || "savings_deposit";
+    if (kind === "savings_deposit" && !uuidValue.safeParse(values.account_id).success) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["account_id"], message: "Select a member savings account." });
+    }
+    if (kind === "loan_repayment" && !uuidValue.safeParse(values.loan_id).success) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["loan_id"], message: "Select the active loan being repaid." });
+    }
+    if (kind === "membership_fee" && !uuidValue.safeParse(values.member_id).success) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["member_id"], message: "Select the member paying the membership fee." });
+    }
+    if (kind === "fee_revenue" && !values.fee_rule_code?.trim()) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["fee_rule_code"], message: "Select the revenue or fee rule." });
+    }
+});
+
+type CashValues = z.infer<typeof actionSchema>;
+type ActionType = "deposit" | "withdraw" | "share_contribution";
+type DepositKind = z.infer<typeof depositKindSchema>;
+type PendingAction = { type: ActionType; values: CashValues; receiptFile: File | null } | null;
+
+const expenseSchema = z.object({
+    expense_account_id: z.string().uuid("Select an expense account."),
+    amount: z.coerce.number().positive("Amount must be greater than zero."),
+    payee: z.string().max(160).optional().or(z.literal("")),
     reference: z.string().max(80).optional().or(z.literal("")),
     description: z.string().max(255).optional().or(z.literal("")),
     value_date: z.string().optional().or(z.literal(""))
 });
 
-type CashValues = z.infer<typeof actionSchema>;
-type ActionType = "deposit" | "withdraw" | "share_contribution";
-type PendingAction = { type: ActionType; values: CashValues; receiptFile: File | null } | null;
+type ExpenseValues = z.infer<typeof expenseSchema>;
 
 // This SACCO runs a savings + dividend model (no separate share ledger), so the
 // Share Capital teller action is hidden. Flip to true to re-enable it if shares
@@ -120,6 +159,36 @@ function loadAllCashMembers(tenantId: string) {
     });
 }
 
+function loadAllCashLoans(tenantId: string, branchId?: string | null) {
+    return loadAllPaged<Loan>(async (page) => {
+        const { data } = await api.get<LoansResponse & { pagination?: { total: number } }>(
+            endpoints.finance.loanPortfolio(),
+            { params: { tenant_id: tenantId, ...(branchId ? { branch_id: branchId } : {}), page, limit: 100 } }
+        );
+        return { rows: data.data || [], total: data.pagination?.total };
+    });
+}
+
+function loadAllCashFeeRules() {
+    return loadAllPaged<FeeRule>(async (page) => {
+        const { data } = await api.get<FeeRulesResponse & { pagination?: { total: number } }>(
+            endpoints.products.fees(),
+            { params: { page, limit: 100 } }
+        );
+        return { rows: data.data || [], total: data.pagination?.total };
+    });
+}
+
+function loadAllExpenseAccounts(tenantId: string) {
+    return loadAllPaged<ChartOfAccountOption>(async (page) => {
+        const { data } = await api.get<ExpenseAccountsResponse & { pagination?: { total: number } }>(
+            endpoints.finance.expenseAccounts(),
+            { params: { tenant_id: tenantId, page, limit: 100 } }
+        );
+        return { rows: data.data || [], total: data.pagination?.total };
+    });
+}
+
 function formatWholeMoneyInput(value: string) {
     const digits = value.replace(/[^\d]/g, "");
     if (!digits) {
@@ -134,6 +203,33 @@ function generateCashReference(type: ActionType) {
     const stamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
     const suffix = Math.random().toString(36).slice(2, 8).toUpperCase();
     return `${prefix}-${stamp}-${suffix}`;
+}
+
+function getDepositKindReferencePrefix(kind: DepositKind) {
+    if (kind === "loan_repayment") return "LRP";
+    if (kind === "membership_fee" || kind === "fee_revenue") return "FEE";
+    return "DEP";
+}
+
+function generateDepositReference(kind: DepositKind) {
+    const stamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
+    const suffix = Math.random().toString(36).slice(2, 8).toUpperCase();
+    return `${getDepositKindReferencePrefix(kind)}-${stamp}-${suffix}`;
+}
+
+function generateExpenseReference() {
+    const stamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
+    const suffix = Math.random().toString(36).slice(2, 8).toUpperCase();
+    return `EXP-${stamp}-${suffix}`;
+}
+
+function getActionReceiptType(action: PendingAction): TellerPaymentTransactionType | null {
+    if (!action) return null;
+    if (action.type === "withdraw") return "withdraw";
+    if (action.type === "share_contribution") return "share_contribution";
+    if (action.values.deposit_kind === "loan_repayment") return "loan_repay";
+    if (action.values.deposit_kind === "membership_fee" || action.values.deposit_kind === "fee_revenue") return "fee_revenue";
+    return "deposit";
 }
 
 const operationalBatchTemplate = [
@@ -322,7 +418,11 @@ export function CashPage() {
     const todayDate = new Date().toISOString().slice(0, 10);
     const [members, setMembers] = useState<Member[]>([]);
     const [accounts, setAccounts] = useState<MemberAccount[]>([]);
+    const [loans, setLoans] = useState<Loan[]>([]);
+    const [feeRules, setFeeRules] = useState<FeeRule[]>([]);
+    const [expenseAccounts, setExpenseAccounts] = useState<ChartOfAccountOption[]>([]);
     const amountInputRef = useRef<HTMLInputElement | null>(null);
+    const expenseAmountInputRef = useRef<HTMLInputElement | null>(null);
     const [transactions, setTransactions] = useState<StatementRow[]>([]);
     const [currentSession, setCurrentSession] = useState<TellerSession | null>(null);
     const [receiptPolicy, setReceiptPolicy] = useState<ReceiptPolicy | null>(null);
@@ -344,6 +444,9 @@ export function CashPage() {
     const [batchRows, setBatchRows] = useState<OperationalBatchRowRequest[]>([]);
     const [batchResult, setBatchResult] = useState<OperationalBatchResult | null>(null);
     const [batchParseError, setBatchParseError] = useState<string | null>(null);
+    const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
+    const [expenseReceiptFile, setExpenseReceiptFile] = useState<File | null>(null);
+    const [expenseAmountInput, setExpenseAmountInput] = useState("");
     // Collect Membership Fee: approved applicants awaiting the joining fee. The
     // backend posts the fee to this teller's session and activates the member once
     // the fee is fully paid (collectFeeRevenue + applyMembershipFeePayment).
@@ -369,7 +472,11 @@ export function CashPage() {
     const depositForm = useForm<CashValues>({
         resolver: zodResolver(actionSchema),
         defaultValues: {
+            deposit_kind: "savings_deposit",
             account_id: defaultAccountId,
+            loan_id: "",
+            member_id: "",
+            fee_rule_code: "",
             amount: 0,
             reference: "",
             description: ""
@@ -379,7 +486,11 @@ export function CashPage() {
     const withdrawForm = useForm<CashValues>({
         resolver: zodResolver(actionSchema),
         defaultValues: {
+            deposit_kind: "savings_deposit",
             account_id: defaultAccountId,
+            loan_id: "",
+            member_id: "",
+            fee_rule_code: "",
             amount: 0,
             reference: "",
             description: ""
@@ -389,10 +500,26 @@ export function CashPage() {
     const shareForm = useForm<CashValues>({
         resolver: zodResolver(actionSchema),
         defaultValues: {
+            deposit_kind: "savings_deposit",
             account_id: "",
+            loan_id: "",
+            member_id: "",
+            fee_rule_code: "",
             amount: 0,
             reference: "",
             description: ""
+        }
+    });
+
+    const expenseForm = useForm<ExpenseValues>({
+        resolver: zodResolver(expenseSchema),
+        defaultValues: {
+            expense_account_id: "",
+            amount: 0,
+            payee: "",
+            reference: "",
+            description: "",
+            value_date: ""
         }
     });
 
@@ -410,6 +537,7 @@ export function CashPage() {
             notes: ""
         }
     });
+    const depositKind = depositForm.watch("deposit_kind") || "savings_deposit";
 
     const loadCashData = async () => {
         if (!selectedTenantId) {
@@ -424,6 +552,9 @@ export function CashPage() {
                 membersList,
                 statementsResponse,
                 accountsList,
+                loansList,
+                feeRulesList,
+                expenseAccountsList,
                 { data: currentSessionResponse },
                 { data: receiptPolicyResponse },
                 { data: dailySummaryResponse }
@@ -433,6 +564,9 @@ export function CashPage() {
                     params: { tenant_id: selectedTenantId, page: 1, limit: 100 }
                 }),
                 loadAllCashAccounts(selectedTenantId),
+                loadAllCashLoans(selectedTenantId, selectedBranchId),
+                loadAllCashFeeRules(),
+                loadAllExpenseAccounts(selectedTenantId),
                 api.get<TellerSessionResponse>(endpoints.cashControl.currentSession(), {
                     params: selectedBranchId ? { branch_id: selectedBranchId } : {}
                 }),
@@ -447,6 +581,9 @@ export function CashPage() {
             setMembers(membersList);
             setTransactions((statementsResponse.data.data || []).slice(0, 40));
             setAccounts(accountsList);
+            setLoans(loansList);
+            setFeeRules(feeRulesList);
+            setExpenseAccounts(expenseAccountsList);
             setCurrentSession(currentSessionResponse.data || null);
             setReceiptPolicy(receiptPolicyResponse.data || null);
             setDailySummary(dailySummaryResponse.data || []);
@@ -472,7 +609,8 @@ export function CashPage() {
     // Load approved-pending-payment members when the fee dialog opens so the teller
     // can pick who is paying their joining fee.
     useEffect(() => {
-        if (!feeDialogOpen || !selectedTenantId) {
+        const needsMembershipMemberList = feeDialogOpen || (actionDialog === "deposit" && depositKind === "membership_fee");
+        if (!needsMembershipMemberList || !selectedTenantId) {
             return;
         }
         let isActive = true;
@@ -498,7 +636,7 @@ export function CashPage() {
         return () => {
             isActive = false;
         };
-    }, [feeDialogOpen, selectedTenantId]);
+    }, [actionDialog, depositKind, feeDialogOpen, selectedTenantId]);
 
     const collectMembershipFee = async () => {
         if (!selectedTenantId || !feeMemberId) {
@@ -569,6 +707,49 @@ export function CashPage() {
     const shareAccountOptions = useMemo(
         () => accountOptions.filter((option) => option.secondary.toLowerCase().includes("shares")),
         [accountOptions]
+    );
+    const loanRepaymentOptions = useMemo(
+        () =>
+            loans
+                .filter((loan) => ["active", "in_arrears"].includes(loan.status))
+                .map((loan) => {
+                    const member = members.find((entry) => entry.id === loan.member_id);
+                    return {
+                        value: loan.id,
+                        label: `${member?.full_name || "Unknown member"} — ${loan.loan_number}`,
+                        secondary: `${loan.status.replace(/_/g, " ")} • outstanding ${formatCurrency(Number(loan.outstanding_principal || 0) + Number(loan.accrued_interest || 0))}`
+                    };
+                }),
+        [loans, members]
+    );
+    const membershipMemberOptions = useMemo(() => {
+        const rows = [...pendingFeeMembers, ...members];
+        const uniqueRows = Array.from(new Map(rows.map((member) => [member.id, member])).values());
+        return uniqueRows.map((member) => ({
+            value: member.id,
+            label: `${member.full_name}${member.member_no ? ` — ${member.member_no}` : ""}`,
+            secondary: `${member.status.replace(/_/g, " ")}${member.phone ? ` • ${member.phone}` : ""}`
+        }));
+    }, [members, pendingFeeMembers]);
+    const feeRuleOptions = useMemo(
+        () =>
+            feeRules
+                .filter((rule) => rule.is_active && rule.fee_type !== "membership_fee")
+                .map((rule) => ({
+                    value: rule.code,
+                    label: `${rule.name} — ${rule.code}`,
+                    secondary: `${rule.fee_type.replace(/_/g, " ")} • ${rule.calculation_method === "flat" ? formatCurrency(rule.flat_amount) : `${rule.percentage_value}%`}`
+                })),
+        [feeRules]
+    );
+    const expenseAccountOptions = useMemo(
+        () =>
+            expenseAccounts.map((account) => ({
+                value: account.id,
+                label: `${account.account_name} — ${account.account_code}`,
+                secondary: "Expense account"
+            })),
+        [expenseAccounts]
     );
 
     const todaySummary = dailySummary[0] || null;
@@ -643,12 +824,19 @@ export function CashPage() {
     );
     const receiptThresholdText = receiptPolicy ? formatCurrency(receiptPolicy.required_threshold) : "TSh 0";
     const tellerSessionRequired = Boolean(receiptPolicy) && !currentSession;
+    const pendingActionReceiptType = getActionReceiptType(pendingAction);
+    const expenseReceiptRequired = Boolean(
+        receiptPolicy?.receipt_required
+        && receiptPolicy.enforce_on_types.includes("expense_payment")
+        && Number(expenseForm.watch("amount") || 0) >= receiptPolicy.required_threshold
+    );
     const cashDeskAccent = theme.palette.mode === "dark" ? "#D9B273" : theme.palette.primary.main;
     const cashDeskAccentStrong = theme.palette.mode === "dark" ? "#C89B52" : theme.palette.primary.dark;
     const receiptNeededForPendingAction = Boolean(
         pendingAction
         && receiptPolicy?.receipt_required
-        && receiptPolicy.enforce_on_types.includes(pendingAction.type)
+        && pendingActionReceiptType
+        && receiptPolicy.enforce_on_types.includes(pendingActionReceiptType)
         && pendingAction.values.amount >= receiptPolicy.required_threshold
     );
 
@@ -689,9 +877,11 @@ export function CashPage() {
     const handleSubmit = (type: ActionType, values: CashValues) => {
         // One-click post: enforce the receipt rule inline, then post directly — no
         // separate review step (the form already shows the member, balance and amount).
+        const receiptTransactionType = getActionReceiptType({ type, values, receiptFile });
         const needsReceipt = Boolean(
             receiptPolicy?.receipt_required
-            && receiptPolicy.enforce_on_types.includes(type)
+            && receiptTransactionType
+            && receiptPolicy.enforce_on_types.includes(receiptTransactionType)
             && values.amount >= receiptPolicy.required_threshold
         );
         if (needsReceipt && !receiptFile) {
@@ -705,16 +895,25 @@ export function CashPage() {
         void confirmAction({ type, values, receiptFile });
     };
 
-    const uploadReceiptForAction = async (action: PendingAction, branchId: string, memberId?: string | null) => {
-        if (!action?.receiptFile) {
+    const uploadReceiptFile = async ({
+        file,
+        branchId,
+        memberId,
+        transactionType
+    }: {
+        file: File | null;
+        branchId: string;
+        memberId?: string | null;
+        transactionType: TellerPaymentTransactionType;
+    }) => {
+        if (!file) {
             return [];
         }
 
-        const file = action.receiptFile;
         const { data: initResponse } = await api.post<ReceiptInitResponse>(endpoints.cashControl.initReceipt(), {
             branch_id: branchId,
             member_id: memberId || null,
-            transaction_type: action.type,
+            transaction_type: transactionType,
             file_name: file.name,
             mime_type: file.type || "application/octet-stream",
             file_size_bytes: file.size
@@ -731,6 +930,19 @@ export function CashPage() {
 
         await api.post(endpoints.cashControl.confirmReceipt(receipt.id), {});
         return [receipt.id];
+    };
+
+    const uploadReceiptForAction = async (action: PendingAction, branchId: string, memberId?: string | null) => {
+        if (!action?.receiptFile) {
+            return [];
+        }
+
+        return uploadReceiptFile({
+            file: action.receiptFile,
+            branchId,
+            memberId,
+            transactionType: getActionReceiptType(action) || "deposit"
+        });
     };
 
     const openSession = openSessionForm.handleSubmit(async (values) => {
@@ -796,32 +1008,89 @@ export function CashPage() {
         setProcessing(true);
 
         try {
-            const account = accounts.find((entry) => entry.id === action.values.account_id);
-            const member = members.find((entry) => entry.id === account?.member_id);
-            const receiptIds = account
-                ? await uploadReceiptForAction(action, account.branch_id, member?.id || null)
-                : [];
-
-            const payload: CashRequest = {
-                tenant_id: selectedTenantId || undefined,
-                account_id: action.values.account_id,
-                amount: action.values.amount,
-                reference: action.values.reference || null,
-                description: action.values.description || null,
-                value_date: (canBackdate && action.values.value_date) ? action.values.value_date : undefined,
-                receipt_ids: receiptIds
-            };
-
-            const endpoint =
+            const kind = action.type === "deposit" ? action.values.deposit_kind || "savings_deposit" : "savings_deposit";
+            let data: CashResponse | ShareContributionResponse | ApiEnvelope<PendingApprovalPayload>;
+            let payload: CashRequest | null = null;
+            let successTitle =
                 action.type === "deposit"
-                    ? endpoints.finance.deposit()
+                    ? "Deposit posted"
                     : action.type === "withdraw"
-                        ? endpoints.finance.withdraw()
-                        : endpoints.finance.shareContribution();
+                        ? "Withdrawal posted"
+                        : "Share contribution posted";
 
-            const { data } = await api.post<CashResponse | ShareContributionResponse | ApiEnvelope<PendingApprovalPayload>>(endpoint, payload);
+            if (action.type === "deposit" && kind === "loan_repayment") {
+                const loan = loans.find((entry) => entry.id === action.values.loan_id);
+                if (!loan) {
+                    throw new Error("Select the active loan being repaid.");
+                }
+                const receiptIds = await uploadReceiptForAction(action, loan.branch_id, loan.member_id);
+                const loanPayload: LoanRepaymentRequest = {
+                    tenant_id: selectedTenantId || undefined,
+                    loan_id: loan.id,
+                    amount: action.values.amount,
+                    reference: action.values.reference || null,
+                    description: action.values.description || "Counter loan repayment",
+                    receipt_ids: receiptIds
+                };
+                const response = await api.post<CashResponse>(endpoints.finance.loanRepay(), loanPayload);
+                data = response.data;
+                successTitle = "Loan repayment posted";
+            } else if (action.type === "deposit" && (kind === "membership_fee" || kind === "fee_revenue")) {
+                const member = members.find((entry) => entry.id === action.values.member_id);
+                const branchId = member?.branch_id || selectedBranchId || undefined;
+                if (!branchId) {
+                    throw new Error("Select a branch or member before posting SACCO revenue.");
+                }
+                const feeRuleCode = kind === "membership_fee"
+                    ? "MEMBERSHIP_FEE"
+                    : action.values.fee_rule_code?.trim().toUpperCase();
+                if (!feeRuleCode) {
+                    throw new Error("Select the revenue or fee rule.");
+                }
+                const receiptIds = await uploadReceiptForAction(action, branchId, member?.id || null);
+                const response = await api.post<CashResponse>(endpoints.finance.feeRevenue(), {
+                    tenant_id: selectedTenantId || undefined,
+                    branch_id: branchId,
+                    member_id: member?.id,
+                    fee_rule_code: feeRuleCode,
+                    amount: action.values.amount,
+                    reference: action.values.reference || null,
+                    description: action.values.description || (kind === "membership_fee" ? "Counter membership fee collection" : "Counter SACCO revenue collection"),
+                    receipt_ids: receiptIds
+                });
+                data = response.data;
+                successTitle = kind === "membership_fee" ? "Membership fee posted" : "SACCO revenue posted";
+            } else {
+                const account = accounts.find((entry) => entry.id === action.values.account_id);
+                if (!account) {
+                    throw new Error("Select the member account for this transaction.");
+                }
+                const member = members.find((entry) => entry.id === account.member_id);
+                const receiptIds = await uploadReceiptForAction(action, account.branch_id, member?.id || null);
+
+                payload = {
+                    tenant_id: selectedTenantId || undefined,
+                    account_id: account.id,
+                    amount: action.values.amount,
+                    reference: action.values.reference || null,
+                    description: action.values.description || null,
+                    value_date: (canBackdate && action.values.value_date) ? action.values.value_date : undefined,
+                    receipt_ids: receiptIds
+                };
+
+                const endpoint =
+                    action.type === "deposit"
+                        ? endpoints.finance.deposit()
+                        : action.type === "withdraw"
+                            ? endpoints.finance.withdraw()
+                            : endpoints.finance.shareContribution();
+
+                const response = await api.post<CashResponse | ShareContributionResponse | ApiEnvelope<PendingApprovalPayload>>(endpoint, payload);
+                data = response.data;
+            }
+
             const maybePending = data.data as Partial<PendingApprovalPayload>;
-            if (action.type === "withdraw" && maybePending.approval_required && maybePending.approval_request_id) {
+            if (action.type === "withdraw" && maybePending.approval_required && maybePending.approval_request_id && payload) {
                 pushToast({
                     type: "success",
                     title: "Sent for approval",
@@ -835,12 +1104,7 @@ export function CashPage() {
                 const financeData = data.data as { journal_id?: string | null; message?: string | null };
                 pushToast({
                     type: "success",
-                    title:
-                        action.type === "deposit"
-                            ? "Deposit posted"
-                            : action.type === "withdraw"
-                                ? "Withdrawal posted"
-                                : "Share contribution posted",
+                    title: successTitle,
                     message: financeData.journal_id
                         ? `Journal ${financeData.journal_id} posted successfully.`
                         : financeData.message || "Transaction completed."
@@ -850,9 +1114,10 @@ export function CashPage() {
             setPendingAction(null);
             setActionDialog(null);
             setReceiptFile(null);
-            depositForm.reset({ account_id: payload.account_id, amount: 0, reference: generateCashReference("deposit"), description: "", value_date: "" });
-            withdrawForm.reset({ account_id: payload.account_id, amount: 0, reference: generateCashReference("withdraw"), description: "", value_date: "" });
-            shareForm.reset({ account_id: "", amount: 0, reference: generateCashReference("share_contribution"), description: "", value_date: "" });
+            const lastAccountId = payload?.account_id || defaultAccountId;
+            depositForm.reset({ deposit_kind: "savings_deposit", account_id: lastAccountId, loan_id: "", member_id: "", fee_rule_code: "", amount: 0, reference: generateDepositReference("savings_deposit"), description: "", value_date: "" });
+            withdrawForm.reset({ deposit_kind: "savings_deposit", account_id: lastAccountId, loan_id: "", member_id: "", fee_rule_code: "", amount: 0, reference: generateCashReference("withdraw"), description: "", value_date: "" });
+            shareForm.reset({ deposit_kind: "savings_deposit", account_id: "", loan_id: "", member_id: "", fee_rule_code: "", amount: 0, reference: generateCashReference("share_contribution"), description: "", value_date: "" });
             setDepositAmountInput("");
             setWithdrawAmountInput("");
             setShareAmountInput("");
@@ -899,6 +1164,79 @@ export function CashPage() {
             setProcessing(false);
         }
     };
+
+    const postExpensePayment = expenseForm.handleSubmit(async (values) => {
+        if (!selectedTenantId) {
+            return;
+        }
+        if (expenseReceiptRequired && !expenseReceiptFile) {
+            pushToast({
+                type: "error",
+                title: "Receipt required",
+                message: "Attach the expense receipt or voucher proof before posting this payment."
+            });
+            return;
+        }
+
+        const branchId = selectedBranchId || currentSession?.branch_id || profile?.branch_id || "";
+        if (!branchId) {
+            pushToast({
+                type: "error",
+                title: "Branch required",
+                message: "Select a branch or open a teller session before recording expenditure."
+            });
+            return;
+        }
+
+        setProcessing(true);
+        try {
+            const receiptIds = await uploadReceiptFile({
+                file: expenseReceiptFile,
+                branchId,
+                memberId: null,
+                transactionType: "expense_payment"
+            });
+            const payload: ExpensePaymentRequest = {
+                tenant_id: selectedTenantId,
+                branch_id: branchId,
+                expense_account_id: values.expense_account_id,
+                amount: values.amount,
+                payee: values.payee?.trim() || null,
+                reference: values.reference || null,
+                description: values.description || null,
+                value_date: (canBackdate && values.value_date) ? values.value_date : undefined,
+                receipt_ids: receiptIds
+            };
+            const { data } = await api.post<CashResponse>(endpoints.finance.expensePayment(), payload);
+            pushToast({
+                type: "success",
+                title: "Expense posted",
+                message: data.data.journal_id
+                    ? `Journal ${data.data.journal_id} posted successfully.`
+                    : data.data.message || "SACCO expenditure posted."
+            });
+            setExpenseDialogOpen(false);
+            setExpenseReceiptFile(null);
+            setExpenseAmountInput("");
+            expenseForm.reset({
+                expense_account_id: "",
+                amount: 0,
+                payee: "",
+                reference: generateExpenseReference(),
+                description: "",
+                value_date: ""
+            });
+            await loadCashData();
+        } catch (error) {
+            pushToast({
+                type: "error",
+                title: "Expense posting failed",
+                message: getApiErrorMessage(error)
+            });
+        } finally {
+            setProcessing(false);
+        }
+    });
 
     const loadOperationalBatchFile = async (file: File | null) => {
         setBatchResult(null);
@@ -972,13 +1310,35 @@ export function CashPage() {
                 : shareAmountInput;
     const currentActionAccount = accounts.find((account) => account.id === currentActionValue);
     const currentActionMember = members.find((member) => member.id === currentActionAccount?.member_id);
+    const currentDepositLoan = loans.find((loan) => loan.id === depositForm.watch("loan_id"));
+    const currentDepositLoanMember = members.find((member) => member.id === currentDepositLoan?.member_id);
+    const currentDepositMember = members.find((member) => member.id === depositForm.watch("member_id"));
+    const currentDepositFeeRule = feeRules.find((rule) => rule.code === depositForm.watch("fee_rule_code"));
+    const currentExpenseAccount = expenseAccounts.find((account) => account.id === expenseForm.watch("expense_account_id"));
 
     const dialogTitle =
         actionDialog === "deposit"
-            ? "Start Deposit"
+            ? "Post Cash Receipt"
             : actionDialog === "withdraw"
                 ? "Start Withdrawal"
                 : "Post Share Contribution";
+
+    const openDepositDialog = (kind: DepositKind = "savings_deposit") => {
+        setReceiptFile(null);
+        setDepositAmountInput("");
+        depositForm.reset({
+            deposit_kind: kind,
+            account_id: kind === "savings_deposit" ? (depositForm.getValues("account_id") || defaultAccountId) : "",
+            loan_id: "",
+            member_id: "",
+            fee_rule_code: "",
+            amount: 0,
+            reference: generateDepositReference(kind),
+            description: "",
+            value_date: ""
+        });
+        setActionDialog("deposit");
+    };
 
     useEffect(() => {
         if (!actionDialog) {
@@ -986,7 +1346,11 @@ export function CashPage() {
         }
 
         const form = actionDialog === "deposit" ? depositForm : actionDialog === "withdraw" ? withdrawForm : shareForm;
-        form.setValue("reference", generateCashReference(actionDialog), { shouldDirty: false, shouldValidate: true });
+        form.setValue(
+            "reference",
+            actionDialog === "deposit" ? generateDepositReference(form.getValues("deposit_kind") || "savings_deposit") : generateCashReference(actionDialog),
+            { shouldDirty: false, shouldValidate: true }
+        );
 
         const formattedAmount = formatWholeMoneyInput(String(form.getValues("amount") || ""));
         if (actionDialog === "deposit") {
@@ -1037,10 +1401,7 @@ export function CashPage() {
                             <Button
                                 variant="contained"
                                 startIcon={<CallReceivedRoundedIcon />}
-                                onClick={() => {
-                                    setReceiptFile(null);
-                                    setActionDialog("deposit");
-                                }}
+                                onClick={() => openDepositDialog("savings_deposit")}
                                 disabled={tellerSessionRequired}
                                 sx={theme.palette.mode === "dark" ? { bgcolor: cashDeskAccent, color: "#1a1a1a", "&:hover": { bgcolor: cashDeskAccentStrong } } : undefined}
                             >
@@ -1058,6 +1419,27 @@ export function CashPage() {
                                 sx={theme.palette.mode === "dark" ? { borderColor: alpha("#FF8A80", 0.44), color: "#FFAB91", "&:hover": { borderColor: alpha("#FF8A80", 0.7), bgcolor: alpha("#FF8A80", 0.08) } } : undefined}
                             >
                                 Start Withdrawal
+                            </Button>
+                            <Button
+                                variant="outlined"
+                                color="warning"
+                                startIcon={<WalletRoundedIcon />}
+                                onClick={() => {
+                                    setExpenseReceiptFile(null);
+                                    setExpenseAmountInput("");
+                                    expenseForm.reset({
+                                        expense_account_id: "",
+                                        amount: 0,
+                                        payee: "",
+                                        reference: generateExpenseReference(),
+                                        description: "",
+                                        value_date: ""
+                                    });
+                                    setExpenseDialogOpen(true);
+                                }}
+                                disabled={tellerSessionRequired}
+                            >
+                                Record Expense
                             </Button>
                             {SHARE_CAPITAL_ENABLED ? (
                             <Button
@@ -1089,12 +1471,7 @@ export function CashPage() {
                             <Button
                                 variant="outlined"
                                 startIcon={<WalletRoundedIcon />}
-                                onClick={() => {
-                                    setFeeDialogOpen(true);
-                                    setFeeMemberId("");
-                                    setFeeAmount("");
-                                    setFeeReference("");
-                                }}
+                                onClick={() => openDepositDialog("membership_fee")}
                                 disabled={tellerSessionRequired}
                                 sx={theme.palette.mode === "dark" ? { borderColor: alpha(cashDeskAccent, 0.44), color: cashDeskAccent, "&:hover": { borderColor: alpha(cashDeskAccent, 0.78), bgcolor: alpha(cashDeskAccent, 0.1) } } : undefined}
                             >
@@ -1337,10 +1714,7 @@ export function CashPage() {
                                                     <Button
                                                         variant="contained"
                                                         startIcon={<CallReceivedRoundedIcon />}
-                                                        onClick={() => {
-                                                            setReceiptFile(null);
-                                                            setActionDialog("deposit");
-                                                        }}
+                                                        onClick={() => openDepositDialog("savings_deposit")}
                                                         disabled={tellerSessionRequired}
                                                         fullWidth
                                                         sx={theme.palette.mode === "dark" ? { bgcolor: cashDeskAccent, color: "#1a1a1a", "&:hover": { bgcolor: cashDeskAccentStrong } } : undefined}
@@ -1632,6 +2006,157 @@ export function CashPage() {
             </MotionModal>
 
             <MotionModal
+                open={expenseDialogOpen}
+                onClose={processing ? undefined : () => {
+                    setExpenseDialogOpen(false);
+                    setExpenseReceiptFile(null);
+                }}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle>Record SACCO Expense</DialogTitle>
+                <DialogContent dividers>
+                    <Stack spacing={2.5} sx={{ pt: 0.5 }}>
+                        <Alert severity="info" variant="outlined">
+                            This posts a payment voucher as cash out: debit the selected expense account and credit the SACCO cash control account.
+                        </Alert>
+                        {expenseReceiptRequired ? (
+                            <Alert severity="warning" variant="outlined">
+                                This amount requires receipt proof before posting.
+                            </Alert>
+                        ) : null}
+                        <Box component="form" id="expense-payment-form" onSubmit={postExpensePayment} sx={{ display: "grid", gap: 2 }}>
+                            <Box>
+                                <Typography variant="caption" color="text.secondary">
+                                    Expense category
+                                </Typography>
+                                <Box sx={{ mt: 0.75 }}>
+                                    <SearchableSelect
+                                        value={expenseForm.watch("expense_account_id") || ""}
+                                        options={expenseAccountOptions}
+                                        placeholder="Search expense account…"
+                                        onChange={(value) => {
+                                            expenseForm.setValue("expense_account_id", value, { shouldValidate: true });
+                                            setTimeout(() => expenseAmountInputRef.current?.focus(), 50);
+                                        }}
+                                    />
+                                </Box>
+                                {expenseForm.formState.errors.expense_account_id ? (
+                                    <Typography variant="caption" color="error" sx={{ mt: 0.75, display: "block" }}>
+                                        {expenseForm.formState.errors.expense_account_id.message}
+                                    </Typography>
+                                ) : null}
+                                {!expenseAccountOptions.length ? (
+                                    <Alert severity="warning" variant="outlined" sx={{ mt: 1.25 }}>
+                                        No expense accounts are configured. Add expense accounts in the chart of accounts before posting expenditure.
+                                    </Alert>
+                                ) : null}
+                            </Box>
+
+                            {currentExpenseAccount ? (
+                                <Alert severity="info" variant="outlined">
+                                    Ledger route: debit {currentExpenseAccount.account_name}, credit SACCO cash/bank.
+                                </Alert>
+                            ) : null}
+
+                            <TextField
+                                label="Amount paid"
+                                fullWidth
+                                inputRef={expenseAmountInputRef}
+                                value={expenseAmountInput}
+                                onChange={(event) => {
+                                    const digits = event.target.value.replace(/[^\d]/g, "");
+                                    const formatted = formatWholeMoneyInput(digits);
+                                    setExpenseAmountInput(formatted);
+                                    expenseForm.setValue("amount", digits ? Number(digits) : 0, { shouldValidate: true, shouldDirty: true });
+                                }}
+                                error={Boolean(expenseForm.formState.errors.amount)}
+                                helperText={expenseForm.formState.errors.amount?.message || "This reduces the teller's expected cash."}
+                                inputProps={{ inputMode: "numeric" }}
+                                InputProps={{ startAdornment: <InputAdornment position="start">TSh</InputAdornment> }}
+                                sx={{ "& .MuiInputBase-input": { fontSize: "1.5rem", fontWeight: 700, py: 1.2 } }}
+                            />
+
+                            <TextField
+                                label="Payee / vendor (optional)"
+                                fullWidth
+                                placeholder="Bank, supplier, staff, vendor..."
+                                {...expenseForm.register("payee")}
+                                error={Boolean(expenseForm.formState.errors.payee)}
+                                helperText={expenseForm.formState.errors.payee?.message}
+                            />
+
+                            <TextField
+                                label="Reference"
+                                fullWidth
+                                placeholder="Voucher, bank slip, mobile money, or receipt number"
+                                {...expenseForm.register("reference")}
+                                error={Boolean(expenseForm.formState.errors.reference)}
+                                helperText={expenseForm.formState.errors.reference?.message || "Auto-generated if you leave this unchanged."}
+                            />
+
+                            {canBackdate ? (
+                                <TextField
+                                    label="Value date (optional backdate)"
+                                    type="date"
+                                    fullWidth
+                                    InputLabelProps={{ shrink: true }}
+                                    inputProps={{ min: backdateMinDate, max: todayDate }}
+                                    {...expenseForm.register("value_date")}
+                                    helperText="Backdate up to 7 days when the expenditure happened earlier. The audit timestamp remains the real entry time."
+                                />
+                            ) : null}
+
+                            <TextField
+                                label="Notes (optional)"
+                                fullWidth
+                                multiline
+                                minRows={2}
+                                placeholder="Payment voucher details, bank charge note, receipt number..."
+                                {...expenseForm.register("description")}
+                                error={Boolean(expenseForm.formState.errors.description)}
+                                helperText={expenseForm.formState.errors.description?.message}
+                            />
+
+                            <Box>
+                                <InputLabel shrink htmlFor="expense-receipt-upload">
+                                    Receipt / voucher proof
+                                </InputLabel>
+                                <TextField
+                                    id="expense-receipt-upload"
+                                    type="file"
+                                    fullWidth
+                                    inputProps={{
+                                        accept: receiptPolicy?.allowed_mime_types?.join(",") || "image/jpeg,image/png,application/pdf"
+                                    }}
+                                    onChange={(event) => {
+                                        const file = (event.target as HTMLInputElement).files?.[0] || null;
+                                        setExpenseReceiptFile(file);
+                                    }}
+                                    helperText={
+                                        expenseReceiptFile
+                                            ? `${expenseReceiptFile.name} selected`
+                                            : `Allowed: ${(receiptPolicy?.allowed_mime_types || []).join(", ") || "image/jpeg, image/png, application/pdf"}`
+                                    }
+                                />
+                            </Box>
+                        </Box>
+                    </Stack>
+                </DialogContent>
+                <DialogActions sx={{ px: 3, py: 2 }}>
+                    <Button onClick={() => {
+                        setExpenseDialogOpen(false);
+                        setExpenseReceiptFile(null);
+                    }} disabled={processing} color="inherit">
+                        Cancel
+                    </Button>
+                    <Button form="expense-payment-form" type="submit" variant="contained" color="warning" disabled={processing || !expenseAccountOptions.length}>
+                        {processing ? "Posting..." : "Post Expense"}
+                    </Button>
+                </DialogActions>
+            </MotionModal>
+
+            <MotionModal
                 open={Boolean(actionDialog)}
                 onClose={processing ? undefined : () => {
                     setActionDialog(null);
@@ -1645,7 +2170,7 @@ export function CashPage() {
                     <Stack spacing={2.5} sx={{ pt: 0.5 }}>
                         <Typography variant="body2" color="text.secondary">
                             {actionDialog === "deposit"
-                                ? "Select the member savings account, enter the amount, and review before posting."
+                                ? "Choose what the cash receipt is for. Savings, loan repayments, and SACCO revenue are posted through their own ledger procedures."
                                 : actionDialog === "withdraw"
                                     ? "Choose the member savings account and confirm the withdrawal details before posting."
                                     : "Choose the member share account and capture the contribution details before posting."}
@@ -1668,28 +2193,136 @@ export function CashPage() {
                             }
                             sx={{ display: "grid", gap: 2 }}
                         >
-                            <Box>
-                                <Typography variant="caption" color="text.secondary">
-                                    Account
-                                </Typography>
-                                <Box sx={{ mt: 0.75 }}>
-                                    <SearchableSelect
-                                        value={currentForm.watch("account_id")}
-                                        options={currentActionOptions}
-                                        placeholder="Search by member name, phone, or account…"
-                                        onChange={(value) => {
-                                            currentForm.setValue("account_id", value, { shouldValidate: true });
-                                            // Jump straight to the amount once a member is chosen.
-                                            setTimeout(() => amountInputRef.current?.focus(), 50);
-                                        }}
-                                    />
-                                </Box>
-                                {currentForm.formState.errors.account_id ? (
-                                    <Typography variant="caption" color="error" sx={{ mt: 0.75, display: "block" }}>
-                                        {currentForm.formState.errors.account_id.message}
+                            {actionDialog === "deposit" ? (
+                                <TextField
+                                    select
+                                    label="Receipt type"
+                                    fullWidth
+                                    value={depositKind}
+                                    onChange={(event) => {
+                                        const nextKind = event.target.value as DepositKind;
+                                        depositForm.setValue("deposit_kind", nextKind, { shouldValidate: true, shouldDirty: true });
+                                        depositForm.setValue("account_id", nextKind === "savings_deposit" ? (depositForm.getValues("account_id") || defaultAccountId) : "", { shouldValidate: false });
+                                        depositForm.setValue("loan_id", "", { shouldValidate: false });
+                                        depositForm.setValue("member_id", "", { shouldValidate: false });
+                                        depositForm.setValue("fee_rule_code", "", { shouldValidate: false });
+                                        depositForm.setValue("reference", generateDepositReference(nextKind), { shouldValidate: true });
+                                    }}
+                                    helperText="This controls the accounting route: member savings, loan repayment, membership fee, or SACCO revenue."
+                                >
+                                    <MenuItem value="savings_deposit">Normal savings deposit</MenuItem>
+                                    <MenuItem value="loan_repayment">Loan repayment</MenuItem>
+                                    <MenuItem value="membership_fee">Membership fee</MenuItem>
+                                    <MenuItem value="fee_revenue">Other SACCO revenue / fee</MenuItem>
+                                </TextField>
+                            ) : null}
+
+                            {(actionDialog !== "deposit" || depositKind === "savings_deposit") ? (
+                                <Box>
+                                    <Typography variant="caption" color="text.secondary">
+                                        Account
                                     </Typography>
-                                ) : null}
-                            </Box>
+                                    <Box sx={{ mt: 0.75 }}>
+                                        <SearchableSelect
+                                            value={currentForm.watch("account_id") || ""}
+                                            options={currentActionOptions}
+                                            placeholder="Search by member name, phone, or account…"
+                                            onChange={(value) => {
+                                                currentForm.setValue("account_id", value, { shouldValidate: true });
+                                                // Jump straight to the amount once a member is chosen.
+                                                setTimeout(() => amountInputRef.current?.focus(), 50);
+                                            }}
+                                        />
+                                    </Box>
+                                    {currentForm.formState.errors.account_id ? (
+                                        <Typography variant="caption" color="error" sx={{ mt: 0.75, display: "block" }}>
+                                            {currentForm.formState.errors.account_id.message}
+                                        </Typography>
+                                    ) : null}
+                                </Box>
+                            ) : null}
+
+                            {actionDialog === "deposit" && depositKind === "loan_repayment" ? (
+                                <Box>
+                                    <Typography variant="caption" color="text.secondary">
+                                        Loan facility
+                                    </Typography>
+                                    <Box sx={{ mt: 0.75 }}>
+                                        <SearchableSelect
+                                            value={depositForm.watch("loan_id") || ""}
+                                            options={loanRepaymentOptions}
+                                            placeholder="Search by member name or loan number…"
+                                            onChange={(value) => {
+                                                depositForm.setValue("loan_id", value, { shouldValidate: true });
+                                                setTimeout(() => amountInputRef.current?.focus(), 50);
+                                            }}
+                                        />
+                                    </Box>
+                                    {depositForm.formState.errors.loan_id ? (
+                                        <Typography variant="caption" color="error" sx={{ mt: 0.75, display: "block" }}>
+                                            {depositForm.formState.errors.loan_id.message}
+                                        </Typography>
+                                    ) : null}
+                                    {!loanRepaymentOptions.length ? (
+                                        <Alert severity="info" variant="outlined" sx={{ mt: 1.25 }}>
+                                            No active or in-arrears loans are visible for this branch.
+                                        </Alert>
+                                    ) : null}
+                                </Box>
+                            ) : null}
+
+                            {actionDialog === "deposit" && depositKind === "membership_fee" ? (
+                                <Box>
+                                    <Typography variant="caption" color="text.secondary">
+                                        Member paying membership fee
+                                    </Typography>
+                                    <Box sx={{ mt: 0.75 }}>
+                                        <SearchableSelect
+                                            value={depositForm.watch("member_id") || ""}
+                                            options={membershipMemberOptions}
+                                            placeholder={loadingPendingFeeMembers ? "Loading approved members…" : "Search by member name, number, or phone…"}
+                                            onChange={(value) => {
+                                                depositForm.setValue("member_id", value, { shouldValidate: true });
+                                                setTimeout(() => amountInputRef.current?.focus(), 50);
+                                            }}
+                                        />
+                                    </Box>
+                                    {depositForm.formState.errors.member_id ? (
+                                        <Typography variant="caption" color="error" sx={{ mt: 0.75, display: "block" }}>
+                                            {depositForm.formState.errors.member_id.message}
+                                        </Typography>
+                                    ) : null}
+                                </Box>
+                            ) : null}
+
+                            {actionDialog === "deposit" && depositKind === "fee_revenue" ? (
+                                <Box>
+                                    <Typography variant="caption" color="text.secondary">
+                                        Revenue / fee rule
+                                    </Typography>
+                                    <Box sx={{ mt: 0.75 }}>
+                                        <SearchableSelect
+                                            value={depositForm.watch("fee_rule_code") || ""}
+                                            options={feeRuleOptions}
+                                            placeholder="Search by fee name or code…"
+                                            onChange={(value) => {
+                                                depositForm.setValue("fee_rule_code", value, { shouldValidate: true });
+                                                setTimeout(() => amountInputRef.current?.focus(), 50);
+                                            }}
+                                        />
+                                    </Box>
+                                    {depositForm.formState.errors.fee_rule_code ? (
+                                        <Typography variant="caption" color="error" sx={{ mt: 0.75, display: "block" }}>
+                                            {depositForm.formState.errors.fee_rule_code.message}
+                                        </Typography>
+                                    ) : null}
+                                    {!feeRuleOptions.length ? (
+                                        <Alert severity="warning" variant="outlined" sx={{ mt: 1.25 }}>
+                                            No active fee or revenue rules are configured. Branch manager must configure one with an income account first.
+                                        </Alert>
+                                    ) : null}
+                                </Box>
+                            ) : null}
 
                             {currentActionAccount ? (
                                 <Grid container spacing={1.5}>
@@ -1730,6 +2363,47 @@ export function CashPage() {
                                 </Grid>
                             ) : null}
 
+                            {actionDialog === "deposit" && depositKind === "loan_repayment" && currentDepositLoan ? (
+                                <Grid container spacing={1.5}>
+                                    <Grid size={{ xs: 12, sm: 4 }}>
+                                        <Box sx={{ p: 1.5, border: `1px solid ${theme.palette.divider}`, borderRadius: 2, bgcolor: alpha(theme.palette.background.default, 0.45) }}>
+                                            <Typography variant="caption" color="text.secondary">Borrower</Typography>
+                                            <Typography variant="body2" sx={{ mt: 0.5, fontWeight: 600 }}>
+                                                {currentDepositLoanMember?.full_name || "Unknown member"}
+                                            </Typography>
+                                        </Box>
+                                    </Grid>
+                                    <Grid size={{ xs: 12, sm: 4 }}>
+                                        <Box sx={{ p: 1.5, border: `1px solid ${theme.palette.divider}`, borderRadius: 2, bgcolor: alpha(theme.palette.background.default, 0.45) }}>
+                                            <Typography variant="caption" color="text.secondary">Outstanding</Typography>
+                                            <Typography variant="body2" sx={{ mt: 0.5, fontWeight: 600 }}>
+                                                {formatCurrency(Number(currentDepositLoan.outstanding_principal || 0) + Number(currentDepositLoan.accrued_interest || 0))}
+                                            </Typography>
+                                        </Box>
+                                    </Grid>
+                                    <Grid size={{ xs: 12, sm: 4 }}>
+                                        <Box sx={{ p: 1.5, border: `1px solid ${theme.palette.divider}`, borderRadius: 2, bgcolor: alpha(theme.palette.background.default, 0.45) }}>
+                                            <Typography variant="caption" color="text.secondary">Ledger route</Typography>
+                                            <Typography variant="body2" sx={{ mt: 0.5, fontWeight: 600 }}>
+                                                Cash to loan principal/interest
+                                            </Typography>
+                                        </Box>
+                                    </Grid>
+                                </Grid>
+                            ) : null}
+
+                            {actionDialog === "deposit" && depositKind === "membership_fee" && currentDepositMember ? (
+                                <Alert severity="info" variant="outlined">
+                                    Membership fee will be posted as SACCO income and linked to {currentDepositMember.full_name}. The member can be activated once the configured fee is fully paid.
+                                </Alert>
+                            ) : null}
+
+                            {actionDialog === "deposit" && depositKind === "fee_revenue" && currentDepositFeeRule ? (
+                                <Alert severity="info" variant="outlined">
+                                    This posts to the SACCO cash control account and credits the income account configured on {currentDepositFeeRule.name}.
+                                </Alert>
+                            ) : null}
+
                             <TextField
                                 label="Amount"
                                 fullWidth
@@ -1756,7 +2430,7 @@ export function CashPage() {
                                 sx={{ "& .MuiInputBase-input": { fontSize: "1.5rem", fontWeight: 700, py: 1.2 } }}
                             />
 
-                            {canBackdate ? (
+                            {canBackdate && (actionDialog !== "deposit" || depositKind === "savings_deposit") ? (
                                 <TextField
                                     label="Value date (optional backdate)"
                                     type="date"
@@ -1774,8 +2448,14 @@ export function CashPage() {
                                 multiline
                                 minRows={2}
                                 placeholder={
-                                    actionDialog === "deposit"
-                                        ? "Counter savings deposit"
+                                    actionDialog === "deposit" && depositKind === "loan_repayment"
+                                        ? "Counter loan repayment"
+                                        : actionDialog === "deposit" && depositKind === "membership_fee"
+                                            ? "Counter membership fee"
+                                            : actionDialog === "deposit" && depositKind === "fee_revenue"
+                                                ? "Counter SACCO revenue collection"
+                                                : actionDialog === "deposit"
+                                                    ? "Counter savings deposit"
                                         : actionDialog === "withdraw"
                                             ? "Member withdrawal"
                                             : "Monthly share capital contribution"
@@ -1820,8 +2500,14 @@ export function CashPage() {
                     <Button form="cash-action-form" type="submit" variant="contained" disabled={processing}>
                         {processing
                             ? "Posting…"
-                            : actionDialog === "deposit"
-                                ? "Post Deposit"
+                            : actionDialog === "deposit" && depositKind === "loan_repayment"
+                                ? "Post Loan Repayment"
+                                : actionDialog === "deposit" && depositKind === "membership_fee"
+                                    ? "Post Membership Fee"
+                                    : actionDialog === "deposit" && depositKind === "fee_revenue"
+                                        ? "Post SACCO Revenue"
+                                        : actionDialog === "deposit"
+                                            ? "Post Deposit"
                                 : actionDialog === "withdraw"
                                     ? "Post Withdrawal"
                                     : "Post Share Contribution"}

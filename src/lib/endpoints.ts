@@ -47,6 +47,7 @@ import type {
     LoanCapacityDashboard,
     LoanGuarantor,
     CollateralItem,
+    ChartOfAccountOption,
     SavingsProduct,
     ShareProduct,
     FeeRule,
@@ -223,6 +224,8 @@ const routeMap = {
         loanDisburse: "/loan/disburse",
         loanRepay: "/loan/repay",
         feeRevenue: "/fee-revenue",
+        expenseAccounts: "/expense-accounts",
+        expensePayment: "/expense-payment",
         operationalBatch: "/operational-batch",
         statements: "/statements"
     },
@@ -482,6 +485,8 @@ export const endpoints = {
         loanDisburse: () => routeMap.finance.loanDisburse,
         loanRepay: () => routeMap.finance.loanRepay,
         feeRevenue: () => routeMap.finance.feeRevenue,
+        expenseAccounts: () => routeMap.finance.expenseAccounts,
+        expensePayment: () => routeMap.finance.expensePayment,
         operationalBatch: () => routeMap.finance.operationalBatch,
         statements: () => routeMap.finance.statements
     },
@@ -1042,6 +1047,7 @@ export type ShareProductsResponse = ApiEnvelope<ShareProduct[]>;
 export type FeeRulesResponse = ApiEnvelope<FeeRule[]>;
 export type PenaltyRulesResponse = ApiEnvelope<PenaltyRule[]>;
 export type PostingRulesResponse = ApiEnvelope<PostingRule[]>;
+export type ExpenseAccountsResponse = ApiEnvelope<ChartOfAccountOption[]>;
 
 export interface CreateMemberLoginRequest {
     email?: string | null;
@@ -1212,13 +1218,13 @@ export interface UpdateReceiptPolicyRequest {
     max_receipts_per_tx: number;
     allowed_mime_types: string[];
     max_file_size_mb: number;
-    enforce_on_types: Array<"deposit" | "withdraw" | "loan_repay" | "loan_disburse" | "share_contribution" | "fee_revenue">;
+    enforce_on_types: Array<"deposit" | "withdraw" | "loan_repay" | "loan_disburse" | "share_contribution" | "fee_revenue" | "expense_payment">;
 }
 
 export interface ReceiptInitRequest {
     branch_id: string;
     member_id?: string | null;
-    transaction_type: "deposit" | "withdraw" | "loan_repay" | "loan_disburse" | "share_contribution" | "fee_revenue";
+    transaction_type: "deposit" | "withdraw" | "loan_repay" | "loan_disburse" | "share_contribution" | "fee_revenue" | "expense_payment";
     file_name: string;
     mime_type: string;
     file_size_bytes: number;
@@ -1737,6 +1743,19 @@ export interface LoanRepaymentRequest {
     amount: number;
     reference?: string | null;
     description?: string | null;
+    receipt_ids?: string[];
+}
+
+export interface ExpensePaymentRequest {
+    tenant_id?: string;
+    branch_id?: string;
+    expense_account_id: string;
+    amount: number;
+    payee?: string | null;
+    reference?: string | null;
+    description?: string | null;
+    value_date?: string;
+    receipt_ids?: string[];
 }
 
 export interface StatementQuery {
