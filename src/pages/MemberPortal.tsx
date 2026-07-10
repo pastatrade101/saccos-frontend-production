@@ -2296,7 +2296,9 @@ export function MemberPortalPage() {
                 params: {
                     tenant_id: profile.tenant_id,
                     page: 1,
-                    limit: 100
+                    limit: 100,
+                    fields: "lookup",
+                    include_total: false
                 }
             }),
             api.get<MemberApplicationResponse>(endpoints.memberApplications.me(), {
@@ -2334,7 +2336,8 @@ export function MemberPortalPage() {
                 params: {
                     tenant_id: profile.tenant_id,
                     page: 1,
-                    limit: 100
+                    limit: 100,
+                    include_total: false
                 }
             }),
             api.get<LoansResponse>(endpoints.finance.loanPortfolio(), {
@@ -2810,7 +2813,13 @@ export function MemberPortalPage() {
                 }
 
                 const { data: membersResponse } = await api.get<MembersResponse>(endpoints.members.list(), {
-                    params: { tenant_id: profile.tenant_id, page: 1, limit: 100 }
+                    params: {
+                        tenant_id: profile.tenant_id,
+                        page: 1,
+                        limit: 100,
+                        fields: "lookup",
+                        include_total: false
+                    }
                 });
                 const memberRecord =
                     (membersResponse.data || []).find((member: Member) => member.user_id === (user?.id || "")) ||
@@ -2842,7 +2851,8 @@ export function MemberPortalPage() {
                         params: {
                             tenant_id: profile.tenant_id,
                             page: 1,
-                            limit: 100
+                            limit: 100,
+                            include_total: false
                         }
                     }),
                     api.get<LoansResponse>(endpoints.finance.loanPortfolio(), {

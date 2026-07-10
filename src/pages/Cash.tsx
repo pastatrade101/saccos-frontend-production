@@ -143,7 +143,7 @@ function loadAllCashAccounts(tenantId: string) {
     return loadAllPaged<MemberAccount>(async (page) => {
         const { data } = await api.get<MemberAccountsResponse & { pagination?: { total: number } }>(
             endpoints.members.accounts(),
-            { params: { tenant_id: tenantId, page, limit: 100 } }
+            { params: { tenant_id: tenantId, page, limit: 100, include_total: false } }
         );
         return { rows: data.data || [], total: data.pagination?.total };
     });
@@ -153,7 +153,7 @@ function loadAllCashMembers(tenantId: string) {
     return loadAllPaged<Member>(async (page) => {
         const { data } = await api.get<MembersResponse & { pagination?: { total: number } }>(
             endpoints.members.list(),
-            { params: { tenant_id: tenantId, page, limit: 100 } }
+            { params: { tenant_id: tenantId, page, limit: 100, fields: "lookup", include_total: false } }
         );
         return { rows: data.data || [], total: data.pagination?.total };
     });
@@ -616,7 +616,14 @@ export function CashPage() {
         let isActive = true;
         setLoadingPendingFeeMembers(true);
         api.get<MembersResponse>(endpoints.members.list(), {
-            params: { tenant_id: selectedTenantId, status: "approved_pending_payment", page: 1, limit: 100 }
+            params: {
+                tenant_id: selectedTenantId,
+                status: "approved_pending_payment",
+                page: 1,
+                limit: 100,
+                fields: "lookup",
+                include_total: false
+            }
         })
             .then(({ data }) => {
                 if (isActive) {

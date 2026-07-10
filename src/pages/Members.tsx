@@ -582,7 +582,8 @@ export function MembersPage() {
                     tenant_id: selectedTenantId,
                     member_ids: scopedMemberIds.join(","),
                     page: 1,
-                    limit: Math.min(Math.max(scopedMemberIds.length * 6, 50), 100)
+                    limit: Math.min(Math.max(scopedMemberIds.length * 6, 50), 100),
+                    include_total: false
                 }
             });
 
@@ -669,7 +670,8 @@ export function MembersPage() {
                     tenant_id: selectedTenantId,
                     member_id: memberId,
                     page: 1,
-                    limit: 100
+                    limit: 100,
+                    include_total: false
                 }
             });
 

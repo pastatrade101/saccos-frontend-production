@@ -11,14 +11,25 @@ export async function loadAllMembers(
 ): Promise<Member[]> {
     const members: Member[] = [];
     let page = 1;
+    const pageSize = Number(extraParams.limit || 500);
     while (page <= 50) {
-        const { data } = await api.get<MembersResponse & { pagination?: { total: number } }>(
+        const { data } = await api.get<MembersResponse & { pagination?: { total?: number | null } }>(
             endpoints.members.list(),
-            { params: { tenant_id: tenantId, page, limit: 100, ...extraParams } }
+            {
+                params: {
+                    tenant_id: tenantId,
+                    page,
+                    limit: pageSize,
+                    fields: "lookup",
+                    include_total: false,
+                    ...extraParams
+                }
+            }
         );
         const rows = data.data || [];
         members.push(...rows);
-        if ((data.pagination?.total && members.length >= data.pagination.total) || rows.length < 100) {
+        const total = Number(data.pagination?.total || 0);
+        if ((total > 0 && members.length >= total) || rows.length < pageSize) {
             break;
         }
         page += 1;

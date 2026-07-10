@@ -73,7 +73,7 @@ function isSavingsActivity(row: StatementRow) {
     return row.transaction_type === "deposit" || isWithdrawal(row);
 }
 
-async function loadAllPages<T>(url: string, params: Record<string, string | number | undefined>) {
+async function loadAllPages<T>(url: string, params: Record<string, string | number | boolean | undefined>) {
     const rows: T[] = [];
 
     for (let page = 1; page <= MAX_PAGE_LOADS; page += 1) {
@@ -89,7 +89,7 @@ async function loadAllPages<T>(url: string, params: Record<string, string | numb
         rows.push(...pageRows);
 
         const total = Number(response.pagination?.total || 0);
-        if (!response.pagination || pageRows.length === 0 || (total > 0 && rows.length >= total)) {
+        if (!response.pagination || pageRows.length < PAGE_LOAD_LIMIT || (total > 0 && rows.length >= total)) {
             break;
         }
     }
@@ -129,11 +129,14 @@ export function SavingsPage() {
             try {
                 const [visibleMembers, visibleAccounts, statementRows] = await Promise.all([
                     loadAllPages<Member>(endpoints.members.list(), {
-                        tenant_id: selectedTenantId
+                        tenant_id: selectedTenantId,
+                        fields: "lookup",
+                        include_total: false
                     }),
                     loadAllPages<MemberAccount>(endpoints.members.accounts(), {
                         tenant_id: selectedTenantId,
-                        product_type: "savings"
+                        product_type: "savings",
+                        include_total: false
                     }),
                     loadAllPages<StatementRow>(endpoints.finance.statements(), {
                         tenant_id: selectedTenantId

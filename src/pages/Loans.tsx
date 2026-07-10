@@ -835,7 +835,13 @@ export function LoansPage() {
 
             for (let page = 1; page <= maxPages; page += 1) {
                 const { data: membersResponse } = await api.get<MembersResponse>(endpoints.members.list(), {
-                    params: { tenant_id: selectedTenantId, page, limit: perPage }
+                    params: {
+                        tenant_id: selectedTenantId,
+                        page,
+                        limit: perPage,
+                        fields: "lookup",
+                        include_total: false
+                    }
                 });
                 const batch = membersResponse.data || [];
                 memberRows.push(...batch);

@@ -259,53 +259,55 @@ function formatSignedPercent(value: number) {
 }
 
 async function loadDashboardMemberAccounts(tenantId: string) {
+    const pageSize = 500;
     const fetchPage = (page: number) =>
-        api.get<MemberAccountsResponse & { pagination?: { total: number; limit: number; page: number } }>(
+        api.get<MemberAccountsResponse & { pagination?: { total?: number | null; limit: number; page: number } }>(
             endpoints.members.accounts(),
-            { params: { tenant_id: tenantId, page, limit: DASHBOARD_ACCOUNTS_PAGE_LIMIT } }
+            { params: { tenant_id: tenantId, page, limit: pageSize, include_total: false } }
         );
 
-    // Page 1 reveals the total; against the remote DB each page is ~1-2s, so fetch
-    // the remaining pages concurrently instead of walking them one at a time.
-    const first = await fetchPage(1);
-    const firstRows = first.data.data || [];
-    const total = first.data.pagination?.total;
+    const accounts: MemberAccount[] = [];
+    for (let page = 1; page <= 20; page += 1) {
+        const response = await fetchPage(page);
+        const rows = response.data.data || [];
+        accounts.push(...rows);
 
-    if (firstRows.length < DASHBOARD_ACCOUNTS_PAGE_LIMIT || !total || firstRows.length >= total) {
-        return firstRows;
+        if (rows.length < pageSize) {
+            break;
+        }
     }
 
-    const totalPages = Math.min(Math.ceil(total / DASHBOARD_ACCOUNTS_PAGE_LIMIT), 20);
-    const restPages = await Promise.all(
-        Array.from({ length: totalPages - 1 }, (_, index) => fetchPage(index + 2).then((res) => res.data.data || []))
-    );
-
-    return firstRows.concat(...restPages);
+    return accounts;
 }
 
 // Paginate members so snapshot totals (count, savings actual, target, reach) cover
 // the whole member base — a single limit:100 fetch silently dropped members beyond
 // 100, making every dashboard total undercount.
 async function loadDashboardMembers(tenantId: string) {
+    const pageSize = 500;
     const fetchPage = (page: number) =>
-        api.get<MembersResponse & { pagination?: { total: number; limit: number; page: number } }>(endpoints.members.list(), {
-            params: { tenant_id: tenantId, page, limit: DASHBOARD_ACCOUNTS_PAGE_LIMIT }
+        api.get<MembersResponse & { pagination?: { total?: number | null; limit: number; page: number } }>(endpoints.members.list(), {
+            params: {
+                tenant_id: tenantId,
+                page,
+                limit: pageSize,
+                fields: "summary",
+                include_total: false
+            }
         });
 
-    const first = await fetchPage(1);
-    const firstRows = first.data.data || [];
-    const total = first.data.pagination?.total;
+    const members: Member[] = [];
+    for (let page = 1; page <= 30; page += 1) {
+        const response = await fetchPage(page);
+        const rows = response.data.data || [];
+        members.push(...rows);
 
-    if (firstRows.length < DASHBOARD_ACCOUNTS_PAGE_LIMIT || !total || firstRows.length >= total) {
-        return firstRows;
+        if (rows.length < pageSize) {
+            break;
+        }
     }
 
-    const totalPages = Math.min(Math.ceil(total / DASHBOARD_ACCOUNTS_PAGE_LIMIT), 30);
-    const restPages = await Promise.all(
-        Array.from({ length: totalPages - 1 }, (_, index) => fetchPage(index + 2).then((res) => res.data.data || []))
-    );
-
-    return firstRows.concat(...restPages);
+    return members;
 }
 
 // The dashboard only needs RECENT statements (7-day cash-flow chart + today's
