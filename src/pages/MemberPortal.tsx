@@ -411,9 +411,12 @@ type ContributionPaymentValues = z.infer<typeof contributionPaymentSchema>;
 type MemberPaymentPurpose = "share_contribution" | "savings_deposit" | "membership_fee" | "loan_repayment";
 type DateRangePreset = "month" | "quarter" | "year" | "custom";
 
-const memberProfileCompletionPhonePattern = /^255[67]\d{8}$/;
+// Tanzania mobile (2556/2557 normalized) OR an international E.164 number with a
+// leading + — the SACCO has diaspora members (+254, +61, +44, +1, ...) whose real
+// numbers must not block profile completion.
+const memberProfileCompletionPhonePattern = /^(?:255[67]\d{8}|\+[1-9]\d{6,14})$/;
 // Coerce stored phone formats (07XXXXXXXX, +2557XXXXXXXX, 7XXXXXXXX) into the
-// 2557XXXXXXXX shape the form expects, so a legacy value doesn't block saving.
+// 2557XXXXXXXX shape the form expects; non-Tanzanian numbers keep their + prefix.
 function normalizePortalPhone(value?: string | null) {
     const digits = String(value || "").replace(/\D/g, "");
     if (!digits) {
@@ -422,13 +425,14 @@ function normalizePortalPhone(value?: string | null) {
     if (digits.startsWith("255")) {
         return digits.slice(0, 12);
     }
-    if (digits.startsWith("0")) {
+    if (digits.startsWith("0") && /^0[67]/.test(digits)) {
         return `255${digits.slice(1)}`.slice(0, 12);
     }
-    if (digits.length === 9) {
+    if (digits.length === 9 && /^[67]/.test(digits)) {
         return `255${digits}`;
     }
-    return digits;
+    // Diaspora / international number — keep it in + format.
+    return `+${digits}`;
 }
 function isAdultPortalDate(value: string) {
     const today = new Date();
@@ -455,7 +459,7 @@ const memberProfileCompletionSchema = z.object({
         .refine((value) => !value || isAdultPortalDate(value), "Member must be at least 18 years old."),
     phone: z.string().trim().optional().or(z.literal("")).refine(
         (value) => !value || memberProfileCompletionPhonePattern.test(value),
-        "Use 2557XXXXXXXX or 2556XXXXXXXX."
+        "Use 2557XXXXXXXX / 2556XXXXXXXX, or an international number starting with + (e.g. +2547...)."
     ),
     email: z.string().trim().optional().or(z.literal("")).refine(
         (value) => !value || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value),
@@ -1324,6 +1328,13 @@ export function MemberPortalPage() {
     const memberProfileRegionId = memberProfileCompletionForm.watch("region_id");
     const memberProfileDistrictId = memberProfileCompletionForm.watch("district_id");
     const memberProfileWardId = memberProfileCompletionForm.watch("ward_id");
+    // Inline error binding for the completion form — every required field must turn
+    // red with its message, or members experience a blocked save as "it doesn't save".
+    const completionFormErrors = memberProfileCompletionForm.formState.errors;
+    const completionFieldError = (name: keyof MemberProfileCompletionValues, fallbackHelper?: string) => {
+        const fieldError = completionFormErrors[name] as { message?: string } | undefined;
+        return { error: Boolean(fieldError), helperText: fieldError?.message || fallbackHelper };
+    };
     const {
         regions,
         districts,
@@ -9753,7 +9764,7 @@ export function MemberPortalPage() {
                                             </Typography>
                                             <Grid container spacing={2}>
                                                 <Grid size={{ xs: 12, md: 6 }}>
-                                                    <TextField fullWidth label="Full name" {...memberProfileCompletionForm.register("full_name")} />
+                                                    <TextField fullWidth label="Full name" {...memberProfileCompletionForm.register("full_name")} {...completionFieldError("full_name")} />
                                                 </Grid>
                                                 <Grid size={{ xs: 12, md: 3 }}>
                                                     <TextField
@@ -9774,6 +9785,7 @@ export function MemberPortalPage() {
                                                         InputLabelProps={{ shrink: true }}
                                                         value={memberProfileCompletionForm.watch("gender") ?? ""}
                                                         {...memberProfileCompletionForm.register("gender")}
+                                                        {...completionFieldError("gender")}
                                                     >
                                                         <MenuItem value="">Not set</MenuItem>
                                                         <MenuItem value="male">Male</MenuItem>
@@ -9784,10 +9796,10 @@ export function MemberPortalPage() {
                                                     <TextField
                                                         fullWidth
                                                         label="Phone number"
-                                                        placeholder="2557XXXXXXXX"
+                                                        placeholder="2557XXXXXXXX or +2547XXXXXXXX"
                                                         {...memberProfileCompletionForm.register("phone")}
                                                         error={Boolean(memberProfileCompletionForm.formState.errors.phone)}
-                                                        helperText={memberProfileCompletionForm.formState.errors.phone?.message || "Use Tanzania format starting with 255."}
+                                                        helperText={memberProfileCompletionForm.formState.errors.phone?.message || "Tanzania format starting with 255, or an international number starting with +."}
                                                     />
                                                 </Grid>
                                                 <Grid size={{ xs: 12, md: 4 }}>
@@ -9807,6 +9819,7 @@ export function MemberPortalPage() {
                                                         InputLabelProps={{ shrink: true }}
                                                         value={memberProfileCompletionForm.watch("marital_status") ?? ""}
                                                         {...memberProfileCompletionForm.register("marital_status")}
+                                                        {...completionFieldError("marital_status")}
                                                     >
                                                         <MenuItem value="">Not set</MenuItem>
                                                         <MenuItem value="single">Single</MenuItem>
@@ -9816,10 +9829,10 @@ export function MemberPortalPage() {
                                                     </TextField>
                                                 </Grid>
                                                 <Grid size={{ xs: 12, md: 4 }}>
-                                                    <TextField fullWidth label="Occupation" {...memberProfileCompletionForm.register("occupation")} />
+                                                    <TextField fullWidth label="Occupation" {...memberProfileCompletionForm.register("occupation")} {...completionFieldError("occupation")} />
                                                 </Grid>
                                                 <Grid size={{ xs: 12, md: 4 }}>
-                                                    <TextField fullWidth label="Employer name" {...memberProfileCompletionForm.register("employer")} />
+                                                    <TextField fullWidth label="Employer name" {...memberProfileCompletionForm.register("employer")} {...completionFieldError("employer")} />
                                                 </Grid>
                                                 <Grid size={{ xs: 12, md: 4 }}>
                                                     <TextField
@@ -9877,7 +9890,8 @@ export function MemberPortalPage() {
                                                 label="Region"
                                                 loading={loadingRegions}
                                                 placeholder={loadingRegions ? "Loading regions..." : "Search region..."}
-                                                helperText="Select the member's region."
+                                                error={Boolean(completionFormErrors.region_id)}
+                                                helperText={completionFormErrors.region_id?.message || "Select the member's region."}
                                                 onChange={(value) => {
                                                     const selectedRegion = regions.find((item) => item.id === value);
                                                     memberProfileCompletionForm.setValue("region_id", value, { shouldValidate: true });
@@ -9897,7 +9911,8 @@ export function MemberPortalPage() {
                                                 disabled={!memberProfileRegionId}
                                                 loading={loadingDistricts}
                                                 placeholder={memberProfileRegionId ? (loadingDistricts ? "Loading districts..." : "Search district...") : "Select a region first"}
-                                                helperText="Districts are filtered by the selected region."
+                                                error={Boolean(completionFormErrors.district_id)}
+                                                helperText={completionFormErrors.district_id?.message || "Districts are filtered by the selected region."}
                                                 onChange={(value) => {
                                                     const selectedDistrict = districts.find((item) => item.id === value);
                                                     memberProfileCompletionForm.setValue("district_id", value, { shouldValidate: true });
@@ -9915,7 +9930,8 @@ export function MemberPortalPage() {
                                                 disabled={!memberProfileDistrictId}
                                                 loading={loadingWards}
                                                 placeholder={memberProfileDistrictId ? (loadingWards ? "Loading wards..." : "Search ward...") : "Select a district first"}
-                                                helperText="Wards are filtered by the selected district."
+                                                error={Boolean(completionFormErrors.ward_id)}
+                                                helperText={completionFormErrors.ward_id?.message || "Wards are filtered by the selected district."}
                                                 onChange={(value) => {
                                                     const selectedWard = wards.find((item) => item.id === value);
                                                     memberProfileCompletionForm.setValue("ward_id", value, { shouldValidate: true });
@@ -9948,7 +9964,7 @@ export function MemberPortalPage() {
                                                 maxRows={3}
                                                 label="Residential address"
                                                 {...memberProfileCompletionForm.register("residential_address")}
-                                                helperText="Add house number, plot, landmark, or extra address detail."
+                                                {...completionFieldError("residential_address", "Add house number, plot, landmark, or extra address detail.")}
                                             />
                                         </Stack>
                                     </Paper>
@@ -9960,13 +9976,14 @@ export function MemberPortalPage() {
                                             <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
                                                 Next of kin
                                             </Typography>
-                                            <TextField fullWidth label="Next of kin name" {...memberProfileCompletionForm.register("next_of_kin_name")} />
+                                            <TextField fullWidth label="Next of kin name" {...memberProfileCompletionForm.register("next_of_kin_name")} {...completionFieldError("next_of_kin_name")} />
                                             <TextField
                                                 select
                                                 fullWidth
                                                 label="Relationship"
                                                 value={memberProfileCompletionForm.watch("next_of_kin_relationship")}
                                                 onChange={(event) => memberProfileCompletionForm.setValue("next_of_kin_relationship", event.target.value, { shouldValidate: true })}
+                                                {...completionFieldError("next_of_kin_relationship")}
                                             >
                                                 <MenuItem value="">Select relationship</MenuItem>
                                                 {NEXT_OF_KIN_RELATIONSHIP_OPTIONS.map((option) => (
@@ -9982,7 +9999,7 @@ export function MemberPortalPage() {
                                                     </MenuItem>
                                                 ) : null}
                                             </TextField>
-                                            <TextField fullWidth label="Phone number" {...memberProfileCompletionForm.register("next_of_kin_phone")} />
+                                            <TextField fullWidth label="Phone number" {...memberProfileCompletionForm.register("next_of_kin_phone")} {...completionFieldError("next_of_kin_phone")} />
                                             <TextField
                                                 fullWidth
                                                 multiline
@@ -10024,7 +10041,7 @@ export function MemberPortalPage() {
                                                     </TextField>
                                                 </Grid>
                                                 <Grid size={{ xs: 12, md: 4 }}>
-                                                    <TextField fullWidth label="Heir name (Mrithi)" {...memberProfileCompletionForm.register("heir_name")} />
+                                                    <TextField fullWidth label="Heir name (Mrithi)" {...memberProfileCompletionForm.register("heir_name")} {...completionFieldError("heir_name")} />
                                                 </Grid>
                                                 <Grid size={{ xs: 12, md: 4 }}>
                                                     <TextField
@@ -10033,6 +10050,7 @@ export function MemberPortalPage() {
                                                         label="Heir relationship"
                                                         value={memberProfileCompletionForm.watch("heir_relationship")}
                                                         onChange={(event) => memberProfileCompletionForm.setValue("heir_relationship", event.target.value, { shouldValidate: true })}
+                                                        {...completionFieldError("heir_relationship")}
                                                     >
                                                         <MenuItem value="">Select relationship</MenuItem>
                                                         {NEXT_OF_KIN_RELATIONSHIP_OPTIONS.map((option) => (
@@ -10043,30 +10061,44 @@ export function MemberPortalPage() {
                                                     </TextField>
                                                 </Grid>
                                                 <Grid size={{ xs: 12, md: 4 }}>
-                                                    <TextField fullWidth label="Heir phone" {...memberProfileCompletionForm.register("heir_phone")} />
+                                                    <TextField fullWidth label="Heir phone" {...memberProfileCompletionForm.register("heir_phone")} {...completionFieldError("heir_phone")} />
                                                 </Grid>
                                                 <Grid size={{ xs: 12, md: 8 }}>
                                                     <TextField fullWidth label="Heir address" {...memberProfileCompletionForm.register("heir_address")} />
                                                 </Grid>
                                             </Grid>
-                                            <FormControlLabel
-                                                control={
-                                                    <Checkbox
-                                                        checked={Boolean(memberProfileCompletionForm.watch("legitimate_income_declared"))}
-                                                        onChange={(event) => memberProfileCompletionForm.setValue("legitimate_income_declared", event.target.checked, { shouldValidate: true })}
-                                                    />
-                                                }
-                                                label="I confirm I have a legitimate source of income (by-laws §10c)."
-                                            />
-                                            <FormControlLabel
-                                                control={
-                                                    <Checkbox
-                                                        checked={Boolean(memberProfileCompletionForm.watch("no_conflicting_business_declared"))}
-                                                        onChange={(event) => memberProfileCompletionForm.setValue("no_conflicting_business_declared", event.target.checked, { shouldValidate: true })}
-                                                    />
-                                                }
-                                                label="I confirm I have no conflicting savings or lending business (by-laws §10f)."
-                                            />
+                                            <Box>
+                                                <FormControlLabel
+                                                    control={
+                                                        <Checkbox
+                                                            checked={Boolean(memberProfileCompletionForm.watch("legitimate_income_declared"))}
+                                                            onChange={(event) => memberProfileCompletionForm.setValue("legitimate_income_declared", event.target.checked, { shouldValidate: true })}
+                                                        />
+                                                    }
+                                                    label="I confirm I have a legitimate source of income (by-laws §10c)."
+                                                />
+                                                {completionFormErrors.legitimate_income_declared ? (
+                                                    <Typography variant="caption" color="error" display="block" sx={{ ml: 4 }}>
+                                                        {completionFormErrors.legitimate_income_declared.message}
+                                                    </Typography>
+                                                ) : null}
+                                            </Box>
+                                            <Box>
+                                                <FormControlLabel
+                                                    control={
+                                                        <Checkbox
+                                                            checked={Boolean(memberProfileCompletionForm.watch("no_conflicting_business_declared"))}
+                                                            onChange={(event) => memberProfileCompletionForm.setValue("no_conflicting_business_declared", event.target.checked, { shouldValidate: true })}
+                                                        />
+                                                    }
+                                                    label="I confirm I have no conflicting savings or lending business (by-laws §10f)."
+                                                />
+                                                {completionFormErrors.no_conflicting_business_declared ? (
+                                                    <Typography variant="caption" color="error" display="block" sx={{ ml: 4 }}>
+                                                        {completionFormErrors.no_conflicting_business_declared.message}
+                                                    </Typography>
+                                                ) : null}
+                                            </Box>
                                         </Stack>
                                     </Paper>
                                 </Grid>
