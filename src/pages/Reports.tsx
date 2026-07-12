@@ -31,13 +31,14 @@ import { useToast } from "../components/Toast";
 import { api, getApiErrorMessage } from "../lib/api";
 import {
     endpoints,
+    type MemberAccountsResponse,
     type ReportExportJobCreateResponse,
     type ReportExportJobDownloadResponse,
     type ReportExportJobResponse,
     type SaccoFinancialYearSettingsResponse
 } from "../lib/endpoints";
-import { supabase } from "../lib/supabase";
-import type { MemberAccount, SaccoFinancialYearSettings } from "../types/api";
+import { loadAllMembers } from "../lib/loadAllMembers";
+import type { Member, MemberAccount, SaccoFinancialYearSettings } from "../types/api";
 import { MotionCard } from "../ui/motion";
 import { downloadFile } from "../utils/downloadFile";
 import {
@@ -111,6 +112,7 @@ export function ReportsPage() {
     const { pushToast } = useToast();
     const { selectedTenantId } = useAuth();
     const [accounts, setAccounts] = useState<MemberAccount[]>([]);
+    const [membersById, setMembersById] = useState<Map<string, Member>>(new Map());
     const [financialYearSettings, setFinancialYearSettings] = useState<SaccoFinancialYearSettings>(DEFAULT_SACCO_FINANCIAL_YEAR_SETTINGS);
     const [downloading, setDownloading] = useState<string | null>(null);
     const todayIso = useMemo(() => getTodayIso(), []);
@@ -153,12 +155,52 @@ export function ReportsPage() {
             return;
         }
 
-        void supabase
-            .from("member_accounts")
-            .select("*")
-            .eq("tenant_id", selectedTenantId)
-            .is("deleted_at", null)
-            .then(({ data }) => setAccounts((data || []) as MemberAccount[]));
+        let isActive = true;
+
+        // Load accounts + members through the API (branch-scoped, paginated). The old
+        // direct Supabase read was blocked by RLS for staff clients, so the selector
+        // rendered empty — and it had no member names to search by.
+        const loadSelectorData = async () => {
+            const loadAllAccounts = async () => {
+                const all: MemberAccount[] = [];
+                let page = 1;
+                while (page <= 50) {
+                    const { data } = await api.get<MemberAccountsResponse & { pagination?: { total: number } }>(
+                        endpoints.members.accounts(),
+                        { params: { tenant_id: selectedTenantId, page, limit: 100 } }
+                    );
+                    const rows = data.data || [];
+                    all.push(...rows);
+                    if ((data.pagination?.total && all.length >= data.pagination.total) || rows.length < 100) {
+                        break;
+                    }
+                    page += 1;
+                }
+                return all;
+            };
+
+            try {
+                const [members, accountRows] = await Promise.all([
+                    loadAllMembers(selectedTenantId),
+                    loadAllAccounts()
+                ]);
+
+                if (isActive) {
+                    setMembersById(new Map(members.map((member) => [member.id, member])));
+                    setAccounts(accountRows);
+                }
+            } catch {
+                if (isActive) {
+                    setAccounts([]);
+                }
+            }
+        };
+
+        void loadSelectorData();
+
+        return () => {
+            isActive = false;
+        };
     }, [selectedTenantId]);
 
     useEffect(() => {
@@ -198,11 +240,19 @@ export function ReportsPage() {
         form.setValue("to_date", todayIso, { shouldValidate: true });
     }, [financialForm, form, todayIso, yearStartIso]);
 
-    const accountOptions = accounts.map((account) => ({
-        value: account.id,
-        label: account.account_number,
-        secondary: account.account_name
-    }));
+    const accountOptions = accounts.map((account) => {
+        const member = membersById.get(account.member_id);
+        const productLabel = account.product_type === "savings"
+            ? "Savings"
+            : account.product_type === "shares"
+                ? "Shares"
+                : "Fixed deposit";
+        return {
+            value: account.id,
+            label: member ? `${member.full_name} — ${account.account_number}` : account.account_number,
+            secondary: [productLabel, member?.member_no].filter(Boolean).join(" · ")
+        };
+    });
 
     const performAsyncReportDownload = async (
         key: string,
