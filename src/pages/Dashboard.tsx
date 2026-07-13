@@ -1597,10 +1597,8 @@ export function DashboardPage() {
         manualDividendBatches: [],
         dailyCashSummary: []
     });
-    const [fundingSources, setFundingSources] = useState<import("../lib/endpoints").FundingSourceSummaryData | null>(null);
     const [financialYearSettings, setFinancialYearSettings] = useState<SaccoFinancialYearSettings>(DEFAULT_SACCO_FINANCIAL_YEAR_SETTINGS);
     const [performanceTargetSettings, setPerformanceTargetSettings] = useState<SaccoPerformanceTargetSettings>(DEFAULT_SACCO_PERFORMANCE_TARGET_SETTINGS);
-    const [targetWatchFilter, setTargetWatchFilter] = useState<TargetWatchFilter>("needs_action");
     const [branchActivityView, setBranchActivityView] = useState<BranchActivityView>("chart");
     const [branchActivityFilter, setBranchActivityFilter] = useState<BranchActivityFilter>("all");
     const [branchActivityWindow, setBranchActivityWindow] = useState<BranchActivityWindow>("30");
@@ -1956,38 +1954,6 @@ export function DashboardPage() {
             isActive = false;
         };
     }, [branchScopeKey, isInternalOps, profile?.role, selectedTenantId]);
-
-    // Funding-source breakdown (M-KOBA / NMB / UTT / Loan ...). Self-contained and
-    // failure-tolerant so it never blocks the rest of the dashboard.
-    useEffect(() => {
-        let isActive = true;
-        if (!selectedTenantId || profile?.role === "member") {
-            setFundingSources(null);
-            return;
-        }
-        (async () => {
-            try {
-                const data = await cachedGet(
-                    `dash:funding:${selectedTenantId}:${branchScopeKey}`,
-                    async () => (await api.get<import("../lib/endpoints").FundingSourceSummaryResponse>(
-                        endpoints.reports.fundingSources()
-                    )).data.data,
-                    DASHBOARD_CACHE_TTL_MS,
-                    (fresh) => { if (isActive) setFundingSources(fresh); }
-                );
-                if (isActive) {
-                    setFundingSources(data);
-                }
-            } catch {
-                if (isActive) {
-                    setFundingSources(null);
-                }
-            }
-        })();
-        return () => {
-            isActive = false;
-        };
-    }, [branchScopeKey, profile?.role, selectedTenantId]);
 
     const financialYearPeriod = useMemo(() => resolveFinancialYearPeriod(financialYearSettings), [financialYearSettings]);
 
@@ -2534,101 +2500,6 @@ export function DashboardPage() {
     ];
     const branchTargetReachPercent = memberPerformanceSummary.averageReachPercent;
     const branchTargetProgressValue = Math.min(Math.max(branchTargetReachPercent, 0), 100);
-    const targetWatchFilterOptions: Array<{ value: TargetWatchFilter; label: string; count: number }> = [
-        {
-            value: "needs_action",
-            label: "Needs action",
-            count: memberPerformanceRows.filter((row) => matchesTargetWatchFilter(row, "needs_action", performanceTargetSettings)).length
-        },
-        {
-            value: "no_activity",
-            label: "No activity",
-            count: memberPerformanceRows.filter((row) => matchesTargetWatchFilter(row, "no_activity", performanceTargetSettings)).length
-        },
-        {
-            value: "needs_top_up",
-            label: "Top-up",
-            count: memberPerformanceRows.filter((row) => matchesTargetWatchFilter(row, "needs_top_up", performanceTargetSettings)).length
-        },
-        {
-            value: "building",
-            label: "Building",
-            count: memberPerformanceRows.filter((row) => matchesTargetWatchFilter(row, "building", performanceTargetSettings)).length
-        },
-        {
-            value: "on_track",
-            label: "On track",
-            count: memberPerformanceRows.filter((row) => matchesTargetWatchFilter(row, "on_track", performanceTargetSettings)).length
-        },
-        {
-            value: "target_met",
-            label: "Met",
-            count: memberPerformanceRows.filter((row) => matchesTargetWatchFilter(row, "target_met", performanceTargetSettings)).length
-        },
-        {
-            value: "variance",
-            label: "Variance",
-            count: memberPerformanceRows.filter((row) => matchesTargetWatchFilter(row, "variance", performanceTargetSettings)).length
-        },
-        {
-            value: "all",
-            label: "All",
-            count: memberPerformanceRows.length
-        }
-    ];
-    const memberTargetWatchRows = memberPerformanceRows
-        .filter((row) => matchesTargetWatchFilter(row, targetWatchFilter, performanceTargetSettings))
-        .sort((left, right) => left.reachPercent - right.reachPercent || left.remainingAmount - right.remainingAmount)
-        .slice(0, 8);
-    const selectedTargetWatchFilter = targetWatchFilterOptions.find((option) => option.value === targetWatchFilter);
-    const memberTargetWatchColumns: Column<MemberPerformanceRow>[] = [
-        {
-            key: "member",
-            header: "Member",
-            render: (row) => (
-                <Stack spacing={0.25}>
-                    <Typography variant="body2" fontWeight={800}>{row.memberNo}</Typography>
-                    <Typography variant="caption" color="text.secondary">{row.memberName}</Typography>
-                </Stack>
-            )
-        },
-        {
-            key: "actual",
-            header: "Actual",
-            render: (row) => formatCurrency(row.actualFormAmount)
-        },
-        {
-            key: "target",
-            header: "Annual Target",
-            render: (row) => formatCurrency(row.annualTargetAmount)
-        },
-        {
-            key: "level",
-            header: "Level",
-            render: (row) => (
-                <Chip label={row.level} color={row.levelColor} size="small" variant="outlined" />
-            )
-        },
-        {
-            key: "remaining",
-            header: "Remaining",
-            render: (row) => (
-                <Typography variant="body2" color={row.remainingAmount < 0 ? "warning.main" : "success.main"} fontWeight={700}>
-                    {formatSignedCurrency(row.remainingAmount)}
-                </Typography>
-            )
-        },
-        {
-            key: "reach",
-            header: `% Reach By ${financialYearPeriod.endLabel}`,
-            render: (row) => (
-                <Stack spacing={0.65} sx={{ minWidth: 130 }}>
-                    <Typography variant="caption" color="text.secondary">{row.reachPercent.toFixed(0)}%</Typography>
-                    <LinearProgress variant="determinate" value={Math.min(Math.max(row.reachPercent, 0), 100)} sx={{ height: 7, borderRadius: 999 }} />
-                </Stack>
-            )
-        }
-    ];
     const branchSavingsPositionTotal = metrics.branchSavings;
     const branchRevenueMixTotal = metrics.branchGrossRevenue;
     const branchSavingsPositionData = {
@@ -3529,59 +3400,6 @@ export function DashboardPage() {
                         </Grid>
                     </Grid>
 
-                    <MotionCard variant="outlined" sx={{ borderRadius: 2 }}>
-                        <CardContent sx={{ p: 3 }}>
-                            <Stack spacing={2}>
-                                <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" useFlexGap>
-                                    <Box>
-                                        <Typography variant="h6" fontWeight={700}>Funding sources</Typography>
-                                        <Typography variant="caption" color="text.secondary">
-                                            Inflow by source
-                                        </Typography>
-                                    </Box>
-                                    {fundingSources?.available && fundingSources.total > 0 ? (
-                                        <Chip color="primary" label={formatCurrency(fundingSources.total)} />
-                                    ) : null}
-                                </Stack>
-
-                                {!fundingSources ? (
-                                    <Typography variant="body2" color="text.secondary">Loading funding sources…</Typography>
-                                ) : !fundingSources.available ? (
-                                    <Alert severity="info">
-                                        Source tracking isn't enabled yet. Apply migration 104 and re-import history with the <strong>source</strong> column to see the M-KOBA / NMB / UTT / loan breakdown here.
-                                    </Alert>
-                                ) : fundingSources.sources.length === 0 ? (
-                                    <Alert severity="info">
-                                        No source-tagged movements yet{fundingSources.untagged_total > 0 ? ` — ${formatCurrency(fundingSources.untagged_total)} posted without a source.` : "."}
-                                    </Alert>
-                                ) : (
-                                    <Stack spacing={1.75}>
-                                        {fundingSources.sources.map((s) => (
-                                            <Box key={s.code}>
-                                                <Stack direction="row" justifyContent="space-between" alignItems="baseline" flexWrap="wrap" useFlexGap>
-                                                    <Typography variant="body2" fontWeight={600}>{s.label}</Typography>
-                                                    <Typography variant="body2" color="text.secondary">
-                                                        {formatCurrency(s.total)} · {s.percent}% · {s.count} txn
-                                                    </Typography>
-                                                </Stack>
-                                                <LinearProgress
-                                                    variant="determinate"
-                                                    value={Math.min(s.percent, 100)}
-                                                    sx={{ height: 8, borderRadius: 999, mt: 0.5 }}
-                                                />
-                                            </Box>
-                                        ))}
-                                        {fundingSources.untagged_total > 0 ? (
-                                            <Typography variant="caption" color="text.secondary">
-                                                {formatCurrency(fundingSources.untagged_total)} posted without a source tag (imported before source tracking was enabled).
-                                            </Typography>
-                                        ) : null}
-                                    </Stack>
-                                )}
-                            </Stack>
-                        </CardContent>
-                    </MotionCard>
-
                     <Grid container spacing={2}>
                         {branchRiskStrip.map((item) => (
                             <Grid key={item.id} size={{ xs: 12, sm: 6, lg: 3 }}>
@@ -3883,41 +3701,21 @@ export function DashboardPage() {
                             </MotionCard>
                         </Grid>
                         <Grid size={{ xs: 12 }}>
-                            <Stack spacing={1}>
-                                <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" alignItems={{ xs: "stretch", md: "flex-start" }} spacing={1.5}>
-                                    <Box>
-                                        <Typography variant="h6">Target Watchlist</Typography>
-                                        <Typography variant="caption" color="text.secondary">
-                                            {selectedTargetWatchFilter?.count || 0} members · {selectedTargetWatchFilter?.label || "all"}
-                                        </Typography>
-                                    </Box>
-                                    <Button variant="outlined" size="small" onClick={() => navigate("/performance-targets")}>
-                                        View all targets
-                                    </Button>
-                                </Stack>
-                                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                                    {targetWatchFilterOptions.map((option) => (
-                                        <Chip
-                                            key={option.value}
-                                            label={`${option.label}: ${option.count}`}
-                                            size="small"
-                                            clickable
-                                            color={targetWatchFilter === option.value ? "primary" : "default"}
-                                            variant={targetWatchFilter === option.value ? "filled" : "outlined"}
-                                            onClick={() => setTargetWatchFilter(option.value)}
-                                        />
-                                    ))}
-                                </Stack>
-                                <Box sx={{ "& td": { py: 0.5 }, "& th": { py: 0.75 } }}>
-                                    <DataTable
-                                        rows={memberTargetWatchRows}
-                                        columns={memberTargetWatchColumns}
-                                        emptyMessage="No member matches this watchlist filter."
-                                        maxHeight={360}
-                                        stickyHeader
-                                    />
-                                </Box>
-                            </Stack>
+                            <MotionCard variant="outlined" sx={{ borderRadius: 2 }}>
+                                <CardContent sx={{ p: 2 }}>
+                                    <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} justifyContent="space-between" alignItems={{ xs: "flex-start", sm: "center" }}>
+                                        <Box>
+                                            <Typography variant="h6">Performance Targets</Typography>
+                                            <Typography variant="caption" color="text.secondary">
+                                                The full member watchlist, filters, and reach analysis live on the Performance Targets page.
+                                            </Typography>
+                                        </Box>
+                                        <Button variant="contained" onClick={() => navigate("/performance-targets")}>
+                                            Open Performance Targets
+                                        </Button>
+                                    </Stack>
+                                </CardContent>
+                            </MotionCard>
                         </Grid>
                         <Grid size={{ xs: 12 }}>
                             <StaffPerformancePanel rows={staffPerformance} />
