@@ -446,6 +446,7 @@ export function CashPage() {
     const [batchParseError, setBatchParseError] = useState<string | null>(null);
     const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
     const [expenseReceiptFile, setExpenseReceiptFile] = useState<File | null>(null);
+    const [pendingExpense, setPendingExpense] = useState<ExpenseValues | null>(null);
     const [expenseAmountInput, setExpenseAmountInput] = useState("");
     // Collect Membership Fee: approved applicants awaiting the joining fee. The
     // backend posts the fee to this teller's session and activates the member once
@@ -457,6 +458,7 @@ export function CashPage() {
     const [feeAmount, setFeeAmount] = useState("");
     const [feeReference, setFeeReference] = useState("");
     const [collectingFee, setCollectingFee] = useState(false);
+    const [feeConfirmOpen, setFeeConfirmOpen] = useState(false);
     const [pendingApprovalNotice, setPendingApprovalNotice] = useState<{
         requestId: string;
         payload: CashRequest;
@@ -882,8 +884,8 @@ export function CashPage() {
     );
 
     const handleSubmit = (type: ActionType, values: CashValues) => {
-        // One-click post: enforce the receipt rule inline, then post directly — no
-        // separate review step (the form already shows the member, balance and amount).
+        // Enforce the receipt rule inline, then open the confirmation window so the
+        // teller reviews the member and the amount before real money posts.
         const receiptTransactionType = getActionReceiptType({ type, values, receiptFile });
         const needsReceipt = Boolean(
             receiptPolicy?.receipt_required
@@ -899,7 +901,7 @@ export function CashPage() {
             });
             return;
         }
-        void confirmAction({ type, values, receiptFile });
+        setPendingAction({ type, values, receiptFile });
     };
 
     const uploadReceiptFile = async ({
@@ -1172,6 +1174,20 @@ export function CashPage() {
         }
     };
 
+    // Confirmation gate: validate the form, then show the confirm window so the
+    // teller re-checks the payee and amount before cash leaves the drawer.
+    const requestExpenseConfirm = expenseForm.handleSubmit((values) => {
+        if (expenseReceiptRequired && !expenseReceiptFile) {
+            pushToast({
+                type: "error",
+                title: "Receipt required",
+                message: "Attach the expense receipt or voucher proof before posting this payment."
+            });
+            return;
+        }
+        setPendingExpense(values);
+    });
+
     const postExpensePayment = expenseForm.handleSubmit(async (values) => {
         if (!selectedTenantId) {
             return;
@@ -1300,6 +1316,31 @@ export function CashPage() {
 
     const selectedAccount = accounts.find((account) => account.id === pendingAction?.values.account_id);
     const selectedMember = members.find((member) => member.id === selectedAccount?.member_id);
+    // Confirmation-window context, resolved per deposit kind so the teller sees the
+    // real target (member, loan, or fee rule) next to the amount before posting.
+    const pendingDepositKind: DepositKind = pendingAction?.values.deposit_kind || "savings_deposit";
+    const pendingLoan = pendingAction?.type === "deposit" && pendingDepositKind === "loan_repayment"
+        ? loans.find((loan) => loan.id === pendingAction?.values.loan_id)
+        : undefined;
+    const pendingLoanMember = pendingLoan ? members.find((member) => member.id === pendingLoan.member_id) : undefined;
+    const pendingFeePayer = pendingAction?.type === "deposit" && (pendingDepositKind === "membership_fee" || pendingDepositKind === "fee_revenue")
+        ? (pendingFeeMembers.find((member) => member.id === pendingAction?.values.member_id)
+            || members.find((member) => member.id === pendingAction?.values.member_id))
+        : undefined;
+    const pendingFeeRule = pendingAction?.type === "deposit" && pendingDepositKind === "fee_revenue"
+        ? feeRules.find((rule) => rule.code === pendingAction?.values.fee_rule_code)
+        : undefined;
+    const pendingActionTitle = pendingAction?.type === "withdraw"
+        ? "Confirm Withdrawal"
+        : pendingAction?.type === "share_contribution"
+            ? "Confirm Share Contribution"
+            : pendingDepositKind === "loan_repayment"
+                ? "Confirm Loan Repayment"
+                : pendingDepositKind === "membership_fee"
+                    ? "Confirm Membership Fee"
+                    : pendingDepositKind === "fee_revenue"
+                        ? "Confirm Fee / Revenue"
+                        : "Confirm Deposit";
 
     const currentForm =
         actionDialog === "deposit"
@@ -2032,7 +2073,7 @@ export function CashPage() {
                                 This amount requires receipt proof before posting.
                             </Alert>
                         ) : null}
-                        <Box component="form" id="expense-payment-form" onSubmit={postExpensePayment} sx={{ display: "grid", gap: 2 }}>
+                        <Box component="form" id="expense-payment-form" onSubmit={requestExpenseConfirm} sx={{ display: "grid", gap: 2 }}>
                             <Box>
                                 <Typography variant="caption" color="text.secondary">
                                     Expense category
@@ -2565,13 +2606,67 @@ export function CashPage() {
                     <Button onClick={() => setFeeDialogOpen(false)} disabled={collectingFee}>Cancel</Button>
                     <Button
                         variant="contained"
-                        onClick={() => void collectMembershipFee()}
+                        onClick={() => setFeeConfirmOpen(true)}
                         disabled={collectingFee || !feeMemberId}
                     >
                         {collectingFee ? "Collecting..." : "Collect Fee"}
                     </Button>
                 </DialogActions>
             </MotionModal>
+
+            <ConfirmModal
+                open={feeConfirmOpen}
+                title="Confirm Membership Fee"
+                summary={
+                    <Stack spacing={1.25}>
+                        <Box sx={{ display: "flex", justifyContent: "space-between", gap: 2 }}>
+                            <Typography variant="body2" color="text.secondary">Member</Typography>
+                            <Typography variant="body2" fontWeight={600}>
+                                {(() => {
+                                    const feeMember = pendingFeeMembers.find((member) => member.id === feeMemberId);
+                                    return feeMember ? `${feeMember.full_name}${feeMember.member_no ? ` (${feeMember.member_no})` : ""}` : "Unknown";
+                                })()}
+                            </Typography>
+                        </Box>
+                        <Box
+                            sx={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                                gap: 2,
+                                px: 1.5,
+                                py: 1,
+                                borderRadius: 1.5,
+                                bgcolor: alpha(theme.palette.primary.main, 0.08),
+                                border: `1px solid ${alpha(theme.palette.primary.main, 0.25)}`
+                            }}
+                        >
+                            <Typography variant="body2" color="text.secondary">Amount</Typography>
+                            <Typography variant="h5" fontWeight={800} sx={{ fontVariantNumeric: "tabular-nums" }}>
+                                {feeAmount.trim() ? formatCurrency(Number(feeAmount)) : "Configured fee"}
+                            </Typography>
+                        </Box>
+                        {!feeAmount.trim() ? (
+                            <Typography variant="caption" color="text.secondary">
+                                No amount entered — the SACCO's configured membership fee will be charged in full.
+                            </Typography>
+                        ) : null}
+                        {feeReference.trim() ? (
+                            <Box sx={{ display: "flex", justifyContent: "space-between", gap: 2 }}>
+                                <Typography variant="body2" color="text.secondary">Reference</Typography>
+                                <Typography variant="body2" fontWeight={600}>{feeReference.trim()}</Typography>
+                            </Box>
+                        ) : null}
+                    </Stack>
+                }
+                confirmLabel="Post Membership Fee"
+                loading={collectingFee}
+                onCancel={() => setFeeConfirmOpen(false)}
+                onConfirm={() => {
+                    setFeeConfirmOpen(false);
+                    void collectMembershipFee();
+                }}
+            />
 
             <MotionModal open={openSessionDialog} onClose={openingSession ? undefined : () => setOpenSessionDialog(false)} maxWidth="sm" fullWidth>
                 <DialogTitle>Open teller session</DialogTitle>
@@ -2830,28 +2925,129 @@ export function CashPage() {
             </MotionModal>
 
             <ConfirmModal
-                open={Boolean(pendingAction)}
-                title={
-                    pendingAction?.type === "deposit"
-                        ? "Confirm Deposit"
-                        : pendingAction?.type === "withdraw"
-                            ? "Confirm Withdrawal"
-                            : "Confirm Share Contribution"
-                }
+                open={Boolean(pendingExpense)}
+                title="Confirm Expense Payment"
                 summary={
                     <Stack spacing={1.25}>
                         <Box sx={{ display: "flex", justifyContent: "space-between", gap: 2 }}>
-                            <Typography variant="body2" color="text.secondary">Member</Typography>
-                            <Typography variant="body2" fontWeight={600}>{selectedMember?.full_name || "Unknown"}</Typography>
+                            <Typography variant="body2" color="text.secondary">Expense account</Typography>
+                            <Typography variant="body2" fontWeight={600}>
+                                {expenseAccounts.find((account) => account.id === pendingExpense?.expense_account_id)?.account_name || "Unknown"}
+                            </Typography>
                         </Box>
-                        <Box sx={{ display: "flex", justifyContent: "space-between", gap: 2 }}>
-                            <Typography variant="body2" color="text.secondary">Account</Typography>
-                            <Typography variant="body2" fontWeight={600}>{selectedAccount?.account_number || "Unknown"}</Typography>
+                        {pendingExpense?.payee ? (
+                            <Box sx={{ display: "flex", justifyContent: "space-between", gap: 2 }}>
+                                <Typography variant="body2" color="text.secondary">Payee</Typography>
+                                <Typography variant="body2" fontWeight={600}>{pendingExpense.payee}</Typography>
+                            </Box>
+                        ) : null}
+                        <Box
+                            sx={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                                gap: 2,
+                                px: 1.5,
+                                py: 1,
+                                borderRadius: 1.5,
+                                bgcolor: alpha(theme.palette.warning.main, 0.1),
+                                border: `1px solid ${alpha(theme.palette.warning.main, 0.35)}`
+                            }}
+                        >
+                            <Typography variant="body2" color="text.secondary">Cash out</Typography>
+                            <Typography variant="h5" fontWeight={800} sx={{ fontVariantNumeric: "tabular-nums" }}>
+                                {formatCurrency(pendingExpense?.amount)}
+                            </Typography>
                         </Box>
-                        <Box sx={{ display: "flex", justifyContent: "space-between", gap: 2 }}>
+                        {pendingExpense?.reference ? (
+                            <Box sx={{ display: "flex", justifyContent: "space-between", gap: 2 }}>
+                                <Typography variant="body2" color="text.secondary">Reference</Typography>
+                                <Typography variant="body2" fontWeight={600}>{pendingExpense.reference}</Typography>
+                            </Box>
+                        ) : null}
+                    </Stack>
+                }
+                confirmLabel="Post Expense"
+                loading={processing}
+                onCancel={() => setPendingExpense(null)}
+                onConfirm={() => {
+                    setPendingExpense(null);
+                    void postExpensePayment();
+                }}
+            />
+
+            <ConfirmModal
+                open={Boolean(pendingAction)}
+                title={pendingActionTitle}
+                summary={
+                    <Stack spacing={1.25}>
+                        {pendingAction?.type === "deposit" && pendingDepositKind === "loan_repayment" ? (
+                            <>
+                                <Box sx={{ display: "flex", justifyContent: "space-between", gap: 2 }}>
+                                    <Typography variant="body2" color="text.secondary">Member</Typography>
+                                    <Typography variant="body2" fontWeight={600}>{pendingLoanMember?.full_name || "Unknown"}</Typography>
+                                </Box>
+                                <Box sx={{ display: "flex", justifyContent: "space-between", gap: 2 }}>
+                                    <Typography variant="body2" color="text.secondary">Loan</Typography>
+                                    <Typography variant="body2" fontWeight={600}>{pendingLoan?.loan_number || "Unknown"}</Typography>
+                                </Box>
+                            </>
+                        ) : pendingAction?.type === "deposit" && pendingDepositKind === "membership_fee" ? (
+                            <Box sx={{ display: "flex", justifyContent: "space-between", gap: 2 }}>
+                                <Typography variant="body2" color="text.secondary">Member</Typography>
+                                <Typography variant="body2" fontWeight={600}>
+                                    {pendingFeePayer ? `${pendingFeePayer.full_name}${pendingFeePayer.member_no ? ` (${pendingFeePayer.member_no})` : ""}` : "Unknown"}
+                                </Typography>
+                            </Box>
+                        ) : pendingAction?.type === "deposit" && pendingDepositKind === "fee_revenue" ? (
+                            <>
+                                <Box sx={{ display: "flex", justifyContent: "space-between", gap: 2 }}>
+                                    <Typography variant="body2" color="text.secondary">Fee / revenue rule</Typography>
+                                    <Typography variant="body2" fontWeight={600}>{pendingFeeRule?.name || pendingAction?.values.fee_rule_code || "Unknown"}</Typography>
+                                </Box>
+                                {pendingFeePayer ? (
+                                    <Box sx={{ display: "flex", justifyContent: "space-between", gap: 2 }}>
+                                        <Typography variant="body2" color="text.secondary">Member</Typography>
+                                        <Typography variant="body2" fontWeight={600}>{pendingFeePayer.full_name}</Typography>
+                                    </Box>
+                                ) : null}
+                            </>
+                        ) : (
+                            <>
+                                <Box sx={{ display: "flex", justifyContent: "space-between", gap: 2 }}>
+                                    <Typography variant="body2" color="text.secondary">Member</Typography>
+                                    <Typography variant="body2" fontWeight={600}>{selectedMember?.full_name || "Unknown"}</Typography>
+                                </Box>
+                                <Box sx={{ display: "flex", justifyContent: "space-between", gap: 2 }}>
+                                    <Typography variant="body2" color="text.secondary">Account</Typography>
+                                    <Typography variant="body2" fontWeight={600}>{selectedAccount?.account_number || "Unknown"}</Typography>
+                                </Box>
+                            </>
+                        )}
+                        <Box
+                            sx={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                                gap: 2,
+                                px: 1.5,
+                                py: 1,
+                                borderRadius: 1.5,
+                                bgcolor: alpha(theme.palette.primary.main, 0.08),
+                                border: `1px solid ${alpha(theme.palette.primary.main, 0.25)}`
+                            }}
+                        >
                             <Typography variant="body2" color="text.secondary">Amount</Typography>
-                            <Typography variant="body2" fontWeight={600}>{formatCurrency(pendingAction?.values.amount)}</Typography>
+                            <Typography variant="h5" fontWeight={800} sx={{ fontVariantNumeric: "tabular-nums" }}>
+                                {formatCurrency(pendingAction?.values.amount)}
+                            </Typography>
                         </Box>
+                        {pendingAction?.values.value_date ? (
+                            <Box sx={{ display: "flex", justifyContent: "space-between", gap: 2 }}>
+                                <Typography variant="body2" color="text.secondary">Value date (backdated)</Typography>
+                                <Typography variant="body2" fontWeight={600} color="warning.main">{formatDate(pendingAction.values.value_date)}</Typography>
+                            </Box>
+                        ) : null}
                         <Box sx={{ display: "flex", justifyContent: "space-between", gap: 2 }}>
                             <Typography variant="body2" color="text.secondary">Reference</Typography>
                             <Typography variant="body2" fontWeight={600}>{pendingAction?.values.reference || "N/A"}</Typography>
@@ -2868,16 +3064,21 @@ export function CashPage() {
                     </Stack>
                 }
                 confirmLabel={
-                    pendingAction?.type === "deposit"
-                        ? "Post Deposit"
-                        : pendingAction?.type === "withdraw"
-                            ? "Post Withdrawal"
-                            : "Post Share Contribution"
+                    pendingAction?.type === "withdraw"
+                        ? "Post Withdrawal"
+                        : pendingAction?.type === "share_contribution"
+                            ? "Post Share Contribution"
+                            : pendingDepositKind === "loan_repayment"
+                                ? "Post Repayment"
+                                : pendingDepositKind === "membership_fee"
+                                    ? "Post Membership Fee"
+                                    : pendingDepositKind === "fee_revenue"
+                                        ? "Post Fee / Revenue"
+                                        : "Post Deposit"
                 }
                 loading={processing}
                 onCancel={() => {
                     setPendingAction(null);
-                    setReceiptFile(null);
                 }}
                 onConfirm={() => void confirmAction()}
             />
