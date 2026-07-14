@@ -38,9 +38,10 @@ import {
     type SaccoFinancialYearSettingsResponse
 } from "../lib/endpoints";
 import { loadAllMembers } from "../lib/loadAllMembers";
-import type { Member, MemberAccount, SaccoFinancialYearSettings } from "../types/api";
+import type { Loan, LoanSchedule, LoanTransaction, Member, MemberAccount, SaccoFinancialYearSettings } from "../types/api";
 import { MotionCard } from "../ui/motion";
 import { downloadFile } from "../utils/downloadFile";
+import { downloadLoanStatementPdf, loadReportLogoDataUrl } from "../utils/memberStatementPdf";
 import {
     DEFAULT_SACCO_FINANCIAL_YEAR_SETTINGS,
     dateIso,
@@ -110,9 +111,14 @@ function getTodayIso() {
 export function ReportsPage() {
     const theme = useTheme();
     const { pushToast } = useToast();
-    const { selectedTenantId } = useAuth();
+    const { selectedTenantId, selectedTenantName, selectedBranchName, profile, user } = useAuth();
     const [accounts, setAccounts] = useState<MemberAccount[]>([]);
     const [membersById, setMembersById] = useState<Map<string, Member>>(new Map());
+    const [loanMemberId, setLoanMemberId] = useState<string>("");
+    const [memberLoans, setMemberLoans] = useState<Loan[]>([]);
+    const [loanId, setLoanId] = useState<string>("");
+    const [loanFromDate, setLoanFromDate] = useState<string>("");
+    const [loanToDate, setLoanToDate] = useState<string>("");
     const [financialYearSettings, setFinancialYearSettings] = useState<SaccoFinancialYearSettings>(DEFAULT_SACCO_FINANCIAL_YEAR_SETTINGS);
     const [downloading, setDownloading] = useState<string | null>(null);
     const todayIso = useMemo(() => getTodayIso(), []);
@@ -254,6 +260,61 @@ export function ReportsPage() {
         };
     });
 
+    // Load the selected member's loans for the loan-statement picker (branch-scoped for BMs).
+    useEffect(() => {
+        if (!selectedTenantId || !loanMemberId) {
+            setMemberLoans([]);
+            setLoanId("");
+            return;
+        }
+        let isActive = true;
+        (async () => {
+            try {
+                const { data } = await api.get<{ data: Loan[] }>(endpoints.finance.loanPortfolio(), {
+                    params: { tenant_id: selectedTenantId, member_id: loanMemberId, page: 1, limit: 100 }
+                });
+                if (!isActive) {
+                    return;
+                }
+                const rows = data.data || [];
+                setMemberLoans(rows);
+                setLoanId(rows.length === 1 ? rows[0].id : "");
+            } catch {
+                if (isActive) {
+                    setMemberLoans([]);
+                    setLoanId("");
+                }
+            }
+        })();
+        return () => {
+            isActive = false;
+        };
+    }, [selectedTenantId, loanMemberId]);
+
+    const memberOptions = useMemo(
+        () =>
+            Array.from(membersById.values())
+                .map((member) => ({
+                    value: member.id,
+                    label: member.full_name || member.member_no || member.id,
+                    secondary: member.member_no || undefined
+                }))
+                .sort((left, right) => left.label.localeCompare(right.label)),
+        [membersById]
+    );
+
+    const loanOptions = useMemo(
+        () =>
+            memberLoans.map((loan) => ({
+                value: loan.id,
+                label: loan.loan_number || loan.id,
+                secondary: [loan.status, loan.disbursed_at ? `Disbursed ${loan.disbursed_at.slice(0, 10)}` : null]
+                    .filter(Boolean)
+                    .join(" · ")
+            })),
+        [memberLoans]
+    );
+
     const performAsyncReportDownload = async (
         key: string,
         url: string,
@@ -389,6 +450,108 @@ export function ReportsPage() {
 
         form.setValue("from_date", fromDate, { shouldValidate: true });
         form.setValue("to_date", today, { shouldValidate: true });
+    };
+
+    const applyLoanStatementDatePreset = (preset: "month" | "quarter" | "year" | "last30") => {
+        const now = new Date();
+        const today = now.toISOString().slice(0, 10);
+        let fromDate = today;
+        if (preset === "month") {
+            fromDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+        } else if (preset === "quarter") {
+            const quarterStartMonth = Math.floor(now.getMonth() / 3) * 3;
+            fromDate = new Date(now.getFullYear(), quarterStartMonth, 1).toISOString().slice(0, 10);
+        } else if (preset === "year") {
+            fromDate = yearStartIso;
+        } else {
+            const last30 = new Date(now);
+            last30.setDate(last30.getDate() - 30);
+            fromDate = last30.toISOString().slice(0, 10);
+        }
+        setLoanFromDate(fromDate);
+        setLoanToDate(today);
+    };
+
+    // Client-side per-member loan statement (schedule + transactions), reusing the same
+    // jsPDF generator the Member Portal uses. No backend statement endpoint needed.
+    const exportLoanStatement = async () => {
+        const selectedLoan = memberLoans.find((loan) => loan.id === loanId);
+        if (!loanMemberId || !selectedLoan) {
+            pushToast({
+                type: "error",
+                title: "Select member and loan",
+                message: "Choose a member and a loan facility before exporting."
+            });
+            return;
+        }
+
+        setDownloading("loan-statement");
+        try {
+            const withinRange = (iso?: string | null) => {
+                if (!iso) {
+                    return true;
+                }
+                const day = iso.slice(0, 10);
+                if (loanFromDate && day < loanFromDate) {
+                    return false;
+                }
+                if (loanToDate && day > loanToDate) {
+                    return false;
+                }
+                return true;
+            };
+
+            const [schedulesRes, transactionsRes] = await Promise.all([
+                api.get<{ data: LoanSchedule[] }>(endpoints.finance.loanSchedules(), {
+                    params: { tenant_id: selectedTenantId || undefined, loan_id: loanId, page: 1, limit: 500 }
+                }),
+                api.get<{ data: LoanTransaction[] }>(endpoints.finance.loanTransactions(), {
+                    params: { tenant_id: selectedTenantId || undefined, loan_id: loanId, page: 1, limit: 500 }
+                })
+            ]);
+
+            const schedules = (schedulesRes.data.data || []).filter((row) => row.loan_id === loanId);
+            const transactions = (transactionsRes.data.data || [])
+                .filter((row) => row.loan_id === loanId && withinRange(row.created_at))
+                .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime());
+
+            if (!schedules.length && !transactions.length) {
+                pushToast({
+                    type: "error",
+                    title: "No loan statement data",
+                    message: "No schedules or transactions for this loan in the selected range."
+                });
+                return;
+            }
+
+            const member = membersById.get(loanMemberId);
+            const logoDataUrl = await loadReportLogoDataUrl("/icon-ilboru.png").catch(() => null);
+            downloadLoanStatementPdf({
+                memberName: member?.full_name || "Member",
+                memberEmail: member?.email || null,
+                tenantName: selectedTenantName,
+                branchName: selectedBranchName,
+                logoDataUrl,
+                generatedBy: profile?.full_name || user?.email || "Reports",
+                loan: selectedLoan,
+                schedules,
+                transactions
+            });
+
+            pushToast({
+                type: "success",
+                title: "Loan statement ready",
+                message: `Statement for ${selectedLoan.loan_number || "loan"} downloaded.`
+            });
+        } catch (error) {
+            pushToast({
+                type: "error",
+                title: "Loan statement failed",
+                message: getApiErrorMessage(error)
+            });
+        } finally {
+            setDownloading(null);
+        }
     };
     const applyIncomeDatePreset = (preset: "month" | "quarter" | "year" | "last30") => {
         const now = new Date();
@@ -765,6 +928,60 @@ export function ReportsPage() {
                                         {downloading === "member-statements" ? "Preparing..." : "Download Member Statement PDF"}
                                     </Button>
                                 </form>
+                            </Stack>
+                        </CardContent>
+                    </MotionCard>
+                </Grid>
+
+                <Grid size={{ xs: 12, md: 6 }}>
+                    <MotionCard variant="outlined" sx={{ height: "100%" }}>
+                        <CardContent>
+                            <Stack spacing={1.5}>
+                                <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1.5}>
+                                    <Typography variant="h6">Member Loan Statement</Typography>
+                                    <Chip size="small" icon={<HistoryEduRoundedIcon />} label="Per loan" variant="outlined" />
+                                </Stack>
+                                <Typography variant="body2" color="text.secondary">
+                                    Select a member and loan facility, then export the loan statement (schedule + transactions).
+                                </Typography>
+                                <FormField label="Member">
+                                    <SearchableSelect
+                                        value={loanMemberId}
+                                        options={memberOptions}
+                                        onChange={(value) => setLoanMemberId(value)}
+                                    />
+                                </FormField>
+                                <FormField label="Loan">
+                                    <SearchableSelect
+                                        value={loanId}
+                                        options={loanOptions}
+                                        onChange={(value) => setLoanId(value)}
+                                    />
+                                </FormField>
+                                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                                    <Chip label="This Month" variant="outlined" onClick={() => applyLoanStatementDatePreset("month")} sx={{ cursor: "pointer" }} />
+                                    <Chip label="This Quarter" variant="outlined" onClick={() => applyLoanStatementDatePreset("quarter")} sx={{ cursor: "pointer" }} />
+                                    <Chip label="SACCO YTD" variant="outlined" onClick={() => applyLoanStatementDatePreset("year")} sx={{ cursor: "pointer" }} />
+                                    <Chip label="Last 30 Days" variant="outlined" onClick={() => applyLoanStatementDatePreset("last30")} sx={{ cursor: "pointer" }} />
+                                </Stack>
+                                <div className="grid-2">
+                                    <FormField label="From date">
+                                        <input type="date" value={loanFromDate} onChange={(event) => setLoanFromDate(event.target.value)} />
+                                    </FormField>
+                                    <FormField label="To date">
+                                        <input type="date" value={loanToDate} onChange={(event) => setLoanToDate(event.target.value)} />
+                                    </FormField>
+                                </div>
+                                <Divider />
+                                <Button
+                                    variant="contained"
+                                    disabled={Boolean(downloading) || !loanId}
+                                    onClick={() => void exportLoanStatement()}
+                                    startIcon={<FileDownloadRoundedIcon />}
+                                    sx={theme.palette.mode === "dark" ? darkContainedButtonSx : undefined}
+                                >
+                                    {downloading === "loan-statement" ? "Preparing..." : "Download Loan Statement PDF"}
+                                </Button>
                             </Stack>
                         </CardContent>
                     </MotionCard>
