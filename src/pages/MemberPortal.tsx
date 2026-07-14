@@ -779,7 +779,11 @@ function buildRepaymentInsights(loan: Loan | null, schedules: LoanSchedule[], am
     const nextDueAmount = nextDueSchedule ? getLoanScheduleOutstanding(nextDueSchedule).totalOutstanding : 0;
     const scheduledInterestOutstanding = actionableSchedules.reduce((sum, schedule) => sum + getLoanScheduleOutstanding(schedule).interestOutstanding, 0);
     const scheduledPrincipalOutstanding = actionableSchedules.reduce((sum, schedule) => sum + getLoanScheduleOutstanding(schedule).principalOutstanding, 0);
-    const payableInterest = Math.max(Number(loan?.accrued_interest || 0), scheduledInterestOutstanding);
+    // Exposure is the reducing-balance settle-today figure the engine maintains:
+    // outstanding_principal + accrued_interest (matches the ILBORU register). The
+    // schedule table is NOT re-amortized on prepayment yet, so its interest total is
+    // the stale fixed-annuity figure — never let it inflate the payable interest.
+    const payableInterest = Number(loan?.accrued_interest || 0);
     const outstandingBalance = Number(loan?.outstanding_principal || 0) + payableInterest;
     const dueNowAmount = overdueAmount > 0 ? overdueAmount : nextDueAmount;
     const recommendedAmount = dueNowAmount > 0 ? Math.min(dueNowAmount, outstandingBalance) : outstandingBalance;

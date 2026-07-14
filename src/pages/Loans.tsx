@@ -343,7 +343,11 @@ function buildRepaymentInsights(loan: Loan | null, schedules: LoanSchedule[], am
     const nextDueAmount = nextDueSchedule ? getLoanScheduleOutstanding(nextDueSchedule).totalOutstanding : 0;
     const scheduledInterestOutstanding = orderedSchedules.reduce((sum, schedule) => sum + getLoanScheduleOutstanding(schedule).interestOutstanding, 0);
     const scheduledPrincipalOutstanding = orderedSchedules.reduce((sum, schedule) => sum + getLoanScheduleOutstanding(schedule).principalOutstanding, 0);
-    const payableInterest = Math.max(Number(loan?.accrued_interest || 0), scheduledInterestOutstanding);
+    // Settle-today figure is the reducing-balance state the engine maintains:
+    // outstanding_principal + accrued_interest. The schedule table is not re-amortized on
+    // prepayment, so its interest total is the stale fixed-annuity figure — using it here
+    // would inflate the "settle full" amount and trip "repayment exceeds balance".
+    const payableInterest = Number(loan?.accrued_interest || 0);
     const outstandingBalance = Number(loan?.outstanding_principal || 0) + payableInterest;
     const dueNowAmount = overdueAmount > 0 ? overdueAmount : nextDueAmount;
     const recommendedAmount = dueNowAmount > 0 ? Math.min(dueNowAmount, outstandingBalance) : outstandingBalance;
