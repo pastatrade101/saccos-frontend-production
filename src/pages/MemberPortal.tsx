@@ -114,6 +114,8 @@ import {
     type LoanSchedulesResponse,
     type LoanTransactionsResponse,
     type MemberAccountsResponse,
+    type MemberMonthlyCommitmentStatus,
+    type MemberMonthlyCommitmentStatusResponse,
     type MembersResponse,
     type MemberPortalPaymentControlsResponse,
     type UpdateOwnMemberProfileCompletionRequest,
@@ -530,12 +532,14 @@ const memberProfileCompletionSchema = z.object({
     }
 
     // NIDA / National ID is a 20-digit number; other ID types are free-form.
-    const idNumber = (value.national_id || "").replace(/\s/g, "");
+    // Accept the dashed format printed on NIDA slips (8-5-5-2) — separators are
+    // stripped here and again before the payload is sent.
+    const idNumber = (value.national_id || "").replace(/[\s-]/g, "");
     if (value.id_type === "nida" && idNumber && !/^\d{20}$/.test(idNumber)) {
         ctx.addIssue({ path: ["national_id"], code: z.ZodIssueCode.custom, message: "NIDA / National ID must be exactly 20 digits." });
     }
     // TIN is always a 9-digit number when provided.
-    const tin = (value.tin_no || "").replace(/\s/g, "");
+    const tin = (value.tin_no || "").replace(/[\s-]/g, "");
     if (tin && !/^\d{9}$/.test(tin)) {
         ctx.addIssue({ path: ["tin_no"], code: z.ZodIssueCode.custom, message: "TIN number must be exactly 9 digits." });
     }
@@ -1146,6 +1150,11 @@ export function MemberPortalPage() {
     const [guarantorRequests, setGuarantorRequests] = useState<GuarantorRequestItem[]>([]);
     const [processingGuarantorRequestId, setProcessingGuarantorRequestId] = useState<string | null>(null);
     const [statements, setStatements] = useState<StatementRow[]>([]);
+    // Authoritative monthly-commitment status from the backend (same SQL the
+    // loan-submit guard enforces with). "error" is a distinct state so a failed
+    // fetch is never presented as "you have not paid".
+    const [monthlyCommitmentStatus, setMonthlyCommitmentStatus] = useState<MemberMonthlyCommitmentStatus | null>(null);
+    const [monthlyCommitmentState, setMonthlyCommitmentState] = useState<"loading" | "ready" | "error">("loading");
     const [loanTransactions, setLoanTransactions] = useState<LoanTransaction[]>([]);
     const [memberPortalPaymentControls, setMemberPortalPaymentControls] = useState<MemberPortalPaymentControls>(DEFAULT_MEMBER_PORTAL_PAYMENT_CONTROLS);
     const [financialYearSettings, setFinancialYearSettings] = useState<SaccoFinancialYearSettings>(DEFAULT_SACCO_FINANCIAL_YEAR_SETTINGS);
@@ -1550,6 +1559,43 @@ export function MemberPortalPage() {
         () => loans.some((loan) => ["in_arrears", "written_off"].includes(loan.status)),
         [loans]
     );
+    // View model for the monthly mandatory savings status. States:
+    //   loading — first fetch in flight; show nothing, gate nothing client-side
+    //   error   — status could not be verified; say so, never claim "unpaid"
+    //   none    — member has no commitment configured
+    //   due     — commitment exists and this month is not fully paid
+    //   met     — commitment exists and this month is paid
+    const monthlyCommitment = useMemo(() => {
+        const monthLabel = new Date().toLocaleDateString(undefined, { month: "long", year: "numeric" });
+
+        if (monthlyCommitmentState !== "ready" || !monthlyCommitmentStatus) {
+            return {
+                state: monthlyCommitmentState === "error" ? ("error" as const) : ("loading" as const),
+                amount: 0,
+                paid: 0,
+                remaining: 0,
+                met: true,
+                monthLabel,
+                progressPercent: 0
+            };
+        }
+
+        const amount = Number(monthlyCommitmentStatus.commitment_amount) || 0;
+        const paid = Number(monthlyCommitmentStatus.paid_this_month) || 0;
+        const remaining = Number(monthlyCommitmentStatus.remaining_amount) || 0;
+        const met = Boolean(monthlyCommitmentStatus.met);
+
+        return {
+            state: amount > 0 ? (met ? ("met" as const) : ("due" as const)) : ("none" as const),
+            amount,
+            paid,
+            remaining,
+            met,
+            monthLabel,
+            progressPercent: amount > 0 ? Math.min(100, (paid / amount) * 100) : 100
+        };
+    }, [monthlyCommitmentState, monthlyCommitmentStatus]);
+
     const loanSubmissionLocks = useMemo(() => {
         const locks: string[] = [];
 
@@ -1569,10 +1615,15 @@ export function MemberPortalPage() {
             locks.push(`You already have a ${selectedLoanConflict.status} loan application in progress.`);
         }
 
+        if (monthlyCommitment.state === "due") {
+            locks.push(`Deposit the remaining ${formatCurrency(monthlyCommitment.remaining)} of this month's mandatory savings first.`);
+        }
+
         return locks;
     }, [
         memberHasProblemLoan,
         memberRecord?.status,
+        monthlyCommitment,
         selectedLoanConflict,
         selectedLoanProduct
     ]);
@@ -2312,7 +2363,6 @@ export function MemberPortalPage() {
                     tenant_id: profile.tenant_id,
                     page: 1,
                     limit: 100,
-                    fields: "lookup",
                     include_total: false
                 }
             }),
@@ -2406,7 +2456,44 @@ export function MemberPortalPage() {
         if (loanTransactionsResult.status === "fulfilled") {
             setLoanTransactions(loanTransactionsResult.value.data.data || []);
         }
+
+        // A rejected refresh must be loud: stale statements after a confirmed
+        // deposit would otherwise show the member as still owing this month's
+        // savings with no hint that anything failed.
+        const rejected = [accountsResult, loansResult, schedulesResult, statementsResult, loanTransactionsResult]
+            .filter((result): result is PromiseRejectedResult => result.status === "rejected");
+        if (rejected.length) {
+            pushToast({
+                type: "error",
+                title: "Some data did not refresh",
+                message: getApiErrorMessage(rejected[0].reason, "Part of your workspace could not be refreshed. Reload the page if figures look out of date.")
+            });
+        }
     };
+
+    const refreshMonthlyCommitment = async () => {
+        try {
+            const { data } = await api.get<MemberMonthlyCommitmentStatusResponse>(
+                endpoints.members.monthlyCommitment()
+            );
+            setMonthlyCommitmentStatus(data.data);
+            setMonthlyCommitmentState("ready");
+        } catch {
+            // Distinct "error" state: the banner says the status could not be
+            // verified instead of claiming the member has not paid.
+            setMonthlyCommitmentState("error");
+        }
+    };
+
+    useEffect(() => {
+        if (!profile?.tenant_id) {
+            return;
+        }
+        // statements is in the deps so a confirmed deposit (which refreshes the
+        // statement list) re-checks the commitment automatically.
+        void refreshMonthlyCommitment();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [profile?.tenant_id, statements]);
 
     const submitProfileCompletion = memberProfileCompletionForm.handleSubmit(async (values) => {
         setSavingProfileCompletion(true);
@@ -2421,11 +2508,19 @@ export function MemberPortalPage() {
                 occupation: toNullableProfileValue(values.occupation),
                 employer: toNullableProfileValue(values.employer),
                 id_type: values.id_type,
-                national_id: toNullableProfileValue(values.national_id?.replace(/\s/g, "")),
+                // NIDA is digits-only (strip the dashed slip format); other ID types may
+                // legitimately contain dashes, so only strip whitespace for those.
+                national_id: toNullableProfileValue(
+                    values.id_type === "nida"
+                        ? values.national_id?.replace(/[\s-]/g, "")
+                        : values.national_id?.replace(/\s/g, "")
+                ),
                 // NIDA number and National ID are the same value in Tanzania; mirror the
                 // single ID field into nida_no when the chosen ID type is NIDA/National ID.
-                nida_no: values.id_type === "nida" ? toNullableProfileValue(values.national_id?.replace(/\s/g, "")) : null,
-                tin_no: toNullableProfileValue(values.tin_no),
+                nida_no: values.id_type === "nida" ? toNullableProfileValue(values.national_id?.replace(/[\s-]/g, "")) : null,
+                // The backend identity-code pattern has no whitespace; the form validates the
+                // cleaned TIN, so send the cleaned value too or valid input 400s server-side.
+                tin_no: toNullableProfileValue(values.tin_no?.replace(/[\s-]/g, "")),
                 region_id: toNullableProfileValue(values.region_id),
                 district_id: toNullableProfileValue(values.district_id),
                 ward_id: toNullableProfileValue(values.ward_id),
@@ -2832,7 +2927,7 @@ export function MemberPortalPage() {
                         tenant_id: profile.tenant_id,
                         page: 1,
                         limit: 100,
-                        fields: "lookup",
+
                         include_total: false
                     }
                 });
@@ -2985,7 +3080,7 @@ export function MemberPortalPage() {
                 }
 
                 if (issues.length) {
-                    setWarning(issues[0]);
+                    setWarning(issues.join(" "));
                 }
             } catch (portalError) {
                 setMemberRecord(null);
@@ -3029,36 +3124,6 @@ export function MemberPortalPage() {
     }, [activeSection, canUsePortalPayments, paymentOrders.length, showContributionDialog]);
 
     const savingsAccounts = useMemo(() => accounts.filter((account) => account.product_type === "savings"), [accounts]);
-
-    // Monthly mandatory savings: same rule as the backend loan-submission guard —
-    // savings-account deposits within the current calendar month must reach the
-    // member's committed amount before a loan application can be submitted.
-    const monthlyCommitment = useMemo(() => {
-        const amount = Number(memberRecord?.monthly_savings_commitment || 0);
-        const now = new Date();
-        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-        const monthLabel = now.toLocaleDateString(undefined, { month: "long", year: "numeric" });
-        const savingsAccountIds = new Set(savingsAccounts.map((account) => account.id));
-        const paid = statements.reduce((sum, row) => {
-            if (row.direction !== "in" || row.transaction_type !== "deposit") {
-                return sum;
-            }
-            if (!savingsAccountIds.has(row.account_id)) {
-                return sum;
-            }
-            return new Date(row.transaction_date) >= monthStart ? sum + Number(row.amount || 0) : sum;
-        }, 0);
-        const met = amount <= 0 || paid >= amount;
-
-        return {
-            amount,
-            paid,
-            remaining: Math.max(0, amount - paid),
-            met,
-            monthLabel,
-            progressPercent: amount > 0 ? Math.min(100, (paid / amount) * 100) : 100
-        };
-    }, [memberRecord, savingsAccounts, statements]);
     const totalSavings = useMemo(
         () => savingsAccounts.reduce((sum, account) => sum + account.available_balance + account.locked_balance, 0),
         [savingsAccounts]
@@ -4267,7 +4332,9 @@ export function MemberPortalPage() {
     };
 
     const openLoanApplicationDraft = () => {
-        if (!monthlyCommitment.met) {
+        // Block only on a confirmed unpaid month; when the status is unknown the
+        // member may proceed and the backend guard remains the enforcement point.
+        if (monthlyCommitment.state === "due") {
             pushToast({
                 type: "error",
                 title: "Monthly savings due",
@@ -4541,6 +4608,11 @@ export function MemberPortalPage() {
                 errorMessage = `Requested amount must be at least ${formatCurrency(minimumAmount)}.`;
             } else if (errorCode === "LOAN_POOL_TEMPORARILY_EXHAUSTED") {
                 errorMessage = "SACCO loan pool temporarily exhausted. Please try again later.";
+            } else if (errorCode === "MONTHLY_SAVINGS_COMMITMENT_UNPAID") {
+                const remainingDue = getNumericDetail(errorDetails, "remaining_amount");
+                errorMessage = `This month's mandatory savings is not yet complete${remainingDue !== null ? ` — ${formatCurrency(remainingDue)} remaining` : ""}. Deposit the balance, then submit again.`;
+                // Re-sync the banner/locks with what the backend just enforced.
+                void refreshMonthlyCommitment();
             }
 
             pushToast({
@@ -4892,7 +4964,7 @@ export function MemberPortalPage() {
             { label: "Needed now", value: savingsTargetNextRequired > 0 ? formatCurrency(savingsTargetNextRequired) : "Clear" }
         ];
         const positionRows = [
-            ...(monthlyCommitment.amount > 0
+            ...(monthlyCommitment.state === "due" || monthlyCommitment.state === "met"
                 ? [{
                     icon: SavingsRoundedIcon,
                     label: `Monthly savings · ${monthlyCommitment.monthLabel}`,
@@ -5421,13 +5493,41 @@ export function MemberPortalPage() {
     );
 
     // Monthly mandatory savings status: keeps demanding until the month is paid,
-    // then flips to a slim "Active" confirmation.
+    // then flips to a slim "Active" confirmation. A failed status fetch renders
+    // an explicit "couldn't verify" card — never a false "still due".
     const renderMonthlyCommitmentBanner = () => {
-        if (monthlyCommitment.amount <= 0) {
+        if (monthlyCommitment.state === "none" || monthlyCommitment.state === "loading") {
             return null;
         }
 
-        if (monthlyCommitment.met) {
+        if (monthlyCommitment.state === "error") {
+            return (
+                <MotionCard variant="outlined" sx={contentCardSx}>
+                    <CardContent sx={{ p: 1.5, "&:last-child": { pb: 1.5 } }}>
+                        <Stack direction="row" spacing={1.25} alignItems="center" justifyContent="space-between" flexWrap="wrap" useFlexGap>
+                            <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
+                                <Box sx={{ width: 36, height: 36, borderRadius: 1.5, display: "grid", placeItems: "center", bgcolor: alpha(brandColors.info, 0.12), color: brandColors.info, flexShrink: 0 }}>
+                                    <HourglassTopRoundedIcon fontSize="small" />
+                                </Box>
+                                <Box sx={{ minWidth: 0 }}>
+                                    <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                                        Monthly savings status unavailable
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary">
+                                        We could not verify this month's savings commitment. This does not mean you owe anything — check again in a moment.
+                                    </Typography>
+                                </Box>
+                            </Stack>
+                            <Button size="small" variant="outlined" onClick={() => void refreshMonthlyCommitment()}>
+                                Check again
+                            </Button>
+                        </Stack>
+                    </CardContent>
+                </MotionCard>
+            );
+        }
+
+        if (monthlyCommitment.state === "met") {
             return (
                 <MotionCard
                     variant="outlined"
@@ -5956,7 +6056,7 @@ export function MemberPortalPage() {
                                     label={`${pendingLoanApplications.length} open application(s)`}
                                     sx={{ borderRadius: 1.5, fontWeight: 600 }}
                                 />
-                                {monthlyCommitment.amount > 0 ? (
+                                {monthlyCommitment.state === "due" || monthlyCommitment.state === "met" ? (
                                     <Chip
                                         size="small"
                                         label={monthlyCommitment.met

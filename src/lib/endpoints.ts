@@ -151,6 +151,7 @@ const routeMap = {
         accounts: "/members/accounts",
         create: "/members",
         profileCompletion: "/members/me/profile-completion",
+        monthlyCommitment: "/members/me/monthly-commitment",
         bulkDelete: "/members/bulk-delete",
         detail: (memberId: string) => `/members/${memberId}`,
         update: (memberId: string) => `/members/${memberId}`,
@@ -411,6 +412,7 @@ export const endpoints = {
         accounts: () => routeMap.members.accounts,
         create: () => routeMap.members.create,
         profileCompletion: () => routeMap.members.profileCompletion,
+        monthlyCommitment: () => routeMap.members.monthlyCommitment,
         bulkDelete: () => routeMap.members.bulkDelete,
         detail: (memberId: string) => routeMap.members.detail(memberId),
         update: (memberId: string) => routeMap.members.update(memberId),
@@ -964,6 +966,16 @@ export interface UpdateOwnMemberProfileCompletionRequest {
     no_conflicting_business_declared?: boolean | null;
 }
 export type UpdateOwnMemberProfileCompletionResponse = ApiEnvelope<Member>;
+
+export interface MemberMonthlyCommitmentStatus {
+    commitment_amount: number;
+    paid_this_month: number;
+    remaining_amount: number;
+    month_start: string | null;
+    met: boolean;
+}
+
+export type MemberMonthlyCommitmentStatusResponse = ApiEnvelope<MemberMonthlyCommitmentStatus>;
 
 export interface BulkDeleteMembersRequest {
     member_ids: string[];
