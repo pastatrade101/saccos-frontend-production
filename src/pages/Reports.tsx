@@ -501,17 +501,31 @@ export function ReportsPage() {
                 return true;
             };
 
-            const [schedulesRes, transactionsRes] = await Promise.all([
-                api.get<{ data: LoanSchedule[] }>(endpoints.finance.loanSchedules(), {
-                    params: { tenant_id: selectedTenantId || undefined, loan_id: loanId, page: 1, limit: 500 }
-                }),
-                api.get<{ data: LoanTransaction[] }>(endpoints.finance.loanTransactions(), {
-                    params: { tenant_id: selectedTenantId || undefined, loan_id: loanId, page: 1, limit: 500 }
-                })
+            // Server caps limit at 100, so page through all rows for the selected loan.
+            const fetchAllForLoan = async <T,>(url: string): Promise<T[]> => {
+                const rows: T[] = [];
+                let page = 1;
+                while (page <= 50) {
+                    const { data } = await api.get<{ data: T[] }>(url, {
+                        params: { tenant_id: selectedTenantId || undefined, loan_id: loanId, page, limit: 100 }
+                    });
+                    const batch = data.data || [];
+                    rows.push(...batch);
+                    if (batch.length < 100) {
+                        break;
+                    }
+                    page += 1;
+                }
+                return rows;
+            };
+
+            const [scheduleRows, transactionRows] = await Promise.all([
+                fetchAllForLoan<LoanSchedule>(endpoints.finance.loanSchedules()),
+                fetchAllForLoan<LoanTransaction>(endpoints.finance.loanTransactions())
             ]);
 
-            const schedules = (schedulesRes.data.data || []).filter((row) => row.loan_id === loanId);
-            const transactions = (transactionsRes.data.data || [])
+            const schedules = scheduleRows.filter((row) => row.loan_id === loanId);
+            const transactions = transactionRows
                 .filter((row) => row.loan_id === loanId && withinRange(row.created_at))
                 .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime());
 
