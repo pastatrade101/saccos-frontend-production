@@ -2359,7 +2359,6 @@ export function MemberPortalPage() {
                     tenant_id: profile.tenant_id,
                     page: 1,
                     limit: 100,
-                    fields: "lookup",
                     include_total: false
                 }
             }),
@@ -2924,7 +2923,7 @@ export function MemberPortalPage() {
                         tenant_id: profile.tenant_id,
                         page: 1,
                         limit: 100,
-                        fields: "lookup",
+
                         include_total: false
                     }
                 });
