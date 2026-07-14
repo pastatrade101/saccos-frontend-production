@@ -228,7 +228,9 @@ const routeMap = {
         expenseAccounts: "/expense-accounts",
         expensePayment: "/expense-payment",
         operationalBatch: "/operational-batch",
-        statements: "/statements"
+        statements: "/statements",
+        nplReclassStatus: "/npl-suspense-reclassification/status",
+        nplReclassRun: "/npl-suspense-reclassification"
     },
     memberPayments: {
         initiateContribution: "/member-payments/contributions/initiate",
@@ -490,7 +492,9 @@ export const endpoints = {
         expenseAccounts: () => routeMap.finance.expenseAccounts,
         expensePayment: () => routeMap.finance.expensePayment,
         operationalBatch: () => routeMap.finance.operationalBatch,
-        statements: () => routeMap.finance.statements
+        statements: () => routeMap.finance.statements,
+        nplReclassStatus: () => routeMap.finance.nplReclassStatus,
+        nplReclassRun: () => routeMap.finance.nplReclassRun
     },
     memberPayments: {
         initiateContribution: () => routeMap.memberPayments.initiateContribution,

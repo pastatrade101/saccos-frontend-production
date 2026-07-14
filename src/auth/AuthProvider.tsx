@@ -88,6 +88,18 @@ export function AuthProvider({ children }: PropsWithChildren) {
         // Drop cached dashboard/read data so a different user signing in on the same
         // tab never sees the previous session's cached values.
         invalidateCache();
+        // Clear one-per-session reminder dismissals so the next login re-evaluates them
+        // (otherwise a dismissal would survive a sign-out/sign-in in the same tab).
+        try {
+            for (let i = sessionStorage.length - 1; i >= 0; i -= 1) {
+                const key = sessionStorage.key(i);
+                if (key && key.startsWith("npl-reclass-dismissed:")) {
+                    sessionStorage.removeItem(key);
+                }
+            }
+        } catch {
+            // sessionStorage may be unavailable (e.g. private mode); ignore.
+        }
     }, []);
 
     const discardInvalidSession = useCallback(async () => {

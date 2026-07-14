@@ -54,6 +54,7 @@ import { Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext";
 import { NotificationBell } from "./notifications/NotificationBell";
+import { PeriodEndReclassDialog } from "./PeriodEndReclassDialog";
 import { ProfileAvatarUploader } from "./ProfileAvatarUploader";
 import { useUI } from "../ui/UIProvider";
 import { brandColors, darkThemeColors } from "../theme/colors";
@@ -767,6 +768,7 @@ export function AppLayout() {
                             menuPaperSx={{ borderRadius: 2 }}
                         />
                     ) : null}
+                    {profile?.tenant_id && !twoFactorSetupRequired ? <PeriodEndReclassDialog /> : null}
                     <IconButton onClick={toggleTheme} sx={{ color: "#ffffff" }}>
                         {themeMode === "light" ? <DarkModeIconShim /> : <LightModeIconShim />}
                     </IconButton>
