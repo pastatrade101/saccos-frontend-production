@@ -148,6 +148,7 @@ const routeMap = {
     members: {
         list: "/members",
         summary: "/members/summary",
+        saccoOverview: "/members/sacco-overview",
         accounts: "/members/accounts",
         create: "/members",
         profileCompletion: "/members/me/profile-completion",
@@ -411,6 +412,7 @@ export const endpoints = {
     members: {
         list: () => routeMap.members.list,
         summary: () => routeMap.members.summary,
+        saccoOverview: () => routeMap.members.saccoOverview,
         accounts: () => routeMap.members.accounts,
         create: () => routeMap.members.create,
         profileCompletion: () => routeMap.members.profileCompletion,

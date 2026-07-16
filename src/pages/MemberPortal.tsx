@@ -74,6 +74,8 @@ import {
     Tab,
     Tabs,
     TablePagination,
+    ToggleButton,
+    ToggleButtonGroup,
     TextField,
     Typography,
     useMediaQuery
@@ -1196,6 +1198,45 @@ export function MemberPortalPage() {
     const autoBackgroundedPaymentOrderIdRef = useRef<string | null>(null);
     const [selectedPaymentReceipt, setSelectedPaymentReceipt] = useState<PaymentOrder | null>(null);
     const [activeSection, setActiveSection] = useState<PortalSectionId>(portalSections[0].id);
+    const [overviewMode, setOverviewMode] = useState<"member" | "sacco">("member");
+    const [saccoOverview, setSaccoOverview] = useState<{
+        total_members: number;
+        active_members: number;
+        total_savings: number;
+        total_shares: number;
+        loan_book: number;
+        active_loans: number;
+    } | null>(null);
+    const [saccoOverviewLoading, setSaccoOverviewLoading] = useState(false);
+
+    // Lazy-load the curated SACCOS overview only when the member opens that view.
+    useEffect(() => {
+        if (overviewMode !== "sacco" || saccoOverview) {
+            return;
+        }
+        let active = true;
+        setSaccoOverviewLoading(true);
+        api
+            .get(endpoints.members.saccoOverview())
+            .then((res) => {
+                if (active) {
+                    setSaccoOverview(res.data?.data ?? null);
+                }
+            })
+            .catch(() => {
+                if (active) {
+                    setSaccoOverview(null);
+                }
+            })
+            .finally(() => {
+                if (active) {
+                    setSaccoOverviewLoading(false);
+                }
+            });
+        return () => {
+            active = false;
+        };
+    }, [overviewMode, saccoOverview]);
     const [runFeatureTour, setRunFeatureTour] = useState(false);
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -5622,8 +5663,72 @@ export function MemberPortalPage() {
         );
     };
 
+    const renderSaccoOverview = () => {
+        const tzs = (value: number) => `TZS ${new Intl.NumberFormat("en-US").format(Math.round(Number(value) || 0))}`;
+        const cards = saccoOverview
+            ? [
+                { label: "Total Members", value: String(saccoOverview.total_members ?? 0), helper: `${saccoOverview.active_members ?? 0} active` },
+                { label: "Total Savings", value: tzs(saccoOverview.total_savings), helper: "" },
+                { label: "Share Capital", value: tzs(saccoOverview.total_shares), helper: "" },
+                { label: "Loan Book", value: tzs(saccoOverview.loan_book), helper: `${saccoOverview.active_loans ?? 0} active loans` }
+            ]
+            : [];
+        return (
+            <Box>
+                <Typography variant="h6" sx={{ fontWeight: 700 }}>SACCOS Position</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                    A live snapshot of the whole cooperative.
+                </Typography>
+                {saccoOverviewLoading && !saccoOverview ? (
+                    <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
+                        <CircularProgress />
+                    </Box>
+                ) : saccoOverview ? (
+                    <Grid container spacing={2}>
+                        {cards.map((card) => (
+                            <Grid key={card.label} size={{ xs: 6, md: 3 }}>
+                                <Card variant="outlined" sx={{ height: "100%" }}>
+                                    <CardContent>
+                                        <Typography variant="body2" color="text.secondary">{card.label}</Typography>
+                                        <Typography variant="h5" sx={{ mt: 0.5, fontWeight: 700 }}>{card.value}</Typography>
+                                        {card.helper ? (
+                                            <Typography variant="caption" color="text.secondary">{card.helper}</Typography>
+                                        ) : null}
+                                    </CardContent>
+                                </Card>
+                            </Grid>
+                        ))}
+                    </Grid>
+                ) : (
+                    <Typography variant="body2" color="text.secondary">
+                        SACCOS overview is unavailable right now.
+                    </Typography>
+                )}
+            </Box>
+        );
+    };
+
     const renderOverviewView = () => (
-        <MemberOverview
+        <Stack spacing={2}>
+            <ToggleButtonGroup
+                size="small"
+                exclusive
+                color="primary"
+                value={overviewMode}
+                onChange={(_event, next) => {
+                    if (next) {
+                        setOverviewMode(next as "member" | "sacco");
+                    }
+                }}
+                aria-label="Overview mode"
+            >
+                <ToggleButton value="member">My Dashboard</ToggleButton>
+                <ToggleButton value="sacco">SACCOS Overview</ToggleButton>
+            </ToggleButtonGroup>
+            {overviewMode === "sacco" ? (
+                renderSaccoOverview()
+            ) : (
+                <MemberOverview
             summary={{
                 totalSavings,
                 totalShareCapital: 0,
@@ -5674,7 +5779,9 @@ export function MemberPortalPage() {
             onMakeContribution={() => handleSectionSelect("member-contributions")}
             onDownloadStatement={handleDownloadStatement}
             onViewFullStatement={() => handleSectionSelect("member-transactions")}
-        />
+                />
+            )}
+        </Stack>
     );
 
     const renderAccountsView = () => (
