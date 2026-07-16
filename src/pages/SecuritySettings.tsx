@@ -181,6 +181,49 @@ export function SecuritySettingsPage() {
         }
     };
 
+    const [loanGuideDraft, setLoanGuideDraft] = useState("");
+    const [loanGuideSaving, setLoanGuideSaving] = useState(false);
+
+    useEffect(() => {
+        setLoanGuideDraft(memberPortalPaymentControls?.loan_application_guide || "");
+    }, [memberPortalPaymentControls?.loan_application_guide]);
+
+    const saveLoanApplicationGuide = async () => {
+        if (!canManageMemberPortalPaymentControls || !profile.tenant_id) {
+            return;
+        }
+
+        setLoanGuideSaving(true);
+        try {
+            const payload: UpdateMemberPortalPaymentControlsRequest = {
+                tenant_id: profile.tenant_id,
+                loan_application_guide: loanGuideDraft.trim() || null
+            };
+
+            const { data } = await api.patch<MemberPortalPaymentControlsResponse>(
+                endpoints.memberPortalSettings.paymentControls(),
+                payload
+            );
+
+            setMemberPortalPaymentControls(data.data || null);
+            pushToast({
+                type: "success",
+                title: "Loan application guide saved",
+                message: loanGuideDraft.trim()
+                    ? "Members now see the guide in the portal loan section."
+                    : "The guide was cleared — the portal hides the section when it is empty."
+            });
+        } catch (error) {
+            pushToast({
+                type: "error",
+                title: "Unable to save the loan application guide",
+                message: getApiErrorMessage(error)
+            });
+        } finally {
+            setLoanGuideSaving(false);
+        }
+    };
+
     const toggleMemberPortalPaymentControl = async (
         key: "share_contribution_enabled" | "savings_deposit_enabled" | "loan_repayment_enabled",
         enabled: boolean
@@ -964,6 +1007,41 @@ export function SecuritySettingsPage() {
                                                     </Stack>
                                                 ))}
                                             </Stack>
+                                        ) : null}
+
+                                        {memberPortalPaymentControls ? (
+                                            <>
+                                                <Divider />
+                                                <Stack spacing={1.5}>
+                                                    <Box>
+                                                        <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                                                            Loan application guide
+                                                        </Typography>
+                                                        <Typography variant="body2" color="text.secondary">
+                                                            Shown to members above the loan products in the portal, so they do not need to ask for
+                                                            basic information before applying. Cover the steps, required documents, guarantor
+                                                            process, and how approval works. Leave empty to hide the section.
+                                                        </Typography>
+                                                    </Box>
+                                                    <TextField
+                                                        multiline
+                                                        minRows={6}
+                                                        fullWidth
+                                                        value={loanGuideDraft}
+                                                        onChange={(event) => setLoanGuideDraft(event.target.value)}
+                                                        placeholder={"1. Check the loan products below and confirm you meet the requirements.\n2. Gather your documents (ID, payslip or income proof, guarantor details).\n3. Ask the required number of members to stand as your guarantors — they will confirm from their own portal.\n4. Submit the application from this page and track its status under My Loan Applications.\n5. The loan committee reviews applications and you will be notified of the decision."}
+                                                    />
+                                                    <Box>
+                                                        <Button
+                                                            variant="contained"
+                                                            onClick={() => void saveLoanApplicationGuide()}
+                                                            disabled={loanGuideSaving || (loanGuideDraft.trim() || "") === (memberPortalPaymentControls.loan_application_guide || "")}
+                                                        >
+                                                            {loanGuideSaving ? "Saving…" : "Save guide"}
+                                                        </Button>
+                                                    </Box>
+                                                </Stack>
+                                            </>
                                         ) : null}
                                     </Stack>
                                 </CardContent>

@@ -337,6 +337,10 @@ const routeMap = {
         detail: (id: string) => `/sacco-milestones/${id}`,
         announce: (id: string) => `/sacco-milestones/${id}/announce`
     },
+    memberHeirs: {
+        me: "/member-heirs/me",
+        member: (memberId: string) => `/member-heirs/members/${memberId}`
+    },
     saccoDashboard: {
         financials: "/sacco-dashboard/financials"
     },
@@ -618,6 +622,10 @@ export const endpoints = {
         detail: (id: string) => routeMap.milestones.detail(id),
         announce: (id: string) => routeMap.milestones.announce(id)
     },
+    memberHeirs: {
+        me: () => routeMap.memberHeirs.me,
+        member: (memberId: string) => routeMap.memberHeirs.member(memberId)
+    },
     saccoDashboard: {
         financials: () => routeMap.saccoDashboard.financials
     },
@@ -777,11 +785,21 @@ export interface PublicSignupRequest {
         | "sibling"
         | "child";
     next_of_kin_phone: string;
-    next_of_kin_address: string;
+    next_of_kin_address?: string | null;
+    next_of_kin_region_id?: string | null;
+    next_of_kin_district_id?: string | null;
+    next_of_kin_ward_id?: string | null;
+    next_of_kin_village_id?: string | null;
+    next_of_kin_street?: string | null;
     heir_name: string;
     heir_relationship: PublicSignupRequest["relationship"];
     heir_phone: string;
-    heir_address: string;
+    heir_address?: string | null;
+    heir_region_id?: string | null;
+    heir_district_id?: string | null;
+    heir_ward_id?: string | null;
+    heir_village_id?: string | null;
+    heir_street?: string | null;
     membership_type: "individual" | "group" | "company";
     ilboru_completion_year: number;
     initial_share_amount: number;
@@ -958,12 +976,18 @@ export interface UpdateMemberRequest {
     next_of_kin_phone?: string | null;
     next_of_kin_relationship?: string | null;
     next_of_kin_address?: string | null;
+    next_of_kin_region_id?: string | null;
+    next_of_kin_district_id?: string | null;
+    next_of_kin_ward_id?: string | null;
+    next_of_kin_village_id?: string | null;
+    next_of_kin_street?: string | null;
     heir_name?: string | null;
     heir_phone?: string | null;
     heir_relationship?: string | null;
     heir_address?: string | null;
     employer?: string | null;
     membership_type?: "individual" | "group" | "company" | null;
+    membership_started_on?: string | null;
     ilboru_completion_year?: number | null;
     legitimate_income_declared?: boolean | null;
     no_conflicting_business_declared?: boolean | null;
@@ -1008,6 +1032,11 @@ export interface UpdateOwnMemberProfileCompletionRequest {
     next_of_kin_phone?: string | null;
     next_of_kin_relationship?: string | null;
     next_of_kin_address?: string | null;
+    next_of_kin_region_id?: string | null;
+    next_of_kin_district_id?: string | null;
+    next_of_kin_ward_id?: string | null;
+    next_of_kin_village_id?: string | null;
+    next_of_kin_street?: string | null;
     heir_name?: string | null;
     heir_phone?: string | null;
     heir_relationship?: string | null;
@@ -2048,6 +2077,7 @@ export interface UpdateMemberPortalPaymentControlsRequest {
     share_contribution_enabled?: boolean;
     savings_deposit_enabled?: boolean;
     loan_repayment_enabled?: boolean;
+    loan_application_guide?: string | null;
 }
 
 export interface UpdateWorkspaceTwoFactorSettingsRequest {

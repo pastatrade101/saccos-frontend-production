@@ -354,13 +354,12 @@ export function MilestonesPage() {
                                 Live figures from the system. Items with no recorded data show a dash.
                             </Typography>
                         </Box>
+                        {/* Only figures the milestone roadmap actually needs — member and
+                            loan-book stats live on the Dashboard to avoid duplicate numbers. */}
                         <Grid container spacing={1.5}>
                             {[
-                                { label: "Members", value: String(financials.members), sub: `${financials.active_members} active` },
                                 { label: "Total Contributions", value: formatCurrency(financials.total_contributions), sub: "Savings + shares" },
                                 { label: "Cash at Bank", value: formatMoneyOrDash(financials.cash_at_bank), sub: "Treasury cash position" },
-                                { label: "Total Loans", value: formatCurrency(financials.total_loans), sub: "Disbursed principal" },
-                                { label: "Active Loans", value: formatCurrency(financials.active_loans_outstanding), sub: `${financials.active_loans_count} outstanding` },
                                 { label: "Loan Interest", value: formatCurrency(financials.loan_interest), sub: "Accrued" },
                                 { label: "Total UTT Invested", value: formatMoneyOrDash(financials.investment_cost), sub: "Treasury portfolio" },
                                 { label: "UTT Interest", value: formatMoneyOrDash(financials.investment_income), sub: "Investment income" }
@@ -400,7 +399,9 @@ export function MilestonesPage() {
                         <MotionCard variant="outlined" sx={{ height: "100%" }}>
                             <CardContent>
                                 <Typography variant="overline" color="text.secondary">Total Contributions</Typography>
-                                <Typography variant="h4" sx={{ mt: 0.5, fontWeight: 800 }}>{formatCurrency(board.total_contributions)}</Typography>
+                                {/* Prefer the financials figure so the same number never renders
+                                    twice from two different backend computations on one page. */}
+                                <Typography variant="h4" sx={{ mt: 0.5, fontWeight: 800 }}>{formatCurrency(financials?.total_contributions ?? board.total_contributions)}</Typography>
                                 <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                                     Savings + shares across the cooperative.
                                 </Typography>

@@ -80,7 +80,7 @@ import {
 } from "../lib/endpoints";
 import { buildTellerDashboardData } from "../lib/tellerDashboard";
 import { registerCharts } from "../lib/charts";
-import type { Branch, ChargeRevenueSummary, DailyCashSummary, Loan, LoanApplication, LoanSchedule, ManualDividendBatch, Member, MemberAccount, MemberApplication, SaccoFinancialYearSettings, SaccoPerformanceTargetSettings, StaffAccessUser, StatementRow, Tenant } from "../types/api";
+import type { Branch, ChargeRevenueSummary, DailyCashSummary, Loan, LoanApplication, LoanSchedule, ManualDividendBatch, Member, MemberAccount, MemberApplication, SaccoFinancialYearSettings, SaccoOverview, SaccoPerformanceTargetSettings, StaffAccessUser, StatementRow, Tenant } from "../types/api";
 import { MotionCard, MotionListItem, MotionSection } from "../ui/motion";
 import {
     DEFAULT_SACCO_FINANCIAL_YEAR_SETTINGS,
@@ -112,6 +112,7 @@ interface DashboardState {
     revenueSummary: ChargeRevenueSummary | null;
     manualDividendBatches: ManualDividendBatch[];
     dailyCashSummary: DailyCashSummary[];
+    saccoOverview: SaccoOverview | null;
 }
 
 interface PlatformState {
@@ -1595,7 +1596,8 @@ export function DashboardPage() {
         staffUsers: [],
         revenueSummary: null,
         manualDividendBatches: [],
-        dailyCashSummary: []
+        dailyCashSummary: [],
+        saccoOverview: null
     });
     const [financialYearSettings, setFinancialYearSettings] = useState<SaccoFinancialYearSettings>(DEFAULT_SACCO_FINANCIAL_YEAR_SETTINGS);
     const [performanceTargetSettings, setPerformanceTargetSettings] = useState<SaccoPerformanceTargetSettings>(DEFAULT_SACCO_PERFORMANCE_TARGET_SETTINGS);
@@ -1838,7 +1840,8 @@ export function DashboardPage() {
                         staffUsers: [],
                         revenueSummary: null,
                         manualDividendBatches: [],
-                        dailyCashSummary: []
+                        dailyCashSummary: [],
+                        saccoOverview: null
                     });
                     setLoading(false);
                     setSupplementalLoading(false);
@@ -1855,7 +1858,7 @@ export function DashboardPage() {
                 rows.filter((schedule) => ["pending", "partial", "overdue"].includes(schedule.status));
 
             try {
-                const [membersList, loansData, schedulesData, memberAccounts] = await Promise.all([
+                const [membersList, loansData, schedulesData, memberAccounts, saccoOverviewData] = await Promise.all([
                     cachedGet(
                         `dash:members:${cacheScope}`,
                         () => loadDashboardMembers(selectedTenantId),
@@ -1883,6 +1886,22 @@ export function DashboardPage() {
                         () => loadDashboardMemberAccounts(selectedTenantId),
                         DASHBOARD_CACHE_TTL_MS,
                         (fresh) => { if (isActive) setState((current) => ({ ...current, memberAccounts: fresh })); }
+                    ),
+                    // Canonical tenant-wide totals (sacco_member_overview RPC) — the same
+                    // source the member portal and milestones use, so headline figures can
+                    // never disagree across screens. Non-fatal if it fails: the KPI row
+                    // falls back to client-computed values.
+                    cachedGet(
+                        `dash:sacco-overview:${cacheScope}`,
+                        async () => {
+                            try {
+                                return (await api.get<{ data: SaccoOverview }>(endpoints.members.saccoOverview())).data.data || null;
+                            } catch {
+                                return null;
+                            }
+                        },
+                        DASHBOARD_CACHE_TTL_MS,
+                        (fresh) => { if (isActive) setState((current) => ({ ...current, saccoOverview: fresh })); }
                     )
                 ]);
 
@@ -1901,7 +1920,8 @@ export function DashboardPage() {
                     staffUsers: [],
                     revenueSummary: null,
                     manualDividendBatches: [],
-                    dailyCashSummary: []
+                    dailyCashSummary: [],
+                    saccoOverview: saccoOverviewData
                 });
 
                 // Core dashboard data is in — render immediately. Everything below is
@@ -2683,9 +2703,13 @@ export function DashboardPage() {
                         { label: "Accrued Interest", value: formatCurrency(metrics.accruedInterest) }
                     ]
                     : [
-                        { label: "Total Members", value: String(metrics.totalMembers) },
-                        { label: "Savings Balance", value: formatCurrency(metrics.totalDeposits - metrics.totalWithdrawals) },
-                        { label: "Loan Portfolio", value: formatCurrency(metrics.outstandingLoans) },
+                        // Headline figures come from the canonical sacco_member_overview
+                        // aggregate (same source as member portal / milestones); the
+                        // client-computed sums remain only as a fallback because the raw
+                        // lists behind them are paginated (loans capped at 100).
+                        { label: "Total Members", value: String(state.saccoOverview?.total_members ?? metrics.totalMembers) },
+                        { label: "Savings Balance", value: formatCurrency(state.saccoOverview?.total_savings ?? (metrics.totalDeposits - metrics.totalWithdrawals)) },
+                        { label: "Loan Portfolio", value: formatCurrency(state.saccoOverview?.loan_book ?? metrics.outstandingLoans) },
                         { label: "PAR Signals", value: `${metrics.overdueLoans} overdue loans` }
                     ];
     const branchDashboardCashInToday = metrics.branchCashControlRows ? metrics.branchCashControlInflowToday : metrics.branchInflowsToday;

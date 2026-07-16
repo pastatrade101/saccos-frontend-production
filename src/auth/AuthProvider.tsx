@@ -34,6 +34,9 @@ interface AuthFlowError extends Error {
 
 const SELECTED_BRANCH_KEY = "saccos:selectedBranchId";
 const SELECTED_BRANCH_NAME_KEY = "saccos:selectedBranchName";
+// Idle-timeout activity marker owned by SessionTimeoutManager; cleared on sign-out
+// so the next login starts a fresh idle clock instead of inheriting a stale one.
+const LAST_ACTIVITY_KEY = "saccos:lastActivity";
 // Holds the super admin's own session tokens + the target member label while an
 // impersonation ("Login as") is active, so the admin can return to their account.
 const IMPERSONATION_KEY = "saccos:impersonation";
@@ -322,6 +325,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     ) => {
         setLoading(true);
         clearStaleSupabaseSession();
+        localStorage.removeItem(LAST_ACTIVITY_KEY);
         localStorage.removeItem(SELECTED_BRANCH_KEY);
         localStorage.removeItem(SELECTED_BRANCH_NAME_KEY);
         setSelectedBranchIdState(null);
@@ -381,6 +385,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         setImpersonatedMember(null);
         await supabase.auth.signOut();
         clearStaleSupabaseSession();
+        localStorage.removeItem(LAST_ACTIVITY_KEY);
         localStorage.removeItem(SELECTED_BRANCH_KEY);
         localStorage.removeItem(SELECTED_BRANCH_NAME_KEY);
         setSelectedBranchIdState(null);

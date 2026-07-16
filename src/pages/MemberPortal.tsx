@@ -1,5 +1,6 @@
 import { MotionCard, MotionModal, easeOutFast, springSoft, useReducedMotionSafe } from "../ui/motion";
 import AccountBalanceWalletRoundedIcon from "@mui/icons-material/AccountBalanceWalletRounded";
+import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import PersonRoundedIcon from "@mui/icons-material/PersonRounded";
 import ContactPhoneRoundedIcon from "@mui/icons-material/ContactPhoneRounded";
 import Diversity3RoundedIcon from "@mui/icons-material/Diversity3Rounded";
@@ -36,6 +37,9 @@ import HighlightOffRoundedIcon from "@mui/icons-material/HighlightOffRounded";
 import WalletRoundedIcon from "@mui/icons-material/WalletRounded";
 import WorkspacesRoundedIcon from "@mui/icons-material/WorkspacesRounded";
 import {
+    Accordion,
+    AccordionDetails,
+    AccordionSummary,
     Alert,
     Avatar,
     Box,
@@ -96,6 +100,9 @@ import { MemberLeagueCard } from "../components/MemberLeagueCard";
 import { MemberOverview, type MemberAlertItem } from "../components/member-overview";
 import { MemberPortalFeatureTour } from "../components/member-portal/MemberPortalFeatureTour";
 import { MemberLoanWorkspaceCard } from "../components/member-portal/MemberLoanWorkspaceCard";
+import { LoanTermsCard } from "../components/member-portal/LoanTermsCard";
+import { LoanSchedulePreview } from "../components/member-portal/LoanSchedulePreview";
+import { HeirsSection } from "../components/member-portal/HeirsSection";
 import { PaymentReceiptDialog } from "../components/member-portal/PaymentReceiptDialog";
 import { LoanEligibilitySummary } from "../components/loan-capacity/LoanEligibilitySummary";
 import { NotificationBell } from "../components/notifications/NotificationBell";
@@ -138,7 +145,7 @@ import {
 } from "../lib/endpoints";
 import { brandColors, crestGold, darkThemeColors, displayFontFamily, inkPanel } from "../theme/colors";
 import { useUI } from "../ui/UIProvider";
-import type { Loan, LoanApplication, LoanCapacitySummary, LoanProduct, LoanSchedule, LoanTransaction, Member, MemberAccount, MemberApplication, MemberApplicationStatus, MemberPortalPaymentControls, PaymentOrder, SaccoFinancialYearSettings, SaccoMilestoneBoard, SaccoPerformanceTargetSettings, StatementRow } from "../types/api";
+import type { Loan, LoanApplication, LoanCapacitySummary, LoanProduct, LoanSchedule, LoanTransaction, Member, MemberAccount, MemberApplication, MemberApplicationStatus, MemberPortalPaymentControls, PaymentOrder, SaccoFinancialYearSettings, SaccoMilestoneBoard, SaccoOverview, SaccoPerformanceTargetSettings, StatementRow } from "../types/api";
 import { downloadLoanStatementPdf, downloadMemberStatementPdf, loadReportLogoDataUrl } from "../utils/memberStatementPdf";
 import { memberApplicationStatusLabels } from "../utils/member-application-status";
 import {
@@ -151,6 +158,7 @@ import {
 } from "../utils/nextOfKin";
 import { formatCurrency, formatCurrencyCompact, formatDate, formatRole } from "../utils/format";
 import { annualToMonthlyRate, formatMonthlyLoanRate } from "../utils/loanInterest";
+import { projectLoanSchedule } from "../utils/loanSchedule";
 import { DEFAULT_SACCO_FINANCIAL_YEAR_SETTINGS, resolveFinancialYearPeriod } from "../utils/financialYear";
 import {
     calculateMemberPerformanceTarget,
@@ -491,6 +499,11 @@ const memberProfileCompletionSchema = z.object({
     next_of_kin_phone: optionalText(7, 30, "Next of kin phone"),
     next_of_kin_relationship: optionalText(2, 80, "Relationship"),
     next_of_kin_address: optionalText(3, 255, "Next of kin address"),
+    next_of_kin_region_id: z.string().uuid().optional().or(z.literal("")),
+    next_of_kin_district_id: z.string().uuid().optional().or(z.literal("")),
+    next_of_kin_ward_id: z.string().uuid().optional().or(z.literal("")),
+    next_of_kin_village_id: z.string().uuid().optional().or(z.literal("")),
+    next_of_kin_street: optionalText(2, 160, "Next of kin street"),
     // By-law fields so existing members can complete the same data as new applicants.
     ilboru_completion_year: z.union([z.literal(""), z.coerce.number().int().min(1980, "Year must be 1980–2022.").max(2022, "Year must be 1980–2022.")]).optional(),
     heir_name: optionalText(3, 120, "Heir name"),
@@ -522,6 +535,18 @@ const memberProfileCompletionSchema = z.object({
     requireText("next_of_kin_name", "Next of kin name");
     requireText("next_of_kin_phone", "Next of kin phone");
     requireText("next_of_kin_relationship", "Next of kin relationship");
+
+    // Next-of-kin address hierarchy is optional, but must be complete when started
+    // — same structured format as the member's own address.
+    const nokHierarchy = [value.next_of_kin_region_id, value.next_of_kin_district_id, value.next_of_kin_ward_id];
+    const nokPresent = nokHierarchy.filter((entry) => String(entry || "").trim() !== "").length;
+    if (nokPresent > 0 && nokPresent < 3) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["next_of_kin_region_id"], message: "Select next of kin region, district, and ward together." });
+    }
+    if (String(value.next_of_kin_village_id || "").trim() !== "" && nokPresent < 3) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["next_of_kin_village_id"], message: "Select region, district, and ward before the village." });
+    }
+
     requireText("ilboru_completion_year", "Year completed Ilboru Secondary");
     requireText("heir_name", "Heir name (Mrithi)");
     requireText("heir_phone", "Heir phone");
@@ -1200,14 +1225,7 @@ export function MemberPortalPage() {
     const [selectedPaymentReceipt, setSelectedPaymentReceipt] = useState<PaymentOrder | null>(null);
     const [activeSection, setActiveSection] = useState<PortalSectionId>(portalSections[0].id);
     const [overviewMode, setOverviewMode] = useState<"member" | "sacco">("member");
-    const [saccoOverview, setSaccoOverview] = useState<{
-        total_members: number;
-        active_members: number;
-        total_savings: number;
-        total_shares: number;
-        loan_book: number;
-        active_loans: number;
-    } | null>(null);
+    const [saccoOverview, setSaccoOverview] = useState<SaccoOverview | null>(null);
     const [saccoOverviewLoading, setSaccoOverviewLoading] = useState(false);
     const [milestoneBoard, setMilestoneBoard] = useState<SaccoMilestoneBoard | null>(null);
 
@@ -1357,6 +1375,11 @@ export function MemberPortalPage() {
             next_of_kin_phone: "",
             next_of_kin_relationship: "",
             next_of_kin_address: "",
+            next_of_kin_region_id: "",
+            next_of_kin_district_id: "",
+            next_of_kin_ward_id: "",
+            next_of_kin_village_id: "",
+            next_of_kin_street: "",
             ilboru_completion_year: "",
             heir_name: "",
             heir_phone: "",
@@ -1432,6 +1455,25 @@ export function MemberPortalPage() {
         districtId: memberProfileDistrictId,
         wardId: memberProfileWardId
     });
+    // Second, independent cascade for the next-of-kin address — same structured
+    // format as the member's own (requirement: consistent record keeping).
+    const nokRegionId = memberProfileCompletionForm.watch("next_of_kin_region_id");
+    const nokDistrictId = memberProfileCompletionForm.watch("next_of_kin_district_id");
+    const nokWardId = memberProfileCompletionForm.watch("next_of_kin_ward_id");
+    const {
+        regionOptions: nokRegionOptions,
+        districtOptions: nokDistrictOptions,
+        wardOptions: nokWardOptions,
+        villageOptions: nokVillageOptions,
+        loadingRegions: nokLoadingRegions,
+        loadingDistricts: nokLoadingDistricts,
+        loadingWards: nokLoadingWards,
+        loadingVillages: nokLoadingVillages
+    } = useTanzaniaLocations({
+        regionId: nokRegionId,
+        districtId: nokDistrictId,
+        wardId: nokWardId
+    });
     const memberProfileLegacyLocationSummary = useMemo(() => {
         const parts = [
             memberProfileCompletionForm.getValues("region"),
@@ -1457,6 +1499,27 @@ export function MemberPortalPage() {
         () => loanProducts.find((product) => product.id === selectedLoanProductId) || null,
         [loanProducts, selectedLoanProductId]
     );
+    const activeLoanProducts = useMemo(
+        () => loanProducts.filter((product) => product.status === "active"),
+        [loanProducts]
+    );
+    // Projected repayment schedule shown before the member submits, so they know
+    // the monthly instalment and due dates up front.
+    const loanScheduleProjection = useMemo(() => {
+        const amount = Number(requestedLoanAmount) || 0;
+        const term = Number(requestedLoanTerm) || 0;
+        if (!selectedLoanProduct || amount <= 0 || term <= 0) {
+            return null;
+        }
+
+        return projectLoanSchedule({
+            principal: amount,
+            annualInterestRate: Number(selectedLoanProduct.annual_interest_rate) || 0,
+            termCount: term,
+            termUnit: selectedLoanProduct.term_unit === "weeks" ? "weeks" : "months",
+            method: selectedLoanProduct.interest_method === "reducing_balance" ? "reducing_balance" : "flat"
+        });
+    }, [requestedLoanAmount, requestedLoanTerm, selectedLoanProduct]);
     const dashboardReferenceLoan = useMemo(
         () =>
             loans
@@ -2355,6 +2418,15 @@ export function MemberPortalPage() {
             next_of_kin_phone: memberRecord?.next_of_kin_phone || "",
             next_of_kin_relationship: memberRecord?.next_of_kin_relationship || "",
             next_of_kin_address: memberRecord?.next_of_kin_address || "",
+            next_of_kin_region_id: memberRecord?.next_of_kin_region_id || "",
+            next_of_kin_district_id: memberRecord?.next_of_kin_district_id || "",
+            next_of_kin_ward_id: memberRecord?.next_of_kin_ward_id || "",
+            next_of_kin_village_id: memberRecord?.next_of_kin_village_id || "",
+            // Legacy records only have free text — surface it in the street box so
+            // nothing typed before the structured format disappears from the form.
+            next_of_kin_street: memberRecord?.next_of_kin_street
+                || (memberRecord?.next_of_kin_region_id ? "" : memberRecord?.next_of_kin_address)
+                || "",
             ilboru_completion_year: memberRecord?.ilboru_completion_year || "",
             heir_name: memberRecord?.heir_name || "",
             heir_phone: memberRecord?.heir_phone || "",
@@ -2604,6 +2676,11 @@ export function MemberPortalPage() {
                 next_of_kin_phone: toNullableProfileValue(values.next_of_kin_phone),
                 next_of_kin_relationship: toNullableProfileValue(values.next_of_kin_relationship),
                 next_of_kin_address: toNullableProfileValue(values.next_of_kin_address),
+                next_of_kin_region_id: toNullableProfileValue(values.next_of_kin_region_id),
+                next_of_kin_district_id: toNullableProfileValue(values.next_of_kin_district_id),
+                next_of_kin_ward_id: toNullableProfileValue(values.next_of_kin_ward_id),
+                next_of_kin_village_id: toNullableProfileValue(values.next_of_kin_village_id),
+                next_of_kin_street: toNullableProfileValue(values.next_of_kin_street),
                 heir_name: toNullableProfileValue(values.heir_name),
                 heir_phone: toNullableProfileValue(values.heir_phone),
                 heir_relationship: toNullableProfileValue(values.heir_relationship),
@@ -6328,6 +6405,36 @@ export function MemberPortalPage() {
                 </CardContent>
             </MotionCard>
 
+            {activeLoanProducts.length ? (
+                <MotionCard variant="outlined" sx={contentCardSx}>
+                    <CardContent sx={{ p: { xs: 1.75, md: 2.25 } }}>
+                        <Typography variant="h6" sx={{ fontWeight: 800 }}>Loan Products &amp; Terms</Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25, mb: 2 }}>
+                            Understand each loan&apos;s amount, interest rate, maximum repayment time, and guarantor requirements before you apply.
+                        </Typography>
+                        {memberPortalPaymentControls.loan_application_guide ? (
+                            <Accordion defaultExpanded disableGutters elevation={0} sx={{ mb: 2, bgcolor: "transparent", border: "1px solid", borderColor: "divider", borderRadius: 2, "&:before": { display: "none" } }}>
+                                <AccordionSummary expandIcon={<ExpandMoreRoundedIcon />}>
+                                    <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>How to apply for a loan</Typography>
+                                </AccordionSummary>
+                                <AccordionDetails sx={{ pt: 0 }}>
+                                    <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: "pre-wrap" }}>
+                                        {memberPortalPaymentControls.loan_application_guide}
+                                    </Typography>
+                                </AccordionDetails>
+                            </Accordion>
+                        ) : null}
+                        <Grid container spacing={2}>
+                            {activeLoanProducts.map((product) => (
+                                <Grid key={product.id} size={{ xs: 12, lg: 6 }}>
+                                    <LoanTermsCard product={product} />
+                                </Grid>
+                            ))}
+                        </Grid>
+                    </CardContent>
+                </MotionCard>
+            ) : null}
+
             {canApplyForLoan ? (
                 <MotionCard variant="outlined" sx={contentCardSx}>
                     <CardContent sx={{ p: 1.75 }}>
@@ -8325,6 +8432,8 @@ export function MemberPortalPage() {
                                     <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="Phone" value={memberRecord?.heir_phone} /></Grid>
                                     <Grid size={{ xs: 12, sm: 6 }}><ProfileField label="Address" value={memberRecord?.heir_address} /></Grid>
                                 </Grid>
+                                <Divider />
+                                <HeirsSection memberStatus={memberRecord?.status} />
                             </Stack>
                         ) : null}
                         {memberProfileTab === 3 ? (
@@ -9610,6 +9719,14 @@ export function MemberPortalPage() {
                                                 </Alert>
                                             </Grid>
                                         ) : null}
+                                        {loanScheduleProjection && selectedLoanProduct ? (
+                                            <Grid size={{ xs: 12 }}>
+                                                <LoanSchedulePreview
+                                                    projection={loanScheduleProjection}
+                                                    interestMethod={selectedLoanProduct.interest_method === "reducing_balance" ? "reducing_balance" : "flat"}
+                                                />
+                                            </Grid>
+                                        ) : null}
                                         <Grid size={{ xs: 12, md: 6 }}>
                                             <TextField
                                                 select
@@ -9670,13 +9787,19 @@ export function MemberPortalPage() {
                                                 Principal: {formatCurrency(requestedLoanAmount || 0)} · Interest: {formatMonthlyLoanRate(selectedLoanProduct?.annual_interest_rate ?? 0)} · Term: {requestedLoanTerm || 0} months
                                             </Typography>
                                             <Typography variant="h6" sx={{ fontWeight: 800 }}>
-                                                {getRepaymentFrequencyLabel(requestedLoanFrequency)} payment: {formatCurrency(installmentPreview?.installment || 0)}
+                                                {selectedLoanProduct?.interest_method === "reducing_balance" ? "First" : "Monthly"} payment: {formatCurrency(loanScheduleProjection?.monthlyInstalment ?? installmentPreview?.installment ?? 0)}
                                             </Typography>
                                             <Typography variant="body2" color="text.secondary">
-                                                Total repayment: {formatCurrency(installmentPreview?.totalRepayment || 0)}
+                                                Total repayment: {formatCurrency(loanScheduleProjection?.totalRepayable ?? installmentPreview?.totalRepayment ?? 0)}
                                             </Typography>
                                         </Stack>
                                     </Paper>
+                                    {loanScheduleProjection && selectedLoanProduct ? (
+                                        <LoanSchedulePreview
+                                            projection={loanScheduleProjection}
+                                            interestMethod={selectedLoanProduct.interest_method === "reducing_balance" ? "reducing_balance" : "flat"}
+                                        />
+                                    ) : null}
                                     <Paper variant="outlined" sx={{ p: 1.75, borderRadius: 1.1 }}>
                                         <Grid container spacing={1.5}>
                                             <Grid size={{ xs: 12, sm: 6 }}>
@@ -10326,13 +10449,70 @@ export function MemberPortalPage() {
                                                 ) : null}
                                             </TextField>
                                             <TextField fullWidth label="Phone number" {...memberProfileCompletionForm.register("next_of_kin_phone")} {...completionFieldError("next_of_kin_phone")} />
+                                            {/* Same structured address format as the member's own: pick the
+                                                hierarchy from dropdowns, type only the unique street detail. */}
+                                            <SearchableSelect
+                                                value={memberProfileCompletionForm.watch("next_of_kin_region_id") || ""}
+                                                options={nokRegionOptions}
+                                                label="Region"
+                                                loading={nokLoadingRegions}
+                                                placeholder={nokLoadingRegions ? "Loading regions..." : "Search region..."}
+                                                error={Boolean(completionFormErrors.next_of_kin_region_id)}
+                                                helperText={completionFormErrors.next_of_kin_region_id?.message || "Select the next of kin's region."}
+                                                onChange={(value) => {
+                                                    memberProfileCompletionForm.setValue("next_of_kin_region_id", value, { shouldValidate: true });
+                                                    memberProfileCompletionForm.setValue("next_of_kin_district_id", "", { shouldValidate: false });
+                                                    memberProfileCompletionForm.setValue("next_of_kin_ward_id", "", { shouldValidate: false });
+                                                    memberProfileCompletionForm.setValue("next_of_kin_village_id", "", { shouldValidate: false });
+                                                }}
+                                            />
+                                            <SearchableSelect
+                                                value={memberProfileCompletionForm.watch("next_of_kin_district_id") || ""}
+                                                options={nokDistrictOptions}
+                                                label="District"
+                                                disabled={!nokRegionId}
+                                                loading={nokLoadingDistricts}
+                                                placeholder={nokRegionId ? (nokLoadingDistricts ? "Loading districts..." : "Search district...") : "Select a region first"}
+                                                error={Boolean(completionFormErrors.next_of_kin_district_id)}
+                                                helperText={completionFormErrors.next_of_kin_district_id?.message}
+                                                onChange={(value) => {
+                                                    memberProfileCompletionForm.setValue("next_of_kin_district_id", value, { shouldValidate: true });
+                                                    memberProfileCompletionForm.setValue("next_of_kin_ward_id", "", { shouldValidate: false });
+                                                    memberProfileCompletionForm.setValue("next_of_kin_village_id", "", { shouldValidate: false });
+                                                }}
+                                            />
+                                            <SearchableSelect
+                                                value={memberProfileCompletionForm.watch("next_of_kin_ward_id") || ""}
+                                                options={nokWardOptions}
+                                                label="Ward"
+                                                disabled={!nokDistrictId}
+                                                loading={nokLoadingWards}
+                                                placeholder={nokDistrictId ? (nokLoadingWards ? "Loading wards..." : "Search ward...") : "Select a district first"}
+                                                error={Boolean(completionFormErrors.next_of_kin_ward_id)}
+                                                helperText={completionFormErrors.next_of_kin_ward_id?.message}
+                                                onChange={(value) => {
+                                                    memberProfileCompletionForm.setValue("next_of_kin_ward_id", value, { shouldValidate: true });
+                                                    memberProfileCompletionForm.setValue("next_of_kin_village_id", "", { shouldValidate: false });
+                                                }}
+                                            />
+                                            <SearchableSelect
+                                                value={memberProfileCompletionForm.watch("next_of_kin_village_id") || ""}
+                                                options={nokVillageOptions}
+                                                label="Village / Mtaa"
+                                                disabled={!nokWardId}
+                                                loading={nokLoadingVillages}
+                                                placeholder={nokWardId ? (nokLoadingVillages ? "Loading villages..." : "Search village or mtaa...") : "Select a ward first"}
+                                                error={Boolean(completionFormErrors.next_of_kin_village_id)}
+                                                helperText={completionFormErrors.next_of_kin_village_id?.message}
+                                                onChange={(value) => {
+                                                    memberProfileCompletionForm.setValue("next_of_kin_village_id", value, { shouldValidate: true });
+                                                }}
+                                            />
                                             <TextField
                                                 fullWidth
-                                                multiline
-                                                minRows={2}
-                                                maxRows={3}
-                                                label="Next of kin address"
-                                                {...memberProfileCompletionForm.register("next_of_kin_address")}
+                                                label="Street / unique detail"
+                                                {...memberProfileCompletionForm.register("next_of_kin_street")}
+                                                {...completionFieldError("next_of_kin_street", "House number, plot, landmark, or extra detail only.")}
                                             />
                                         </Stack>
                                     </Paper>

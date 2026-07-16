@@ -49,6 +49,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { AppLoader } from "../components/AppLoader";
 import { DataTable, type Column } from "../components/DataTable";
+import { HeirsSection } from "../components/member-portal/HeirsSection";
 import { useToast } from "../components/Toast";
 import { api, getApiErrorMessage } from "../lib/api";
 import {
@@ -146,6 +147,7 @@ const updateSchema = z.object({
     national_id: z.string().min(5, "National ID is required."),
     branch_id: z.string().uuid("Select a branch."),
     status: z.enum(["active", "suspended", "exited", "approved_pending_payment"]).default("active"),
+    membership_started_on: z.string().trim().optional().or(z.literal("")),
     // By-law fields so staff can complete a member's record on their behalf.
     ilboru_completion_year: z.union([z.literal(""), z.coerce.number().int().min(1980, "Year must be 1980–2022.").max(2022, "Year must be 1980–2022.")]).optional(),
     heir_name: z.string().trim().max(120).optional().or(z.literal("")),
@@ -460,6 +462,9 @@ export function MembersPage() {
         profile && ["branch_manager"].includes(profile.role)
     );
     const canDeleteMembers = Boolean(
+        profile && ["super_admin", "branch_manager"].includes(profile.role)
+    );
+    const canManageHeirs = Boolean(
         profile && ["super_admin", "branch_manager"].includes(profile.role)
     );
     const canLoadProductBootstrap = canCreateMembers;
@@ -864,6 +869,7 @@ export function MembersPage() {
             national_id: selectedMember?.national_id || "",
             branch_id: selectedMember?.branch_id || selectedBranchId || branches[0]?.id || "",
             status: selectedMember?.status || "active",
+            membership_started_on: selectedMember?.membership_started_on || "",
             ilboru_completion_year: selectedMember?.ilboru_completion_year || "",
             heir_name: selectedMember?.heir_name || "",
             heir_phone: selectedMember?.heir_phone || "",
@@ -1247,6 +1253,7 @@ export function MembersPage() {
                 national_id: values.national_id,
                 branch_id: values.branch_id,
                 status: values.status,
+                membership_started_on: values.membership_started_on ? values.membership_started_on : null,
                 ilboru_completion_year: values.ilboru_completion_year === "" || values.ilboru_completion_year === undefined
                     ? null
                     : Number(values.ilboru_completion_year),
@@ -1860,40 +1867,56 @@ export function MembersPage() {
                 </CardContent>
             </MotionCard>
 
+            {/* Tellers get an operational desk snapshot (branch-scoped by design).
+                Other staff only see registry-specific stats here — SACCO-wide member
+                and savings figures live on the Dashboard to avoid duplicated numbers. */}
             <Grid container spacing={2}>
-                <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-                    <MetricCard
-                        title={isTeller ? "Visible Members" : "Members"}
-                        value={String(memberCounts.total)}
-                        icon={<BadgeRoundedIcon fontSize="small" />}
-                        tone="primary"
-                    />
-                </Grid>
-                <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-                    <MetricCard
-                        title={isTeller ? "Cash Ready" : "Active Profiles"}
-                        value={String(isTeller ? tellerReadyCount : memberCounts.active)}
-                        icon={isTeller ? <PaidRoundedIcon fontSize="small" /> : <PersonAddAlt1RoundedIcon fontSize="small" />}
-                        tone="success"
-                    />
-                </Grid>
-                <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-                    <MetricCard
-                        title={isTeller ? "Needs Follow-up" : "Linked Logins"}
-                        value={String(isTeller ? tellerNeedsFollowUpCount : memberCounts.linkedLogins)}
-                        icon={isTeller ? <SearchRoundedIcon fontSize="small" /> : <LockPersonRoundedIcon fontSize="small" />}
-                        tone={isTeller ? "warning" : "neutral"}
-                    />
-                </Grid>
-                <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-                    <MetricCard
-                        title={isTeller ? "Visible Savings Float" : "Savings Balance"}
-                        value={(serverSummary || accountsLoaded) ? formatCurrencyCompact(memberCounts.totalSavings) : "Syncing..."}
-                        valueTooltip={(serverSummary || accountsLoaded) ? formatCurrency(memberCounts.totalSavings) : undefined}
-                        icon={<AccountBalanceWalletRoundedIcon fontSize="small" />}
-                        tone="warning"
-                    />
-                </Grid>
+                {isTeller ? (
+                    <>
+                        <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
+                            <MetricCard
+                                title="Visible Members"
+                                value={String(memberCounts.total)}
+                                icon={<BadgeRoundedIcon fontSize="small" />}
+                                tone="primary"
+                            />
+                        </Grid>
+                        <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
+                            <MetricCard
+                                title="Cash Ready"
+                                value={String(tellerReadyCount)}
+                                icon={<PaidRoundedIcon fontSize="small" />}
+                                tone="success"
+                            />
+                        </Grid>
+                        <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
+                            <MetricCard
+                                title="Needs Follow-up"
+                                value={String(tellerNeedsFollowUpCount)}
+                                icon={<SearchRoundedIcon fontSize="small" />}
+                                tone="warning"
+                            />
+                        </Grid>
+                        <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
+                            <MetricCard
+                                title="Visible Savings Float"
+                                value={(serverSummary || accountsLoaded) ? formatCurrencyCompact(memberCounts.totalSavings) : "Syncing..."}
+                                valueTooltip={(serverSummary || accountsLoaded) ? formatCurrency(memberCounts.totalSavings) : undefined}
+                                icon={<AccountBalanceWalletRoundedIcon fontSize="small" />}
+                                tone="warning"
+                            />
+                        </Grid>
+                    </>
+                ) : (
+                    <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
+                        <MetricCard
+                            title="Linked Logins"
+                            value={String(memberCounts.linkedLogins)}
+                            icon={<LockPersonRoundedIcon fontSize="small" />}
+                            tone="neutral"
+                        />
+                    </Grid>
+                )}
             </Grid>
 
             {lastMemberCredentials ? (
@@ -2220,7 +2243,7 @@ export function MembersPage() {
                                             {[
                                                 ["Member ID", selectedMember.id],
                                                 ["Branch", selectedBranchName],
-                                                ["Created", formatDate(selectedMember.created_at)],
+                                                ["Member since", selectedMember.membership_started_on ? formatDate(selectedMember.membership_started_on) : "Not set"],
                                                 ["Account", selectedMember.account?.account_number || "Pending"],
                                                 ["Login", selectedMember.user_id ? "Linked" : "Not linked"],
                                                 ["Balance", formatCurrency(selectedMember.account?.available_balance)]
@@ -2546,6 +2569,16 @@ export function MembersPage() {
                                                             <MenuItem value="approved_pending_payment">Awaiting fee</MenuItem>
                                                         </TextField>
                                                     </Grid>
+                                                        <Grid size={{ xs: 12, md: 6 }}>
+                                                            <TextField
+                                                                type="date"
+                                                                label="Membership start date"
+                                                                fullWidth
+                                                                InputLabelProps={{ shrink: true }}
+                                                                {...updateForm.register("membership_started_on")}
+                                                                helperText="Founding members: 01/10/2024. Others: the date they actually joined."
+                                                            />
+                                                        </Grid>
                                                     </Grid>
 
                                                     <Divider textAlign="left">
@@ -2616,6 +2649,16 @@ export function MembersPage() {
                                                 </Box>
                                             )}
                                         </Stack>
+                                        ) : null}
+
+                                        {!isTeller ? <Divider /> : null}
+
+                                        {!isTeller ? (
+                                            <HeirsSection
+                                                key={selectedMember.id}
+                                                memberId={selectedMember.id}
+                                                canEdit={canManageHeirs}
+                                            />
                                         ) : null}
 
                                         {!isTeller ? <Divider /> : null}

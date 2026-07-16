@@ -227,14 +227,24 @@ const schema = z.object({
         (value) => /^255[67]\d{8}$/.test(normalizeSignupPhoneDigits(value)),
         "Enter a valid Tanzania mobile number."
     ),
-    next_of_kin_address: z.string().trim().min(5, "Next of kin address is required."),
+    // Structured address, same format as the applicant's own: dropdown
+    // hierarchy + manual street detail only.
+    next_of_kin_region_id: z.string().min(1, "Select next of kin region."),
+    next_of_kin_district_id: z.string().min(1, "Select next of kin district."),
+    next_of_kin_ward_id: z.string().min(1, "Select next of kin ward."),
+    next_of_kin_village_id: z.string().optional().or(z.literal("")),
+    next_of_kin_street: z.string().trim().max(160).optional().or(z.literal("")),
     heir_name: z.string().trim().min(3, "Nominated heir name is required."),
     heir_relationship: z.enum(NEXT_OF_KIN_RELATIONSHIP_VALUES, { message: "Select heir relationship." }),
     heir_phone: z.string().trim().refine(
         (value) => /^255[67]\d{8}$/.test(normalizeSignupPhoneDigits(value)),
         "Enter a valid Tanzania mobile number."
     ),
-    heir_address: z.string().trim().min(5, "Nominated heir address is required."),
+    heir_region_id: z.string().min(1, "Select heir region."),
+    heir_district_id: z.string().min(1, "Select heir district."),
+    heir_ward_id: z.string().min(1, "Select heir ward."),
+    heir_village_id: z.string().optional().or(z.literal("")),
+    heir_street: z.string().trim().max(160).optional().or(z.literal("")),
     upload_national_id: z.custom<File | undefined>((value) => isBrowserFile(value), "National ID upload is required.")
         .refine((value) => !isBrowserFile(value) || ["image/jpeg", "image/png", "application/pdf"].includes(value.type), "Only JPG, PNG, or PDF is allowed.")
         .refine((value) => !isBrowserFile(value) || value.size <= SIGNUP_MAX_UPLOAD_BYTES, "File size must be 5MB or less."),
@@ -397,11 +407,19 @@ export function SignupPage() {
             next_of_kin_name: "",
             relationship: "spouse",
             next_of_kin_phone: "",
-            next_of_kin_address: "",
+            next_of_kin_region_id: "",
+            next_of_kin_district_id: "",
+            next_of_kin_ward_id: "",
+            next_of_kin_village_id: "",
+            next_of_kin_street: "",
             heir_name: "",
             heir_relationship: "spouse",
             heir_phone: "",
-            heir_address: "",
+            heir_region_id: "",
+            heir_district_id: "",
+            heir_ward_id: "",
+            heir_village_id: "",
+            heir_street: "",
             upload_national_id: undefined,
             upload_passport_photo: undefined,
             membership_type: "individual",
@@ -483,6 +501,34 @@ export function SignupPage() {
         districtId: selectedDistrictId,
         wardId: selectedWardId
     });
+    // Independent cascades for the next-of-kin and heir addresses — the same
+    // structured format as the applicant's own address.
+    const nokRegionId = form.watch("next_of_kin_region_id");
+    const nokDistrictId = form.watch("next_of_kin_district_id");
+    const nokWardId = form.watch("next_of_kin_ward_id");
+    const {
+        regionOptions: nokRegionOptions,
+        districtOptions: nokDistrictOptions,
+        wardOptions: nokWardOptions,
+        villageOptions: nokVillageOptions,
+        loadingRegions: nokLoadingRegions,
+        loadingDistricts: nokLoadingDistricts,
+        loadingWards: nokLoadingWards,
+        loadingVillages: nokLoadingVillages
+    } = useTanzaniaLocations({ regionId: nokRegionId, districtId: nokDistrictId, wardId: nokWardId });
+    const heirRegionId = form.watch("heir_region_id");
+    const heirDistrictId = form.watch("heir_district_id");
+    const heirWardId = form.watch("heir_ward_id");
+    const {
+        regionOptions: heirRegionOptions,
+        districtOptions: heirDistrictOptions,
+        wardOptions: heirWardOptions,
+        villageOptions: heirVillageOptions,
+        loadingRegions: heirLoadingRegions,
+        loadingDistricts: heirLoadingDistricts,
+        loadingWards: heirLoadingWards,
+        loadingVillages: heirLoadingVillages
+    } = useTanzaniaLocations({ regionId: heirRegionId, districtId: heirDistrictId, wardId: heirWardId });
 
     useEffect(() => {
         if (!selectedBranch) {
@@ -513,7 +559,7 @@ export function SignupPage() {
     const stepFields: Array<Array<keyof SignupValues>> = [
         ["first_name", "last_name", "gender", "marital_status", "occupation", "phone", "email", "national_id", "date_of_birth"],
         ["region_id", "district_id", "ward_id", "residential_address"],
-        ["next_of_kin_name", "relationship", "next_of_kin_phone", "next_of_kin_address", "heir_name", "heir_relationship", "heir_phone", "heir_address"],
+        ["next_of_kin_name", "relationship", "next_of_kin_phone", "next_of_kin_region_id", "next_of_kin_district_id", "next_of_kin_ward_id", "next_of_kin_street", "heir_name", "heir_relationship", "heir_phone", "heir_region_id", "heir_district_id", "heir_ward_id", "heir_street"],
         ["upload_national_id", "upload_passport_photo"],
         ["branch_id", "membership_type", "ilboru_completion_year", "initial_share_amount", "monthly_savings_commitment"],
         ["password", "confirm_password"],
@@ -569,11 +615,19 @@ export function SignupPage() {
             next_of_kin_name: values.next_of_kin_name.trim(),
             relationship: values.relationship,
             next_of_kin_phone: normalizeSignupPhoneDigits(values.next_of_kin_phone),
-            next_of_kin_address: values.next_of_kin_address.trim(),
+            next_of_kin_region_id: values.next_of_kin_region_id,
+            next_of_kin_district_id: values.next_of_kin_district_id,
+            next_of_kin_ward_id: values.next_of_kin_ward_id,
+            next_of_kin_village_id: values.next_of_kin_village_id || null,
+            next_of_kin_street: values.next_of_kin_street?.trim() || null,
             heir_name: values.heir_name.trim(),
             heir_relationship: values.heir_relationship,
             heir_phone: normalizeSignupPhoneDigits(values.heir_phone),
-            heir_address: values.heir_address.trim(),
+            heir_region_id: values.heir_region_id,
+            heir_district_id: values.heir_district_id,
+            heir_ward_id: values.heir_ward_id,
+            heir_village_id: values.heir_village_id || null,
+            heir_street: values.heir_street?.trim() || null,
             membership_type: values.membership_type,
             ilboru_completion_year: Number(values.ilboru_completion_year),
             initial_share_amount: Number(values.initial_share_amount),
@@ -1000,7 +1054,70 @@ export function SignupPage() {
                                 />
                             </Grid>
                             <Grid size={{ xs: 12, sm: 6 }}>
-                                <TextField fullWidth multiline minRows={2} maxRows={3} label="Next of kin address" size="small" sx={signupFieldSx} {...form.register("next_of_kin_address")} error={Boolean(form.formState.errors.next_of_kin_address)} helperText={form.formState.errors.next_of_kin_address?.message} />
+                                <SearchableSelect
+                                    value={nokRegionId || ""}
+                                    options={nokRegionOptions}
+                                    label="Region"
+                                    loading={nokLoadingRegions}
+                                    placeholder={nokLoadingRegions ? "Loading regions..." : "Search region..."}
+                                    error={Boolean(form.formState.errors.next_of_kin_region_id)}
+                                    helperText={form.formState.errors.next_of_kin_region_id?.message}
+                                    onChange={(value) => {
+                                        form.setValue("next_of_kin_region_id", value, { shouldValidate: true });
+                                        form.setValue("next_of_kin_district_id", "", { shouldValidate: false });
+                                        form.setValue("next_of_kin_ward_id", "", { shouldValidate: false });
+                                        form.setValue("next_of_kin_village_id", "", { shouldValidate: false });
+                                    }}
+                                />
+                            </Grid>
+                            <Grid size={{ xs: 12, sm: 6 }}>
+                                <SearchableSelect
+                                    value={nokDistrictId || ""}
+                                    options={nokDistrictOptions}
+                                    label="District"
+                                    disabled={!nokRegionId}
+                                    loading={nokLoadingDistricts}
+                                    placeholder={nokRegionId ? (nokLoadingDistricts ? "Loading districts..." : "Search district...") : "Select a region first"}
+                                    error={Boolean(form.formState.errors.next_of_kin_district_id)}
+                                    helperText={form.formState.errors.next_of_kin_district_id?.message}
+                                    onChange={(value) => {
+                                        form.setValue("next_of_kin_district_id", value, { shouldValidate: true });
+                                        form.setValue("next_of_kin_ward_id", "", { shouldValidate: false });
+                                        form.setValue("next_of_kin_village_id", "", { shouldValidate: false });
+                                    }}
+                                />
+                            </Grid>
+                            <Grid size={{ xs: 12, sm: 6 }}>
+                                <SearchableSelect
+                                    value={nokWardId || ""}
+                                    options={nokWardOptions}
+                                    label="Ward"
+                                    disabled={!nokDistrictId}
+                                    loading={nokLoadingWards}
+                                    placeholder={nokDistrictId ? (nokLoadingWards ? "Loading wards..." : "Search ward...") : "Select a district first"}
+                                    error={Boolean(form.formState.errors.next_of_kin_ward_id)}
+                                    helperText={form.formState.errors.next_of_kin_ward_id?.message}
+                                    onChange={(value) => {
+                                        form.setValue("next_of_kin_ward_id", value, { shouldValidate: true });
+                                        form.setValue("next_of_kin_village_id", "", { shouldValidate: false });
+                                    }}
+                                />
+                            </Grid>
+                            <Grid size={{ xs: 12, sm: 6 }}>
+                                <SearchableSelect
+                                    value={form.watch("next_of_kin_village_id") || ""}
+                                    options={nokVillageOptions}
+                                    label="Village / Mtaa"
+                                    disabled={!nokWardId}
+                                    loading={nokLoadingVillages}
+                                    placeholder={nokWardId ? (nokLoadingVillages ? "Loading villages..." : "Search village or mtaa...") : "Select a ward first"}
+                                    error={Boolean(form.formState.errors.next_of_kin_village_id)}
+                                    helperText={form.formState.errors.next_of_kin_village_id?.message}
+                                    onChange={(value) => form.setValue("next_of_kin_village_id", value, { shouldValidate: true })}
+                                />
+                            </Grid>
+                            <Grid size={{ xs: 12 }}>
+                                <TextField fullWidth label="Street / unique detail" size="small" sx={signupFieldSx} {...form.register("next_of_kin_street")} error={Boolean(form.formState.errors.next_of_kin_street)} helperText={form.formState.errors.next_of_kin_street?.message || "House number, plot, landmark, or extra detail only."} />
                             </Grid>
                         </Grid>
 
@@ -1024,7 +1141,11 @@ export function SignupPage() {
                                                 form.setValue("heir_name", form.getValues("next_of_kin_name"), { shouldValidate: true });
                                                 form.setValue("heir_relationship", form.getValues("relationship"), { shouldValidate: true });
                                                 form.setValue("heir_phone", form.getValues("next_of_kin_phone"), { shouldValidate: true });
-                                                form.setValue("heir_address", form.getValues("next_of_kin_address"), { shouldValidate: true });
+                                                form.setValue("heir_region_id", form.getValues("next_of_kin_region_id"), { shouldValidate: true });
+                                                form.setValue("heir_district_id", form.getValues("next_of_kin_district_id"), { shouldValidate: true });
+                                                form.setValue("heir_ward_id", form.getValues("next_of_kin_ward_id"), { shouldValidate: true });
+                                                form.setValue("heir_village_id", form.getValues("next_of_kin_village_id"), { shouldValidate: true });
+                                                form.setValue("heir_street", form.getValues("next_of_kin_street"), { shouldValidate: true });
                                             }
                                         }}
                                     />
@@ -1062,7 +1183,71 @@ export function SignupPage() {
                                 />
                             </Grid>
                             <Grid size={{ xs: 12, sm: 6 }}>
-                                <TextField fullWidth multiline minRows={2} maxRows={3} label="Heir address" size="small" sx={signupFieldSx} disabled={heirSameAsKin} {...form.register("heir_address")} error={Boolean(form.formState.errors.heir_address)} helperText={form.formState.errors.heir_address?.message} />
+                                <SearchableSelect
+                                    value={heirRegionId || ""}
+                                    options={heirRegionOptions}
+                                    label="Region"
+                                    disabled={heirSameAsKin}
+                                    loading={heirLoadingRegions}
+                                    placeholder={heirLoadingRegions ? "Loading regions..." : "Search region..."}
+                                    error={Boolean(form.formState.errors.heir_region_id)}
+                                    helperText={form.formState.errors.heir_region_id?.message}
+                                    onChange={(value) => {
+                                        form.setValue("heir_region_id", value, { shouldValidate: true });
+                                        form.setValue("heir_district_id", "", { shouldValidate: false });
+                                        form.setValue("heir_ward_id", "", { shouldValidate: false });
+                                        form.setValue("heir_village_id", "", { shouldValidate: false });
+                                    }}
+                                />
+                            </Grid>
+                            <Grid size={{ xs: 12, sm: 6 }}>
+                                <SearchableSelect
+                                    value={heirDistrictId || ""}
+                                    options={heirDistrictOptions}
+                                    label="District"
+                                    disabled={heirSameAsKin || !heirRegionId}
+                                    loading={heirLoadingDistricts}
+                                    placeholder={heirRegionId ? (heirLoadingDistricts ? "Loading districts..." : "Search district...") : "Select a region first"}
+                                    error={Boolean(form.formState.errors.heir_district_id)}
+                                    helperText={form.formState.errors.heir_district_id?.message}
+                                    onChange={(value) => {
+                                        form.setValue("heir_district_id", value, { shouldValidate: true });
+                                        form.setValue("heir_ward_id", "", { shouldValidate: false });
+                                        form.setValue("heir_village_id", "", { shouldValidate: false });
+                                    }}
+                                />
+                            </Grid>
+                            <Grid size={{ xs: 12, sm: 6 }}>
+                                <SearchableSelect
+                                    value={heirWardId || ""}
+                                    options={heirWardOptions}
+                                    label="Ward"
+                                    disabled={heirSameAsKin || !heirDistrictId}
+                                    loading={heirLoadingWards}
+                                    placeholder={heirDistrictId ? (heirLoadingWards ? "Loading wards..." : "Search ward...") : "Select a district first"}
+                                    error={Boolean(form.formState.errors.heir_ward_id)}
+                                    helperText={form.formState.errors.heir_ward_id?.message}
+                                    onChange={(value) => {
+                                        form.setValue("heir_ward_id", value, { shouldValidate: true });
+                                        form.setValue("heir_village_id", "", { shouldValidate: false });
+                                    }}
+                                />
+                            </Grid>
+                            <Grid size={{ xs: 12, sm: 6 }}>
+                                <SearchableSelect
+                                    value={form.watch("heir_village_id") || ""}
+                                    options={heirVillageOptions}
+                                    label="Village / Mtaa"
+                                    disabled={heirSameAsKin || !heirWardId}
+                                    loading={heirLoadingVillages}
+                                    placeholder={heirWardId ? (heirLoadingVillages ? "Loading villages..." : "Search village or mtaa...") : "Select a ward first"}
+                                    error={Boolean(form.formState.errors.heir_village_id)}
+                                    helperText={form.formState.errors.heir_village_id?.message}
+                                    onChange={(value) => form.setValue("heir_village_id", value, { shouldValidate: true })}
+                                />
+                            </Grid>
+                            <Grid size={{ xs: 12 }}>
+                                <TextField fullWidth label="Street / unique detail" size="small" sx={signupFieldSx} disabled={heirSameAsKin} {...form.register("heir_street")} error={Boolean(form.formState.errors.heir_street)} helperText={form.formState.errors.heir_street?.message || "House number, plot, landmark, or extra detail only."} />
                             </Grid>
                         </Grid>
                     </StepShell>

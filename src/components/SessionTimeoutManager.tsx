@@ -71,6 +71,12 @@ export function SessionTimeoutManager() {
             return;
         }
         const now = Date.now();
+        // If the session has already been idle past the limit (e.g. the laptop just
+        // woke from an overnight sleep), a stray mousemove must NOT revive it — let
+        // the interval finalize the sign-out on its next tick.
+        if (now - lastActivityRef.current >= IDLE_LIMIT_MS) {
+            return;
+        }
         if (now - lastRecordedRef.current < 1000) {
             return;
         }
@@ -106,7 +112,7 @@ export function SessionTimeoutManager() {
     }, [pushToast, signOut]);
 
     useEffect(() => {
-        if (!session) {
+        if (!session?.user?.id) {
             // Reset everything when there is no active session.
             warningActiveRef.current = false;
             loggingOutRef.current = false;
@@ -115,10 +121,14 @@ export function SessionTimeoutManager() {
         }
 
         loggingOutRef.current = false;
-        // Start the idle clock from "now" on (re)login, but respect a more recent
-        // timestamp another tab may have written.
-        const now = Date.now();
-        lastActivityRef.current = Math.max(now, readStoredActivity());
+        // Honour the last recorded activity so an idle gap survives page reloads,
+        // token refreshes, and sleep/wake. Only start fresh ("now") when there is
+        // no stored timestamp at all (a clean login clears it on sign-out). Using
+        // Math.max(now, stored) here was the bug: stored is always in the past, so
+        // it reset the clock to "now" on every token refresh and the session never
+        // expired after the laptop slept overnight.
+        const stored = readStoredActivity();
+        lastActivityRef.current = stored > 0 ? stored : Date.now();
         writeStoredActivity(lastActivityRef.current);
 
         ACTIVITY_EVENTS.forEach((evt) =>
@@ -156,7 +166,11 @@ export function SessionTimeoutManager() {
             window.clearInterval(interval);
             ACTIVITY_EVENTS.forEach((evt) => window.removeEventListener(evt, recordActivity));
         };
-    }, [session, recordActivity, signOutNow]);
+        // Keyed on the user identity, NOT the whole session object: Supabase emits a
+        // brand-new session on every silent token refresh (and on wake), and
+        // re-running this effect then would reset the idle clock. The user id is
+        // stable across refreshes, so the idle timer keeps counting through them.
+    }, [session?.user?.id, recordActivity, signOutNow]);
 
     const open = secondsLeft !== null;
     const progress = secondsLeft === null

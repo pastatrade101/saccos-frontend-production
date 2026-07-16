@@ -514,12 +514,18 @@ export interface Member {
     next_of_kin_phone?: string | null;
     next_of_kin_relationship?: string | null;
     next_of_kin_address?: string | null;
+    next_of_kin_region_id?: string | null;
+    next_of_kin_district_id?: string | null;
+    next_of_kin_ward_id?: string | null;
+    next_of_kin_village_id?: string | null;
+    next_of_kin_street?: string | null;
     heir_name?: string | null;
     heir_phone?: string | null;
     heir_relationship?: string | null;
     heir_address?: string | null;
     employer?: string | null;
     membership_type?: "individual" | "group" | "company" | null;
+    membership_started_on?: string | null;
     ilboru_completion_year?: number | null;
     legitimate_income_declared?: boolean | null;
     no_conflicting_business_declared?: boolean | null;
@@ -637,6 +643,19 @@ export interface LoanProduct {
     minimum_membership_duration_months: number;
     allow_early_repayment: boolean;
     early_settlement_fee_percent?: number | null;
+    penalty_rule?: LoanProductPenaltyRule | null;
+}
+
+// Member-safe expansion of the product's penalty_rule_id, attached by
+// GET /products/loans so the portal can show late-payment terms.
+export interface LoanProductPenaltyRule {
+    id: string;
+    name: string;
+    penalty_type: "late_repayment" | "arrears" | "other";
+    calculation_method: "flat" | "percentage" | "percentage_per_period";
+    flat_amount: number;
+    percentage_value: number;
+    is_active: boolean;
 }
 
 export interface LoanGuarantor {
@@ -715,6 +734,7 @@ export interface MemberPortalPaymentControls {
     share_contribution_enabled: boolean;
     savings_deposit_enabled: boolean;
     loan_repayment_enabled: boolean;
+    loan_application_guide?: string | null;
     updated_at?: string | null;
 }
 
@@ -2293,4 +2313,45 @@ export interface ChargeRevenueSummary {
     trend: ChargeRevenueTrendPoint[];
     branch_breakdown: ChargeRevenueBranchRow[];
     account_breakdown: ChargeRevenueAccountRow[];
+}
+
+export interface MemberHeir {
+    id: string;
+    tenant_id: string;
+    member_id: string;
+    full_name: string;
+    dob: string | null;
+    gender: "male" | "female" | "other" | null;
+    relationship: string;
+    phone?: string | null;
+    email?: string | null;
+    address?: string | null;
+    region_id?: string | null;
+    district_id?: string | null;
+    ward_id?: string | null;
+    village_id?: string | null;
+    street?: string | null;
+    wealth_percent: number;
+    sort_order: number;
+    updated_at: string;
+    created_at: string;
+}
+
+export interface MemberHeirsSummary {
+    member_id: string;
+    heir_count: number;
+    max_heirs: number;
+    total_wealth_percent: number;
+    heirs: MemberHeir[];
+}
+
+// Tenant-wide totals from the sacco_member_overview RPC — the canonical source
+// for SACCO-wide headline figures (Dashboard, member-portal SACCOS Overview).
+export interface SaccoOverview {
+    total_members: number;
+    active_members: number;
+    total_savings: number;
+    total_shares: number;
+    loan_book: number;
+    active_loans: number;
 }
