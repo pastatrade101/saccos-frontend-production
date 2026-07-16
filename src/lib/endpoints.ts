@@ -94,7 +94,8 @@ const routeMap = {
         twoFactorRecovery: "/auth/2fa/recovery",
         twoFactorDisable: "/auth/2fa/disable",
         twoFactorBackupCodesRegenerate: "/auth/2fa/backup-codes/regenerate",
-        passwordSetupLinkSend: "/auth/password-setup/link/send"
+        passwordSetupLinkSend: "/auth/password-setup/link/send",
+        passwordResetEmailSend: "/auth/password-reset/email/send"
     },
     tenants: {
         create: "/tenants",
@@ -378,7 +379,8 @@ export const endpoints = {
         twoFactorRecovery: () => routeMap.auth.twoFactorRecovery,
         twoFactorDisable: () => routeMap.auth.twoFactorDisable,
         twoFactorBackupCodesRegenerate: () => routeMap.auth.twoFactorBackupCodesRegenerate,
-        passwordSetupLinkSend: () => routeMap.auth.passwordSetupLinkSend
+        passwordSetupLinkSend: () => routeMap.auth.passwordSetupLinkSend,
+        passwordResetEmailSend: () => routeMap.auth.passwordResetEmailSend
     },
     tenants: {
         create: () => routeMap.tenants.create,
@@ -988,6 +990,9 @@ export interface UpdateMemberRequest {
     employer?: string | null;
     membership_type?: "individual" | "group" | "company" | null;
     membership_started_on?: string | null;
+    school_completion_level?: "form_4" | "form_6" | null;
+    school_completion_year?: number | null;
+    school_examination_number?: string | null;
     ilboru_completion_year?: number | null;
     legitimate_income_declared?: boolean | null;
     no_conflicting_business_declared?: boolean | null;

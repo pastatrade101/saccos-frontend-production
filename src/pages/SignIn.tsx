@@ -23,8 +23,25 @@ import { endpoints, type PasswordSetupLinkSendResponse } from "../lib/endpoints"
 import { useUI } from "../ui/UIProvider";
 import pageStyles from "./Pages.module.css";
 
+// Members log in with a SACCO email account. Accept either the full email or
+// just the username (firstname.surname); the domain is appended before submit.
+const LOGIN_EMAIL_DOMAIN = (import.meta.env.VITE_LOGIN_EMAIL_DOMAIN || "ias.co.tz")
+    .replace(/^@/, "")
+    .trim()
+    .toLowerCase();
+
+function normalizeLoginIdentifier(value: string) {
+    const raw = value.trim().toLowerCase();
+    if (!raw || raw.includes("@") || !LOGIN_EMAIL_DOMAIN) {
+        return raw;
+    }
+    return `${raw}@${LOGIN_EMAIL_DOMAIN}`;
+}
+
 const schema = z.object({
-    email: z.string().email("Enter a valid email address."),
+    email: z.string().trim().min(1, "Enter your username or email.")
+        .transform(normalizeLoginIdentifier)
+        .pipe(z.string().email("Enter a valid username or email.")),
     password: z.string().min(8, "Password must be at least 8 characters.")
 });
 
@@ -64,6 +81,9 @@ export function SignInPage() {
     const [showFirstTimeSetup, setShowFirstTimeSetup] = useState(false);
     const [setupEmail, setSetupEmail] = useState("");
     const [sendingSetupLink, setSendingSetupLink] = useState(false);
+    const [showForgotPassword, setShowForgotPassword] = useState(false);
+    const [forgotEmail, setForgotEmail] = useState("");
+    const [sendingResetEmail, setSendingResetEmail] = useState(false);
     const [twoFactorModalOpen, setTwoFactorModalOpen] = useState(false);
     const [showRecoveryCode, setShowRecoveryCode] = useState(false);
     const [otpDigits, setOtpDigits] = useState<string[]>(() =>
@@ -252,6 +272,42 @@ export function SignInPage() {
         }
     };
 
+    const handleSendResetEmail = async () => {
+        const candidateEmail = forgotEmail.trim().toLowerCase();
+        const parsed = z.string().email().safeParse(candidateEmail);
+
+        if (!parsed.success) {
+            pushToast({
+                type: "error",
+                title: "Valid email required",
+                message: "Enter the email address registered on your account."
+            });
+            return;
+        }
+
+        setSendingResetEmail(true);
+
+        try {
+            await api.post(endpoints.auth.passwordResetEmailSend(), { email: candidateEmail });
+
+            pushToast({
+                type: "success",
+                title: "Reset link sent",
+                message: "If an account exists for this email, a password reset link has been sent to it. Check your inbox and spam folder."
+            });
+            setShowForgotPassword(false);
+            setForgotEmail("");
+        } catch (error) {
+            pushToast({
+                type: "error",
+                title: "Unable to send reset email",
+                message: getApiErrorMessage(error, "Try again in a moment.")
+            });
+        } finally {
+            setSendingResetEmail(false);
+        }
+    };
+
     const onSubmit = form.handleSubmit(async (values) => {
         setSubmitting(true);
 
@@ -389,11 +445,12 @@ export function SignInPage() {
                     </div>
 
                     <form className={pageStyles.form} onSubmit={onSubmit}>
-                        <FormField label="Email" error={form.formState.errors.email?.message}>
+                        <FormField label="Username or email" error={form.formState.errors.email?.message}>
                             <input
-                                type="email"
+                                type="text"
+                                autoComplete="username"
                                 {...form.register("email")}
-                                placeholder="name@saccos.local"
+                                placeholder={`firstname.surname (@${LOGIN_EMAIL_DOMAIN} added automatically)`}
                             />
                         </FormField>
                         <FormField label="Password" error={form.formState.errors.password?.message}>
@@ -424,6 +481,16 @@ export function SignInPage() {
                     </form>
 
                     <div className={pageStyles.authLoginLinks}>
+                        <button
+                            className={pageStyles.authForgotLink}
+                            type="button"
+                            onClick={() => {
+                                setForgotEmail(form.getValues("email") || "");
+                                setShowForgotPassword(true);
+                            }}
+                        >
+                            Forgot password?
+                        </button>
                         <button
                             className={pageStyles.authForgotLink}
                             type="button"
@@ -531,6 +598,54 @@ export function SignInPage() {
                                 onClick={() => void handleSendSetupLink()}
                             >
                                 {sendingSetupLink ? "Sending link..." : "Send setup link"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            ) : null}
+
+            {showForgotPassword ? (
+                <div className={pageStyles.setupModalBackdrop} onClick={() => setShowForgotPassword(false)}>
+                    <div
+                        className={pageStyles.setupModalCard}
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label="Reset your password"
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        <div className={pageStyles.setupModalHeader}>
+                            <h3>Reset your password</h3>
+                            <p>
+                                Enter the email address registered on your account. We will send a
+                                password reset link to your personal email.
+                            </p>
+                        </div>
+                        <FormField label="Email address">
+                            <input
+                                type="email"
+                                placeholder="name@example.com"
+                                value={forgotEmail}
+                                onChange={(event) => setForgotEmail(event.target.value)}
+                            />
+                        </FormField>
+                        <span className={pageStyles.firstLoginHint}>
+                            The link opens a page where you choose a new password. It expires after a short time.
+                        </span>
+                        <div className={pageStyles.setupModalActions}>
+                            <button
+                                className={pageStyles.otpModalLink}
+                                type="button"
+                                onClick={() => setShowForgotPassword(false)}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                className="secondary-button"
+                                type="button"
+                                disabled={sendingResetEmail}
+                                onClick={() => void handleSendResetEmail()}
+                            >
+                                {sendingResetEmail ? "Sending link..." : "Send reset link"}
                             </button>
                         </div>
                     </div>

@@ -526,6 +526,9 @@ export interface Member {
     employer?: string | null;
     membership_type?: "individual" | "group" | "company" | null;
     membership_started_on?: string | null;
+    school_completion_level?: "form_4" | "form_6" | null;
+    school_completion_year?: number | null;
+    school_examination_number?: string | null;
     ilboru_completion_year?: number | null;
     legitimate_income_declared?: boolean | null;
     no_conflicting_business_declared?: boolean | null;

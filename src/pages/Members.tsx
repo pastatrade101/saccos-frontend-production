@@ -148,6 +148,9 @@ const updateSchema = z.object({
     branch_id: z.string().uuid("Select a branch."),
     status: z.enum(["active", "suspended", "exited", "approved_pending_payment"]).default("active"),
     membership_started_on: z.string().trim().optional().or(z.literal("")),
+    school_completion_level: z.enum(["form_4", "form_6"]).optional().or(z.literal("")),
+    school_completion_year: z.union([z.literal(""), z.coerce.number().int().min(1960, "Year must be 1960 or later.").max(2100, "Enter a valid year.")]).optional(),
+    school_examination_number: z.string().trim().max(60).optional().or(z.literal("")),
     // By-law fields so staff can complete a member's record on their behalf.
     ilboru_completion_year: z.union([z.literal(""), z.coerce.number().int().min(1980, "Year must be 1980–2022.").max(2022, "Year must be 1980–2022.")]).optional(),
     heir_name: z.string().trim().max(120).optional().or(z.literal("")),
@@ -870,6 +873,9 @@ export function MembersPage() {
             branch_id: selectedMember?.branch_id || selectedBranchId || branches[0]?.id || "",
             status: selectedMember?.status || "active",
             membership_started_on: selectedMember?.membership_started_on || "",
+            school_completion_level: selectedMember?.school_completion_level || "",
+            school_completion_year: selectedMember?.school_completion_year || "",
+            school_examination_number: selectedMember?.school_examination_number || "",
             ilboru_completion_year: selectedMember?.ilboru_completion_year || "",
             heir_name: selectedMember?.heir_name || "",
             heir_phone: selectedMember?.heir_phone || "",
@@ -1254,6 +1260,11 @@ export function MembersPage() {
                 branch_id: values.branch_id,
                 status: values.status,
                 membership_started_on: values.membership_started_on ? values.membership_started_on : null,
+                school_completion_level: values.school_completion_level ? values.school_completion_level : null,
+                school_completion_year: values.school_completion_year === "" || values.school_completion_year === undefined
+                    ? null
+                    : Number(values.school_completion_year),
+                school_examination_number: values.school_examination_number ? values.school_examination_number : null,
                 ilboru_completion_year: values.ilboru_completion_year === "" || values.ilboru_completion_year === undefined
                     ? null
                     : Number(values.ilboru_completion_year),
@@ -2244,6 +2255,9 @@ export function MembersPage() {
                                                 ["Member ID", selectedMember.id],
                                                 ["Branch", selectedBranchName],
                                                 ["Member since", selectedMember.membership_started_on ? formatDate(selectedMember.membership_started_on) : "Not set"],
+                                                ["School completion", selectedMember.school_completion_year
+                                                    ? `${selectedMember.school_completion_level === "form_6" ? "Form 6" : selectedMember.school_completion_level === "form_4" ? "Form 4" : "—"} · ${selectedMember.school_completion_year}${selectedMember.school_examination_number ? ` · ${selectedMember.school_examination_number}` : ""}`
+                                                    : "Not set"],
                                                 ["Account", selectedMember.account?.account_number || "Pending"],
                                                 ["Login", selectedMember.user_id ? "Linked" : "Not linked"],
                                                 ["Balance", formatCurrency(selectedMember.account?.available_balance)]
@@ -2577,6 +2591,46 @@ export function MembersPage() {
                                                                 InputLabelProps={{ shrink: true }}
                                                                 {...updateForm.register("membership_started_on")}
                                                                 helperText="Founding members: 01/10/2024. Others: the date they actually joined."
+                                                            />
+                                                        </Grid>
+                                                    </Grid>
+
+                                                    <Divider textAlign="left">
+                                                        <Typography variant="caption" color="text.secondary">School completion</Typography>
+                                                    </Divider>
+                                                    <Grid container spacing={2}>
+                                                        <Grid size={{ xs: 12, md: 4 }}>
+                                                            <TextField
+                                                                select
+                                                                fullWidth
+                                                                label="Completion level"
+                                                                value={updateForm.watch("school_completion_level") ?? ""}
+                                                                onChange={(event) => updateForm.setValue("school_completion_level", event.target.value as "form_4" | "form_6" | "", { shouldValidate: true })}
+                                                            >
+                                                                <MenuItem value="">Select level</MenuItem>
+                                                                <MenuItem value="form_4">Form 4 (O-level)</MenuItem>
+                                                                <MenuItem value="form_6">Form 6 (A-level)</MenuItem>
+                                                            </TextField>
+                                                        </Grid>
+                                                        <Grid size={{ xs: 12, md: 4 }}>
+                                                            <TextField
+                                                                type="number"
+                                                                fullWidth
+                                                                label="Completion year"
+                                                                value={updateForm.watch("school_completion_year") ?? ""}
+                                                                onChange={(event) => updateForm.setValue("school_completion_year", event.target.value === "" ? "" : Number(event.target.value), { shouldValidate: true })}
+                                                                error={Boolean(updateForm.formState.errors.school_completion_year)}
+                                                                helperText={updateForm.formState.errors.school_completion_year?.message || "A-level year for those who completed both."}
+                                                                inputProps={{ min: 1960, max: 2100 }}
+                                                            />
+                                                        </Grid>
+                                                        <Grid size={{ xs: 12, md: 4 }}>
+                                                            <TextField
+                                                                fullWidth
+                                                                label="Examination number"
+                                                                {...updateForm.register("school_examination_number")}
+                                                                error={Boolean(updateForm.formState.errors.school_examination_number)}
+                                                                helperText={updateForm.formState.errors.school_examination_number?.message}
                                                             />
                                                         </Grid>
                                                     </Grid>
