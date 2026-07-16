@@ -43,6 +43,7 @@ const ReportsPage = lazy(() => import("./pages/Reports").then((m) => ({ default:
 const SaccoSettingsPage = lazy(() => import("./pages/SaccoSettings").then((m) => ({ default: m.SaccoSettingsPage })));
 const PerformanceTargetsPage = lazy(() => import("./pages/PerformanceTargets").then((m) => ({ default: m.PerformanceTargetsPage })));
 const LeaguesPage = lazy(() => import("./pages/Leagues").then((m) => ({ default: m.LeaguesPage })));
+const MilestonesPage = lazy(() => import("./pages/Milestones").then((m) => ({ default: m.MilestonesPage })));
 const TreasuryPage = lazy(() => import("./pages/Treasury").then((m) => ({ default: m.TreasuryPage })));
 const TreasuryPolicySettingsPage = lazy(() => import("./pages/TreasuryPolicySettings").then((m) => ({ default: m.TreasuryPolicySettingsPage })));
 const MemberPortalPage = lazy(() => import("./pages/MemberPortal").then((m) => ({ default: m.MemberPortalPage })));
@@ -262,6 +263,7 @@ export default function App() {
                             <Route path="/settings/sacco-year" element={<SaccoSettingsPage />} />
                             <Route path="/performance-targets" element={<PerformanceTargetsPage />} />
                             <Route path="/leagues" element={<LeaguesPage />} />
+                            <Route path="/milestones" element={<MilestonesPage />} />
                         </Route>
                         <Route
                             element={

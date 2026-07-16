@@ -845,6 +845,59 @@ export interface MyLeaguePosition {
     tiers?: LeagueTier[];
 }
 
+export interface SaccoMilestone {
+    id: string;
+    title: string;
+    target_amount: number;
+    target_date: string | null;
+    sort_order: number;
+    achieved_at: string | null;
+    announced_at: string | null;
+    reached: boolean;
+    is_current: boolean;
+    remaining_amount: number;
+    progress_percent: number;
+}
+
+export interface SaccoMilestoneBoard {
+    tenant_id: string;
+    total_contributions: number;
+    milestone_count: number;
+    achieved_count: number;
+    current_milestone: SaccoMilestone | null;
+    overall_progress_percent: number;
+    milestones: SaccoMilestone[];
+}
+
+export interface SaccoMonthlyContribution {
+    month: string;
+    label: string;
+    amount: number;
+    percent: number;
+}
+
+export interface SaccoFinancials {
+    tenant_id: string;
+    members: number;
+    active_members: number;
+    total_savings: number;
+    total_shares: number;
+    total_contributions: number;
+    cash_at_bank: number | null;
+    total_loans: number;
+    active_loans_outstanding: number;
+    active_loans_count: number;
+    loan_interest: number;
+    investment_cost: number | null;
+    investment_value: number | null;
+    investment_income: number | null;
+    interest_rate: number | null;
+    monthly_contributions: {
+        total: number;
+        months: SaccoMonthlyContribution[];
+    };
+}
+
 export interface SaccoManualImportsSettings {
     tenant_id: string | null;
     manual_imports_enabled: boolean;

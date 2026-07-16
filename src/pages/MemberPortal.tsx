@@ -138,7 +138,7 @@ import {
 } from "../lib/endpoints";
 import { brandColors, crestGold, darkThemeColors, displayFontFamily, inkPanel } from "../theme/colors";
 import { useUI } from "../ui/UIProvider";
-import type { Loan, LoanApplication, LoanCapacitySummary, LoanProduct, LoanSchedule, LoanTransaction, Member, MemberAccount, MemberApplication, MemberApplicationStatus, MemberPortalPaymentControls, PaymentOrder, SaccoFinancialYearSettings, SaccoPerformanceTargetSettings, StatementRow } from "../types/api";
+import type { Loan, LoanApplication, LoanCapacitySummary, LoanProduct, LoanSchedule, LoanTransaction, Member, MemberAccount, MemberApplication, MemberApplicationStatus, MemberPortalPaymentControls, PaymentOrder, SaccoFinancialYearSettings, SaccoMilestoneBoard, SaccoPerformanceTargetSettings, StatementRow } from "../types/api";
 import { downloadLoanStatementPdf, downloadMemberStatementPdf, loadReportLogoDataUrl } from "../utils/memberStatementPdf";
 import { memberApplicationStatusLabels } from "../utils/member-application-status";
 import {
@@ -1209,6 +1209,7 @@ export function MemberPortalPage() {
         active_loans: number;
     } | null>(null);
     const [saccoOverviewLoading, setSaccoOverviewLoading] = useState(false);
+    const [milestoneBoard, setMilestoneBoard] = useState<SaccoMilestoneBoard | null>(null);
 
     // Lazy-load the curated SACCOS overview only when the member opens that view.
     useEffect(() => {
@@ -1238,6 +1239,29 @@ export function MemberPortalPage() {
             active = false;
         };
     }, [overviewMode, saccoOverview]);
+
+    // Shared milestone roadmap — the collective goal every member is working towards.
+    useEffect(() => {
+        if (overviewMode !== "sacco" || milestoneBoard) {
+            return;
+        }
+        let active = true;
+        api
+            .get<{ data: SaccoMilestoneBoard }>(endpoints.milestones.board())
+            .then((res) => {
+                if (active) {
+                    setMilestoneBoard(res.data?.data ?? null);
+                }
+            })
+            .catch(() => {
+                if (active) {
+                    setMilestoneBoard(null);
+                }
+            });
+        return () => {
+            active = false;
+        };
+    }, [overviewMode, milestoneBoard]);
     const [runFeatureTour, setRunFeatureTour] = useState(false);
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -5705,6 +5729,93 @@ export function MemberPortalPage() {
                         SACCOS overview is unavailable right now.
                     </Typography>
                 )}
+
+                {milestoneBoard && milestoneBoard.milestones.length ? (
+                    <Box sx={{ mt: 3 }}>
+                        <Typography variant="h6" sx={{ fontWeight: 700 }}>Our Shared Milestones</Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                            Where the whole cooperative is heading together. Every contribution moves us forward.
+                        </Typography>
+
+                        {milestoneBoard.current_milestone ? (
+                            <Card variant="outlined" sx={{ mb: 2, borderColor: alpha(memberAccentStrong, 0.4) }}>
+                                <CardContent>
+                                    <Stack direction="row" justifyContent="space-between" flexWrap="wrap" useFlexGap>
+                                        <Typography variant="overline" color="text.secondary">Next milestone</Typography>
+                                        <Typography variant="overline" sx={{ fontWeight: 800, color: memberAccentStrong }}>
+                                            {Math.round(milestoneBoard.current_milestone.progress_percent)}%
+                                        </Typography>
+                                    </Stack>
+                                    <Typography variant="h6" sx={{ fontWeight: 800 }}>{milestoneBoard.current_milestone.title}</Typography>
+                                    <LinearProgress
+                                        variant="determinate"
+                                        value={Math.min(Math.max(milestoneBoard.current_milestone.progress_percent, 0), 100)}
+                                        sx={{ my: 1, height: 10, borderRadius: 999 }}
+                                    />
+                                    <Typography variant="body2" color="text.secondary">
+                                        {tzs(milestoneBoard.total_contributions)} of {tzs(milestoneBoard.current_milestone.target_amount)}
+                                        {" · "}{tzs(milestoneBoard.current_milestone.remaining_amount)} to go
+                                        {milestoneBoard.current_milestone.target_date ? ` by ${new Date(milestoneBoard.current_milestone.target_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}` : ""}
+                                    </Typography>
+                                </CardContent>
+                            </Card>
+                        ) : (
+                            <Alert severity="success" sx={{ mb: 2 }}>
+                                🎉 Every milestone has been reached. The cooperative is smashing its goals!
+                            </Alert>
+                        )}
+
+                        <Stack spacing={1}>
+                            {milestoneBoard.milestones.map((milestone) => (
+                                <Stack
+                                    key={milestone.id}
+                                    direction="row"
+                                    spacing={1.5}
+                                    alignItems="center"
+                                    sx={{
+                                        p: 1.25,
+                                        borderRadius: 1.5,
+                                        border: `1px solid ${alpha(theme.palette.divider, 0.9)}`,
+                                        bgcolor: milestone.is_current ? alpha(memberAccentStrong, 0.06) : "transparent"
+                                    }}
+                                >
+                                    <Box
+                                        sx={{
+                                            width: 30,
+                                            height: 30,
+                                            borderRadius: "50%",
+                                            display: "grid",
+                                            placeItems: "center",
+                                            flexShrink: 0,
+                                            bgcolor: milestone.reached ? theme.palette.success.main : milestone.is_current ? memberAccentStrong : alpha(theme.palette.text.disabled, 0.2),
+                                            color: milestone.reached || milestone.is_current ? "#fff" : "text.secondary"
+                                        }}
+                                    >
+                                        {milestone.reached ? <CheckRoundedIcon fontSize="small" /> : <FlagRoundedIcon fontSize="small" />}
+                                    </Box>
+                                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                                        <Typography variant="body2" sx={{ fontWeight: 700 }} noWrap>{milestone.title}</Typography>
+                                        <Typography variant="caption" color="text.secondary">
+                                            {tzs(milestone.target_amount)}
+                                            {milestone.reached && milestone.achieved_at
+                                                ? ` · Reached ${new Date(milestone.achieved_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`
+                                                : milestone.target_date
+                                                    ? ` · Expected ${new Date(milestone.target_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`
+                                                    : ""}
+                                        </Typography>
+                                    </Box>
+                                    {milestone.reached ? (
+                                        <Chip size="small" color="success" label="Reached" />
+                                    ) : (
+                                        <Typography variant="caption" sx={{ fontWeight: 700, color: memberAccentStrong }}>
+                                            {Math.round(milestone.progress_percent)}%
+                                        </Typography>
+                                    )}
+                                </Stack>
+                            ))}
+                        </Stack>
+                    </Box>
+                ) : null}
             </Box>
         );
     };

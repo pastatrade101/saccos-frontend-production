@@ -331,6 +331,15 @@ const routeMap = {
         me: "/leagues/me",
         snapshot: "/leagues/snapshot"
     },
+    milestones: {
+        board: "/sacco-milestones",
+        create: "/sacco-milestones",
+        detail: (id: string) => `/sacco-milestones/${id}`,
+        announce: (id: string) => `/sacco-milestones/${id}/announce`
+    },
+    saccoDashboard: {
+        financials: "/sacco-dashboard/financials"
+    },
     notifications: {
         list: "/notifications",
         preferences: "/notifications/preferences",
@@ -602,6 +611,15 @@ export const endpoints = {
         standings: () => routeMap.leagues.standings,
         me: () => routeMap.leagues.me,
         snapshot: () => routeMap.leagues.snapshot
+    },
+    milestones: {
+        board: () => routeMap.milestones.board,
+        create: () => routeMap.milestones.create,
+        detail: (id: string) => routeMap.milestones.detail(id),
+        announce: (id: string) => routeMap.milestones.announce(id)
+    },
+    saccoDashboard: {
+        financials: () => routeMap.saccoDashboard.financials
     },
     notifications: {
         list: () => routeMap.notifications.list,
