@@ -765,6 +765,86 @@ export interface SaccoPerformanceTargetSettings {
     updated_at?: string | null;
 }
 
+export interface LeagueTier {
+    name: string;
+    min_amount: number;
+    max_amount: number | null;
+    color?: string | null;
+    danger?: boolean;
+    member_count?: number;
+}
+
+export interface SaccoLeagueSettings {
+    tenant_id: string | null;
+    league_enabled: boolean;
+    league_show_amounts_to_members: boolean;
+    league_tiers: LeagueTier[];
+    league_configured_at?: string | null;
+    league_configured_by?: string | null;
+    updated_at?: string | null;
+}
+
+export interface LeagueMovement {
+    previous_overall_rank: number;
+    rank_change: number;
+    previous_tier_index: number;
+    previous_tier_name: string;
+    tier_change: number;
+}
+
+export interface LeagueStandingRow {
+    member_id: string;
+    member_name: string;
+    member_no: string;
+    branch_id: string | null;
+    amount: number | null;
+    overall_rank: number;
+    tier_index: number;
+    tier_name: string;
+    tier_rank: number;
+    movement: LeagueMovement | null;
+}
+
+export interface LeagueStandings {
+    league_enabled: boolean;
+    show_amounts_to_members: boolean;
+    tiers: LeagueTier[];
+    total_members: number;
+    standings: LeagueStandingRow[];
+}
+
+export interface MyLeaguePosition {
+    league_enabled: boolean;
+    tenant_id?: string;
+    member_id?: string;
+    amount?: number;
+    tier?: {
+        index: number;
+        name: string;
+        color?: string | null;
+        danger: boolean;
+        min_amount: number;
+        max_amount: number | null;
+    };
+    tier_rank?: number;
+    tier_size?: number;
+    overall_rank?: number;
+    total_members?: number;
+    next_tier?: {
+        name: string;
+        color?: string | null;
+        min_amount: number;
+        amount_needed: number;
+    } | null;
+    position_race?: {
+        climb: { overall_rank: number; amount_needed: number } | null;
+        defend: { overall_rank: number; amount_buffer: number } | null;
+    };
+    trend?: "up" | "down" | "same" | null;
+    movement?: LeagueMovement | null;
+    tiers?: LeagueTier[];
+}
+
 export interface SaccoManualImportsSettings {
     tenant_id: string | null;
     manual_imports_enabled: boolean;

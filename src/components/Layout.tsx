@@ -24,6 +24,7 @@ import PendingActionsRoundedIcon from "@mui/icons-material/PendingActionsRounded
 import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
 import RuleFolderRoundedIcon from "@mui/icons-material/RuleFolderRounded";
 import TrackChangesRoundedIcon from "@mui/icons-material/TrackChangesRounded";
+import EmojiEventsRoundedIcon from "@mui/icons-material/EmojiEventsRounded";
 import {
     Autocomplete,
     AppBar,
@@ -94,6 +95,7 @@ const navItems: NavItem[] = [
     { to: "/members", label: "Members", roles: ["super_admin", "branch_manager", "teller"], section: "workspace", icon: GroupRoundedIcon },
     { to: "/members/import", label: "Member Import", roles: ["branch_manager"], section: "workspace", icon: StoreRoundedIcon },
     { to: "/performance-targets", label: "Performance Targets", roles: ["super_admin", "branch_manager"], section: "workspace", icon: TrackChangesRoundedIcon },
+    { to: "/leagues", label: "Savings Leagues", roles: ["super_admin", "branch_manager"], section: "workspace", icon: EmojiEventsRoundedIcon },
     { to: "/settings/sacco-year", label: "SACCO Settings", roles: ["super_admin", "branch_manager"], section: "workspace", icon: SettingsRoundedIcon },
     { to: "/auditor/workbench", label: "Workbench", roles: ["auditor"], section: "workspace", icon: HubRoundedIcon },
     { to: "/auditor/exceptions", label: "Exceptions", roles: ["auditor"], section: "workspace", icon: WarningAmberRoundedIcon },
@@ -118,7 +120,7 @@ const navGroups: NavGroup[] = [
     { key: "products", label: "Products", itemTos: ["/products"] },
     { key: "finance", label: "Finance", itemTos: ["/savings", "/loans", "/payments", "/revenue", "/dividends", "/cash-control", "/cash", "/treasury", "/treasury/policy-settings"] },
     { key: "operations", label: "Operations", itemTos: ["/approvals"] },
-    { key: "analytics", label: "Analytics", itemTos: ["/performance-targets", "/reports", "/auditor/reports", "/auditor/workbench", "/auditor/exceptions", "/auditor/journals", "/auditor/audit-logs"] },
+    { key: "analytics", label: "Analytics", itemTos: ["/performance-targets", "/leagues", "/reports", "/auditor/reports", "/auditor/workbench", "/auditor/exceptions", "/auditor/journals", "/auditor/audit-logs"] },
     { key: "setup", label: "Setup", itemTos: ["/setup/super-admin", "/settings/sacco-year"] }
 ];
 
@@ -130,6 +132,7 @@ const searchKeywords: Partial<Record<NavItem["to"], string[]>> = {
     "/members": ["customers", "registry", "member onboarding"],
     "/members/import": ["csv import", "bulk members", "credentials", "portal onboarding"],
     "/performance-targets": ["performance target", "target watchlist", "annual target", "member level", "branch target"],
+    "/leagues": ["league", "savings league", "leaderboard", "ranking", "position", "standings", "legue"],
     "/settings/sacco-year": ["financial year", "sacco year", "fiscal year", "year to date", "settings"],
     "/cash-control": ["receipt policy", "teller balancing", "daily cashbook", "cash summary"],
     "/auditor/exceptions": ["audit", "exceptions", "flags", "compliance"],
@@ -169,6 +172,10 @@ function getPageSubtitle(pathname: string) {
 
     if (pathname.startsWith("/performance-targets")) {
         return "Control the full member target watchlist with search, filters, pagination, and branch-level gap analysis.";
+    }
+
+    if (pathname.startsWith("/leagues")) {
+        return "Group members into savings leagues, configure the bands, and follow positions and monthly movement.";
     }
 
     if (pathname.startsWith("/products")) {

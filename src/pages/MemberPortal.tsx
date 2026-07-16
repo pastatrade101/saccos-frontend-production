@@ -92,6 +92,7 @@ import { useAuth } from "../auth/AuthContext";
 import { ChartPanel } from "../components/ChartPanel";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { DataTable, type Column } from "../components/DataTable";
+import { MemberLeagueCard } from "../components/MemberLeagueCard";
 import { MemberOverview, type MemberAlertItem } from "../components/member-overview";
 import { MemberPortalFeatureTour } from "../components/member-portal/MemberPortalFeatureTour";
 import { MemberLoanWorkspaceCard } from "../components/member-portal/MemberLoanWorkspaceCard";
@@ -5728,6 +5729,8 @@ export function MemberPortalPage() {
             {overviewMode === "sacco" ? (
                 renderSaccoOverview()
             ) : (
+                <Stack spacing={3}>
+                <MemberLeagueCard tenantId={profile?.tenant_id || null} savingsSeries={savingsTrendSeries} />
                 <MemberOverview
             summary={{
                 totalSavings,
@@ -5780,6 +5783,7 @@ export function MemberPortalPage() {
             onDownloadStatement={handleDownloadStatement}
             onViewFullStatement={() => handleSectionSelect("member-transactions")}
                 />
+                </Stack>
             )}
         </Stack>
     );

@@ -7,6 +7,7 @@ import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import InsightsRoundedIcon from "@mui/icons-material/InsightsRounded";
 import LockPersonRoundedIcon from "@mui/icons-material/LockPersonRounded";
+import LoginRoundedIcon from "@mui/icons-material/LoginRounded";
 import OpenInNewRoundedIcon from "@mui/icons-material/OpenInNewRounded";
 import PaidRoundedIcon from "@mui/icons-material/PaidRounded";
 import PersonAddAlt1RoundedIcon from "@mui/icons-material/PersonAddAlt1Rounded";
@@ -35,6 +36,7 @@ import {
     Pagination,
     Stack,
     TextField,
+    Tooltip,
     Typography
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
@@ -403,7 +405,8 @@ export function MembersPage() {
     const navigate = useNavigate();
     const { memberId: routeMemberId } = useParams<{ memberId?: string }>();
     const { pushToast } = useToast();
-    const { profile, selectedTenantId, selectedTenantName, selectedBranchId } = useAuth();
+    const { profile, selectedTenantId, selectedTenantName, selectedBranchId, impersonateMember } = useAuth();
+    const [impersonatingMemberId, setImpersonatingMemberId] = useState<string | null>(null);
     const [members, setMembers] = useState<MemberWithAccount[]>([]);
     const [branches, setBranches] = useState<Branch[]>([]);
     const [memberAccountsByMember, setMemberAccountsByMember] = useState<Record<string, MemberAccount[]>>({});
@@ -1084,6 +1087,29 @@ export function MembersPage() {
         }
     });
 
+    const isSuperAdmin = profile?.role === "super_admin";
+
+    const handleImpersonate = async (member: MemberWithAccount) => {
+        setImpersonatingMemberId(member.id);
+        try {
+            const impersonated = await impersonateMember(member.id);
+            pushToast({
+                type: "success",
+                title: "Logged in as member",
+                message: `You are now viewing the portal as ${impersonated.full_name}.`
+            });
+            navigate("/portal");
+        } catch (error) {
+            pushToast({
+                type: "error",
+                title: "Unable to log in as member",
+                message: getApiErrorMessage(error, "This member cannot be impersonated.")
+            });
+        } finally {
+            setImpersonatingMemberId(null);
+        }
+    };
+
     const createLogin = memberLoginForm.handleSubmit(async (values) => {
         if (!selectedMember) {
             return;
@@ -1512,13 +1538,39 @@ export function MembersPage() {
             key: "action",
             header: "Action",
             render: (row) => (
-                <Button
-                    variant={selectedMember?.id === row.id ? "contained" : "outlined"}
-                    size="small"
-                    onClick={() => handleSelectMember(row)}
-                >
-                    {selectedMember?.id === row.id ? "Opened" : profile?.role === "branch_manager" ? "Manage" : "Open"}
-                </Button>
+                <Stack direction="row" spacing={1}>
+                    <Button
+                        variant={selectedMember?.id === row.id ? "contained" : "outlined"}
+                        size="small"
+                        onClick={() => handleSelectMember(row)}
+                    >
+                        {selectedMember?.id === row.id ? "Opened" : profile?.role === "branch_manager" ? "Manage" : "Open"}
+                    </Button>
+                    {isSuperAdmin ? (
+                        <Tooltip
+                            title={
+                                !row.user_id
+                                    ? "Member has no portal login yet"
+                                    : row.status !== "active"
+                                        ? "Only active members can be impersonated"
+                                        : "Open the member portal as this member"
+                            }
+                        >
+                            <span>
+                                <Button
+                                    variant="text"
+                                    size="small"
+                                    color="secondary"
+                                    startIcon={<LoginRoundedIcon />}
+                                    disabled={!row.user_id || row.status !== "active" || impersonatingMemberId === row.id}
+                                    onClick={() => void handleImpersonate(row)}
+                                >
+                                    {impersonatingMemberId === row.id ? "Opening..." : "Login as"}
+                                </Button>
+                            </span>
+                        </Tooltip>
+                    ) : null}
+                </Stack>
             )
         }
     ];

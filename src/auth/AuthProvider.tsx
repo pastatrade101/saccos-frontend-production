@@ -13,6 +13,7 @@ import { api, getApiErrorMessage } from "../lib/api";
 import {
     endpoints,
     type BackendSignInResponse,
+    type MemberImpersonationResponse,
     type MeResponse
 } from "../lib/endpoints";
 import { invalidateCache } from "../lib/apiCache";
@@ -33,6 +34,24 @@ interface AuthFlowError extends Error {
 
 const SELECTED_BRANCH_KEY = "saccos:selectedBranchId";
 const SELECTED_BRANCH_NAME_KEY = "saccos:selectedBranchName";
+// Holds the super admin's own session tokens + the target member label while an
+// impersonation ("Login as") is active, so the admin can return to their account.
+const IMPERSONATION_KEY = "saccos:impersonation";
+
+interface ImpersonationState {
+    adminAccessToken: string;
+    adminRefreshToken: string;
+    member: { full_name: string; member_no: string | null };
+}
+
+function readImpersonationState(): ImpersonationState | null {
+    try {
+        const raw = sessionStorage.getItem(IMPERSONATION_KEY);
+        return raw ? (JSON.parse(raw) as ImpersonationState) : null;
+    } catch {
+        return null;
+    }
+}
 
 function createAuthFlowError(
     message: string,
@@ -61,6 +80,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
     const [selectedTenantName, setSelectedTenantNameState] = useState<string | null>(null);
     const [lastApiError, setLastApiError] = useState<LastApiError | null>(null);
     const [backendUnavailable, setBackendUnavailable] = useState(false);
+    const [impersonatedMember, setImpersonatedMember] = useState<ImpersonationState["member"] | null>(
+        () => readImpersonationState()?.member ?? null
+    );
     const selectedBranchIdRef = useRef(selectedBranchId);
     const selectedBranchNameRef = useRef(selectedBranchName);
     const sessionRef = useRef<Session | null>(null);
@@ -355,6 +377,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }, [clearAuthState]);
 
     const signOut = useCallback(async () => {
+        sessionStorage.removeItem(IMPERSONATION_KEY);
+        setImpersonatedMember(null);
         await supabase.auth.signOut();
         clearStaleSupabaseSession();
         localStorage.removeItem(SELECTED_BRANCH_KEY);
@@ -363,6 +387,88 @@ export function AuthProvider({ children }: PropsWithChildren) {
         setSelectedBranchNameState(null);
         clearAuthState();
         setBackendUnavailable(false);
+    }, [clearAuthState]);
+
+    const impersonateMember = useCallback(async (memberId: string) => {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const adminAccessToken = sessionData.session?.access_token;
+        const adminRefreshToken = sessionData.session?.refresh_token;
+
+        if (!adminAccessToken || !adminRefreshToken) {
+            throw createAuthFlowError("Your admin session is not available.", "ADMIN_SESSION_MISSING");
+        }
+
+        let response: MemberImpersonationResponse;
+        try {
+            const { data } = await api.post<{ data: MemberImpersonationResponse }>(
+                endpoints.members.impersonate(memberId)
+            );
+            response = data.data;
+        } catch (error) {
+            if (axios.isAxiosError<ApiErrorPayload>(error)) {
+                throw createAuthFlowError(
+                    getApiErrorMessage(error, "Unable to log in as this member."),
+                    error.response?.data?.error?.code
+                );
+            }
+            throw createAuthFlowError("Unable to log in as this member.");
+        }
+
+        const accessToken = response.session?.access_token;
+        const refreshToken = response.session?.refresh_token;
+        if (!accessToken || !refreshToken) {
+            throw createAuthFlowError("Impersonation session is incomplete.", "SESSION_MISSING");
+        }
+
+        // Stash the admin session so "Return to admin" can restore it.
+        const impersonationState: ImpersonationState = {
+            adminAccessToken,
+            adminRefreshToken,
+            member: response.member
+        };
+        sessionStorage.setItem(IMPERSONATION_KEY, JSON.stringify(impersonationState));
+        setImpersonatedMember(response.member);
+        setLoading(true);
+        clearAuthState();
+
+        const { error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken
+        });
+
+        if (error) {
+            sessionStorage.removeItem(IMPERSONATION_KEY);
+            setImpersonatedMember(null);
+            setLoading(false);
+            throw error;
+        }
+
+        return response.member;
+    }, [clearAuthState]);
+
+    const stopImpersonation = useCallback(async () => {
+        const state = readImpersonationState();
+        sessionStorage.removeItem(IMPERSONATION_KEY);
+        setImpersonatedMember(null);
+
+        if (!state) {
+            await supabase.auth.signOut();
+            return;
+        }
+
+        setLoading(true);
+        clearAuthState();
+
+        const { error } = await supabase.auth.setSession({
+            access_token: state.adminAccessToken,
+            refresh_token: state.adminRefreshToken
+        });
+
+        if (error) {
+            // Admin token could not be restored (e.g. expired) — fall back to a clean sign-out.
+            await supabase.auth.signOut();
+            setLoading(false);
+        }
     }, [clearAuthState]);
 
     const markPasswordChanged = useCallback(() => {
@@ -423,6 +529,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
         twoFactorSetupRequired,
         signIn,
         signOut,
+        impersonateMember,
+        stopImpersonation,
+        impersonatedMember,
         refreshProfile,
         markPasswordChanged,
         setSelectedBranchId,
@@ -441,6 +550,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
         session,
         signIn,
         signOut,
+        impersonateMember,
+        stopImpersonation,
+        impersonatedMember,
         twoFactorSetupRequired,
         user,
         backendUnavailable,

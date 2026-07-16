@@ -25,6 +25,9 @@ export interface AuthContextValue {
         options?: { totpCode?: string | null; recoveryCode?: string | null }
     ) => Promise<void>;
     signOut: () => Promise<void>;
+    impersonateMember: (memberId: string) => Promise<{ full_name: string; member_no: string | null }>;
+    stopImpersonation: () => Promise<void>;
+    impersonatedMember: { full_name: string; member_no: string | null } | null;
     refreshProfile: () => Promise<void>;
     markPasswordChanged: () => void;
     setSelectedBranchId: (value: string | null) => void;

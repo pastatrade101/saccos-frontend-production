@@ -69,6 +69,10 @@ import type {
     SaccoFinancialYearSettings,
     SaccoPerformanceTargetSettings,
     SaccoManualImportsSettings,
+    SaccoLeagueSettings,
+    LeagueTier,
+    LeagueStandings,
+    MyLeaguePosition,
     PaymentOrder,
     TellerPaymentTransaction,
     MobileMoneyProvider,
@@ -158,6 +162,7 @@ const routeMap = {
         update: (memberId: string) => `/members/${memberId}`,
         delete: (memberId: string) => `/members/${memberId}`,
         createLogin: (memberId: string) => `/members/${memberId}/create-login`,
+        impersonate: (memberId: string) => `/members/${memberId}/impersonate`,
         provisionAccount: (memberId: string) => `/members/${memberId}/accounts/provision`,
         resetPassword: (memberId: string) => `/members/${memberId}/reset-password`,
         temporaryCredential: (memberId: string) => `/members/${memberId}/temporary-credential`
@@ -318,7 +323,13 @@ const routeMap = {
     saccoSettings: {
         financialYear: "/sacco-settings/financial-year",
         performanceTarget: "/sacco-settings/performance-target",
-        manualImports: "/sacco-settings/manual-imports"
+        manualImports: "/sacco-settings/manual-imports",
+        leagues: "/sacco-settings/leagues"
+    },
+    leagues: {
+        standings: "/leagues/standings",
+        me: "/leagues/me",
+        snapshot: "/leagues/snapshot"
     },
     notifications: {
         list: "/notifications",
@@ -422,6 +433,7 @@ export const endpoints = {
         update: (memberId: string) => routeMap.members.update(memberId),
         delete: (memberId: string) => routeMap.members.delete(memberId),
         createLogin: (memberId: string) => routeMap.members.createLogin(memberId),
+        impersonate: (memberId: string) => routeMap.members.impersonate(memberId),
         provisionAccount: (memberId: string) => routeMap.members.provisionAccount(memberId),
         resetPassword: (memberId: string) => routeMap.members.resetPassword(memberId),
         temporaryCredential: (memberId: string) => routeMap.members.temporaryCredential(memberId)
@@ -583,7 +595,13 @@ export const endpoints = {
     saccoSettings: {
         financialYear: () => routeMap.saccoSettings.financialYear,
         performanceTarget: () => routeMap.saccoSettings.performanceTarget,
-        manualImports: () => routeMap.saccoSettings.manualImports
+        manualImports: () => routeMap.saccoSettings.manualImports,
+        leagues: () => routeMap.saccoSettings.leagues
+    },
+    leagues: {
+        standings: () => routeMap.leagues.standings,
+        me: () => routeMap.leagues.me,
+        snapshot: () => routeMap.leagues.snapshot
     },
     notifications: {
         list: () => routeMap.notifications.list,
@@ -668,6 +686,15 @@ export interface BackendSignInResponse {
         email?: string;
     };
     profile: UserProfile | null;
+}
+
+export interface MemberImpersonationResponse {
+    session: AuthSessionTokens & Record<string, unknown>;
+    member: {
+        id: string;
+        full_name: string;
+        member_no: string | null;
+    };
 }
 
 export interface CreateTenantRequest {
@@ -1957,6 +1984,16 @@ export interface WorkspacePublicRegistrationSettingsResponse extends ApiEnvelope
 export interface SaccoFinancialYearSettingsResponse extends ApiEnvelope<SaccoFinancialYearSettings> {}
 export interface SaccoPerformanceTargetSettingsResponse extends ApiEnvelope<SaccoPerformanceTargetSettings> {}
 export interface SaccoManualImportsSettingsResponse extends ApiEnvelope<SaccoManualImportsSettings> {}
+export interface SaccoLeagueSettingsResponse extends ApiEnvelope<SaccoLeagueSettings> {}
+export interface LeagueStandingsResponse extends ApiEnvelope<LeagueStandings> {}
+export interface MyLeaguePositionResponse extends ApiEnvelope<MyLeaguePosition> {}
+
+export interface UpdateSaccoLeagueSettingsRequest {
+    tenant_id?: string;
+    league_enabled?: boolean;
+    league_show_amounts_to_members?: boolean;
+    league_tiers?: LeagueTier[];
+}
 
 export interface UpdateApprovalPolicyRequest {
     tenant_id?: string;

@@ -8,6 +8,7 @@ import { AppLayout } from "./components/Layout";
 import { AppShellSkeleton } from "./components/AppShellSkeleton";
 // import { PwaInstallPrompt } from "./components/PwaInstallPrompt"; // hidden: PWA install prompt disabled
 import { RootErrorBoundary } from "./components/RootErrorBoundary";
+import { ImpersonationBanner } from "./components/ImpersonationBanner";
 import { SessionTimeoutManager } from "./components/SessionTimeoutManager";
 
 // Route pages are code-split so each one is downloaded on demand instead of
@@ -41,6 +42,7 @@ const ProductCatalogPage = lazy(() => import("./pages/ProductCatalog").then((m) 
 const ReportsPage = lazy(() => import("./pages/Reports").then((m) => ({ default: m.ReportsPage })));
 const SaccoSettingsPage = lazy(() => import("./pages/SaccoSettings").then((m) => ({ default: m.SaccoSettingsPage })));
 const PerformanceTargetsPage = lazy(() => import("./pages/PerformanceTargets").then((m) => ({ default: m.PerformanceTargetsPage })));
+const LeaguesPage = lazy(() => import("./pages/Leagues").then((m) => ({ default: m.LeaguesPage })));
 const TreasuryPage = lazy(() => import("./pages/Treasury").then((m) => ({ default: m.TreasuryPage })));
 const TreasuryPolicySettingsPage = lazy(() => import("./pages/TreasuryPolicySettings").then((m) => ({ default: m.TreasuryPolicySettingsPage })));
 const MemberPortalPage = lazy(() => import("./pages/MemberPortal").then((m) => ({ default: m.MemberPortalPage })));
@@ -191,6 +193,7 @@ export default function App() {
     return (
         <>
             <RootErrorBoundary>
+            <ImpersonationBanner />
             <Suspense fallback={<AppShellSkeleton />}>
             <Routes>
                 <Route path="/" element={<PublicHomePage />} />
@@ -258,6 +261,7 @@ export default function App() {
                             <Route path="/staff-users" element={<StaffUsersPage />} />
                             <Route path="/settings/sacco-year" element={<SaccoSettingsPage />} />
                             <Route path="/performance-targets" element={<PerformanceTargetsPage />} />
+                            <Route path="/leagues" element={<LeaguesPage />} />
                         </Route>
                         <Route
                             element={
