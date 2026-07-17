@@ -230,7 +230,7 @@ export function SignInPage() {
     };
 
     const handleSendSetupLink = async () => {
-        const candidateEmail = setupEmail.trim().toLowerCase();
+        const candidateEmail = normalizeLoginIdentifier(setupEmail);
         const parsed = z.string().email().safeParse(candidateEmail);
 
         if (!parsed.success) {
@@ -273,14 +273,14 @@ export function SignInPage() {
     };
 
     const handleSendResetEmail = async () => {
-        const candidateEmail = forgotEmail.trim().toLowerCase();
+        const candidateEmail = normalizeLoginIdentifier(forgotEmail);
         const parsed = z.string().email().safeParse(candidateEmail);
 
         if (!parsed.success) {
             pushToast({
                 type: "error",
-                title: "Valid email required",
-                message: "Enter the email address registered on your account."
+                title: "Valid username or email required",
+                message: "Enter your username or the email address registered on your account."
             });
             return;
         }
@@ -616,14 +616,15 @@ export function SignInPage() {
                         <div className={pageStyles.setupModalHeader}>
                             <h3>Reset your password</h3>
                             <p>
-                                Enter the email address registered on your account. We will send a
-                                password reset link to your personal email.
+                                Enter your username or the email address registered on your account.
+                                We will send a password reset link to your personal email
+                                (SACCO, Gmail, or Yahoo accounts are all supported).
                             </p>
                         </div>
-                        <FormField label="Email address">
+                        <FormField label="Username or email">
                             <input
-                                type="email"
-                                placeholder="name@example.com"
+                                type="text"
+                                placeholder="username or name@example.com"
                                 value={forgotEmail}
                                 onChange={(event) => setForgotEmail(event.target.value)}
                             />
