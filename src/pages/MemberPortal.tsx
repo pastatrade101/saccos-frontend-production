@@ -1250,9 +1250,28 @@ export function MemberPortalPage() {
             income: { date: string; type: string; description: string | null; amount: number }[];
             totals: { invested: number; income: number; grand_total: number };
         } | null;
+        loans: {
+            rows: {
+                loan_number: string;
+                date_applied: string;
+                principal: number;
+                interest: number;
+                total_due: number;
+                paid: number;
+                balance: number;
+                status: string;
+                progress_percent: number;
+                principal_paid: number;
+                interest_paid: number;
+                next_due: { installment: number; due_date: string; amount: number; overdue: boolean } | null;
+                schedule: { installment: number; due_date: string; principal_due: number; interest_due: number; total_due: number; principal_paid: number; interest_paid: number; status: string }[];
+                repayments?: { date: string; amount: number; balance: number }[];
+            }[];
+        } | null;
     }
     const [myReports, setMyReports] = useState<MyReportsData | null>(null);
     const [myReportsLoading, setMyReportsLoading] = useState(false);
+    const [expandedLoanNumber, setExpandedLoanNumber] = useState<string | null>(null);
 
     // Lazy-load the member's self-scoped reports when they open My Reports.
     // The first three endpoints resolve the member from the session server-side;
@@ -1267,15 +1286,17 @@ export function MemberPortalPage() {
             api.get<{ data: MyReportsData["position"] }>(endpoints.allReports.myPosition()),
             api.get<{ data: MyReportsData["statement"] }>(endpoints.allReports.myStatement()),
             api.get<{ data: MyReportsData["monthly"] }>(endpoints.allReports.myMonthly()),
-            api.get<{ data: NonNullable<MyReportsData["utt"]> }>(endpoints.allReports.uttInvestments()).catch(() => null)
+            api.get<{ data: NonNullable<MyReportsData["utt"]> }>(endpoints.allReports.uttInvestments()).catch(() => null),
+            api.get<{ data: NonNullable<MyReportsData["loans"]> }>(endpoints.allReports.myLoans()).catch(() => null)
         ])
-            .then(([positionRes, statementRes, monthlyRes, uttRes]) => {
+            .then(([positionRes, statementRes, monthlyRes, uttRes, loansRes]) => {
                 if (active) {
                     setMyReports({
                         position: positionRes.data.data,
                         statement: statementRes.data.data,
                         monthly: monthlyRes.data.data,
-                        utt: uttRes?.data.data ?? null
+                        utt: uttRes?.data.data ?? null,
+                        loans: loansRes?.data.data ?? null
                     });
                 }
             })
@@ -7881,6 +7902,123 @@ export function MemberPortalPage() {
                                 </Grid>
                             </CardContent>
                         </MotionCard>
+
+                        {myReports.loans?.rows.length ? (
+                            <MotionCard variant="outlined" sx={contentCardSx}>
+                                <CardContent sx={{ p: { xs: 2.25, md: 2.75 } }}>
+                                    <Typography variant="h6" sx={{ fontWeight: 800, mb: 0.5 }}>My Loans</Typography>
+                                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                        Mikopo yako: kiasi, riba, ratiba ya marejesho na malipo uliyofanya.
+                                    </Typography>
+                                    <Stack spacing={2}>
+                                        {myReports.loans.rows.map((loan) => {
+                                            const expanded = expandedLoanNumber === loan.loan_number;
+                                            return (
+                                                <Box key={loan.loan_number} sx={{ p: 2, borderRadius: 2, border: "1px solid", borderColor: "divider" }}>
+                                                    <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={1} alignItems={{ md: "center" }}>
+                                                        <Stack spacing={0.25}>
+                                                            <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                                                                {formatDate(loan.date_applied)} · {tzsFull(loan.principal)}
+                                                            </Typography>
+                                                            <Typography variant="caption" color="text.secondary">
+                                                                Interest {tzsFull(loan.interest)} · Total {tzsFull(loan.total_due)} · Paid {tzsFull(loan.paid)}
+                                                                {" "}(principal {tzsFull(loan.principal_paid)}, interest {tzsFull(loan.interest_paid)})
+                                                            </Typography>
+                                                        </Stack>
+                                                        <Stack direction="row" spacing={1} alignItems="center">
+                                                            <Chip
+                                                                size="small"
+                                                                label={loan.status.replace(/_/g, " ")}
+                                                                color={loan.status === "closed" ? "success" : loan.status === "in_arrears" ? "error" : "warning"}
+                                                                variant="outlined"
+                                                                sx={{ fontWeight: 700 }}
+                                                            />
+                                                            <Button size="small" variant={expanded ? "contained" : "outlined"} onClick={() => setExpandedLoanNumber(expanded ? null : loan.loan_number)}>
+                                                                {expanded ? "Hide details" : "Schedule & payments"}
+                                                            </Button>
+                                                        </Stack>
+                                                    </Stack>
+                                                    <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1.25 }}>
+                                                        <Box sx={{ flex: 1, height: 10, borderRadius: 999, bgcolor: "action.hover", overflow: "hidden" }}>
+                                                            <Box sx={{ width: `${Math.min(loan.progress_percent, 100)}%`, height: "100%", bgcolor: loan.balance <= 0 ? "success.main" : "primary.main" }} />
+                                                        </Box>
+                                                        <Typography variant="caption" sx={{ fontWeight: 700, minWidth: 40, textAlign: "right" }}>{loan.progress_percent.toFixed(0)}%</Typography>
+                                                    </Stack>
+                                                    {loan.next_due ? (
+                                                        <Typography variant="caption" sx={{ display: "block", mt: 0.75, fontWeight: 700, color: loan.next_due.overdue ? "error.main" : "text.secondary" }}>
+                                                            {loan.next_due.overdue ? "⚠ Overdue: " : "Next installment: "}
+                                                            #{loan.next_due.installment} due {formatDate(loan.next_due.due_date)} — {tzsFull(loan.next_due.amount)}
+                                                        </Typography>
+                                                    ) : loan.balance <= 0 ? (
+                                                        <Typography variant="caption" sx={{ display: "block", mt: 0.75, fontWeight: 700, color: "success.main" }}>
+                                                            ✓ Fully repaid
+                                                        </Typography>
+                                                    ) : null}
+                                                    {expanded ? (
+                                                        <Grid container spacing={2} sx={{ mt: 0.5 }}>
+                                                            <Grid size={{ xs: 12, md: 7 }}>
+                                                                <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>Repayment schedule</Typography>
+                                                                <TableContainer sx={{ maxHeight: 280, border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
+                                                                    <Table size="small" stickyHeader>
+                                                                        <TableHead>
+                                                                            <TableRow>
+                                                                                <TableCell>#</TableCell>
+                                                                                <TableCell>Due date</TableCell>
+                                                                                <TableCell align="right">Principal</TableCell>
+                                                                                <TableCell align="right">Interest</TableCell>
+                                                                                <TableCell align="right">Total</TableCell>
+                                                                                <TableCell>Status</TableCell>
+                                                                            </TableRow>
+                                                                        </TableHead>
+                                                                        <TableBody>
+                                                                            {loan.schedule.map((entry) => (
+                                                                                <TableRow key={entry.installment} hover>
+                                                                                    <TableCell>{entry.installment}</TableCell>
+                                                                                    <TableCell sx={{ whiteSpace: "nowrap" }}>{formatDate(entry.due_date)}</TableCell>
+                                                                                    <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums" }}>{tzsFull(entry.principal_due)}</TableCell>
+                                                                                    <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums" }}>{tzsFull(entry.interest_due)}</TableCell>
+                                                                                    <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>{tzsFull(entry.total_due)}</TableCell>
+                                                                                    <TableCell>
+                                                                                        <Chip size="small" variant="outlined" label={entry.status} color={entry.status === "paid" ? "success" : entry.status === "overdue" ? "error" : "default"} />
+                                                                                    </TableCell>
+                                                                                </TableRow>
+                                                                            ))}
+                                                                        </TableBody>
+                                                                    </Table>
+                                                                </TableContainer>
+                                                            </Grid>
+                                                            <Grid size={{ xs: 12, md: 5 }}>
+                                                                <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>Payments made</Typography>
+                                                                <TableContainer sx={{ maxHeight: 280, border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
+                                                                    <Table size="small" stickyHeader>
+                                                                        <TableHead>
+                                                                            <TableRow>
+                                                                                <TableCell>Date</TableCell>
+                                                                                <TableCell align="right">Amount</TableCell>
+                                                                                <TableCell align="right">Balance</TableCell>
+                                                                            </TableRow>
+                                                                        </TableHead>
+                                                                        <TableBody>
+                                                                            {(loan.repayments || []).map((payment, paymentIndex) => (
+                                                                                <TableRow key={paymentIndex} hover>
+                                                                                    <TableCell sx={{ whiteSpace: "nowrap" }}>{formatDate(payment.date)}</TableCell>
+                                                                                    <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums" }}>{tzsFull(payment.amount)}</TableCell>
+                                                                                    <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>{payment.balance > 0 ? tzsFull(payment.balance) : "—"}</TableCell>
+                                                                                </TableRow>
+                                                                            ))}
+                                                                        </TableBody>
+                                                                    </Table>
+                                                                </TableContainer>
+                                                            </Grid>
+                                                        </Grid>
+                                                    ) : null}
+                                                </Box>
+                                            );
+                                        })}
+                                    </Stack>
+                                </CardContent>
+                            </MotionCard>
+                        ) : null}
 
                         <MotionCard variant="outlined" sx={contentCardSx}>
                             <CardContent sx={{ p: { xs: 2.25, md: 2.75 } }}>

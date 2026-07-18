@@ -359,7 +359,8 @@ const routeMap = {
         loans: "/all-reports/loans",
         myStatement: "/all-reports/my-statement",
         myMonthly: "/all-reports/my-monthly",
-        myPosition: "/all-reports/my-position"
+        myPosition: "/all-reports/my-position",
+        myLoans: "/all-reports/my-loans"
     },
     notifications: {
         list: "/notifications",
@@ -661,7 +662,8 @@ export const endpoints = {
         loans: () => routeMap.allReports.loans,
         myStatement: () => routeMap.allReports.myStatement,
         myMonthly: () => routeMap.allReports.myMonthly,
-        myPosition: () => routeMap.allReports.myPosition
+        myPosition: () => routeMap.allReports.myPosition,
+        myLoans: () => routeMap.allReports.myLoans
     },
     notifications: {
         list: () => routeMap.notifications.list,

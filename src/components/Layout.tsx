@@ -113,19 +113,19 @@ const navItems: NavItem[] = [
     { to: "/cash-control", label: "Cash Control", roles: ["branch_manager"], section: "finance", icon: PaidRoundedIcon },
     { to: "/loans", label: "Loans", roles: ["branch_manager", "loan_officer", "teller"], section: "finance", icon: SummarizeRoundedIcon },
     { to: "/treasury", label: "Treasury", roles: ["super_admin", "treasury_officer", "auditor"], section: "finance", icon: AccountBalanceRoundedIcon },
-    { to: "/treasury/policy-settings", label: "Treasury Setup", roles: ["branch_manager"], section: "finance", icon: PolicyRoundedIcon },
+    { to: "/treasury/policy-settings", label: "Treasury Setup", roles: ["super_admin", "branch_manager"], section: "finance", icon: PolicyRoundedIcon },
     { to: "/reports", label: "Reports", roles: ["super_admin", "branch_manager", "treasury_officer", "loan_officer"], section: "finance", icon: DescriptionRoundedIcon },
     { to: "/auditor/reports", label: "Reports", roles: ["auditor"], section: "finance", icon: DescriptionRoundedIcon },
-    { to: "/all-reports/contributions", label: "Contributions Summary", roles: ["branch_manager"], section: "finance", icon: SummarizeRoundedIcon },
-    { to: "/all-reports/monthly", label: "Monthly Contributions", roles: ["branch_manager"], section: "finance", icon: SummarizeRoundedIcon },
-    { to: "/all-reports/dividends", label: "Dividend Distributions", roles: ["branch_manager"], section: "finance", icon: EventRepeatRoundedIcon },
-    { to: "/all-reports/positions", label: "Member Positions", roles: ["branch_manager"], section: "finance", icon: GroupRoundedIcon },
-    { to: "/all-reports/member-statement", label: "Member Profit Statement", roles: ["branch_manager"], section: "finance", icon: DescriptionRoundedIcon },
-    { to: "/all-reports/utt", label: "UTT Investments", roles: ["branch_manager"], section: "finance", icon: AccountBalanceRoundedIcon },
-    { to: "/all-reports/performance-targets", label: "Performance Targets", roles: ["branch_manager"], section: "finance", icon: TrackChangesRoundedIcon },
-    { to: "/all-reports/commitments", label: "Monthly Commitments", roles: ["branch_manager"], section: "finance", icon: EventRepeatRoundedIcon },
-    { to: "/all-reports/summary-sorted", label: "Sorted Summary", roles: ["branch_manager"], section: "finance", icon: SummarizeRoundedIcon },
-    { to: "/all-reports/loans", label: "Loans (MIKOPO)", roles: ["branch_manager"], section: "finance", icon: CreditScoreRoundedIcon }
+    { to: "/all-reports/contributions", label: "Contributions Summary", roles: ["super_admin", "branch_manager"], section: "finance", icon: SummarizeRoundedIcon },
+    { to: "/all-reports/monthly", label: "Monthly Contributions", roles: ["super_admin", "branch_manager"], section: "finance", icon: SummarizeRoundedIcon },
+    { to: "/all-reports/dividends", label: "Dividend Distributions", roles: ["super_admin", "branch_manager"], section: "finance", icon: EventRepeatRoundedIcon },
+    { to: "/all-reports/positions", label: "Member Positions", roles: ["super_admin", "branch_manager"], section: "finance", icon: GroupRoundedIcon },
+    { to: "/all-reports/member-statement", label: "Member Profit Statement", roles: ["super_admin", "branch_manager"], section: "finance", icon: DescriptionRoundedIcon },
+    { to: "/all-reports/utt", label: "UTT Investments", roles: ["super_admin", "branch_manager"], section: "finance", icon: AccountBalanceRoundedIcon },
+    { to: "/all-reports/performance-targets", label: "Performance Targets", roles: ["super_admin", "branch_manager"], section: "finance", icon: TrackChangesRoundedIcon },
+    { to: "/all-reports/commitments", label: "Monthly Commitments", roles: ["super_admin", "branch_manager"], section: "finance", icon: EventRepeatRoundedIcon },
+    { to: "/all-reports/summary-sorted", label: "Sorted Summary", roles: ["super_admin", "branch_manager"], section: "finance", icon: SummarizeRoundedIcon },
+    { to: "/all-reports/loans", label: "Loans (MIKOPO)", roles: ["super_admin", "branch_manager"], section: "finance", icon: CreditScoreRoundedIcon }
 ];
 
 const navGroups: NavGroup[] = [
@@ -331,7 +331,7 @@ export function AppLayout() {
     });
 
     const isTreasuryWorkspaceRole = profile?.role === "treasury_officer";
-    const isBranchManagerRole = profile?.role === "branch_manager";
+    const isBranchManagerRole = profile?.role === "branch_manager" || profile?.role === "super_admin";
     const effectiveNavGroups = useMemo<NavGroup[]>(() => {
         if (isTreasuryWorkspaceRole) {
             return [
@@ -342,9 +342,9 @@ export function AppLayout() {
         }
 
         if (isBranchManagerRole) {
-            // Branch managers get a dedicated "All Reports" group; Reports moves
-            // out of Analytics into it. Future report sub-pages register their
-            // routes here.
+            // Branch managers and super admins get a dedicated "All Reports"
+            // group; Reports moves out of Analytics into it. Future report
+            // sub-pages register their routes here.
             return navGroups.flatMap<NavGroup>((group) => {
                 if (group.key === "analytics") {
                     return [
