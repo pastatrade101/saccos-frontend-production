@@ -168,7 +168,11 @@ export function AllReportsPage() {
     const [error, setError] = useState<string | null>(null);
     const [startDate, setStartDate] = useState("");
     const [endDate, setEndDate] = useState("");
-    const [data, setData] = useState<unknown>(null);
+    // Payload is tagged with the report it belongs to: on navigation the
+    // component re-renders with the new key BEFORE the fetch effect runs, and
+    // rendering the new report's branch against the old report's shape crashes.
+    const [loadedReport, setLoadedReport] = useState<{ key: ReportKey; payload: unknown } | null>(null);
+    const data = loadedReport && loadedReport.key === activeKey ? loadedReport.payload : null;
     const [members, setMembers] = useState<Member[]>([]);
     const [selectedMember, setSelectedMember] = useState<Member | null>(null);
     const [expandedBatch, setExpandedBatch] = useState<string | null>(null);
@@ -231,7 +235,7 @@ export function AllReportsPage() {
 
     const load = useCallback(async () => {
         if (activeKey === "member-statement" && !selectedMember) {
-            setData(null);
+            setLoadedReport(null);
             return;
         }
         setLoading(true);
@@ -258,10 +262,10 @@ export function AllReportsPage() {
             } else {
                 response = await api.get<{ data: UttInvestmentsData }>(endpoints.allReports.uttInvestments());
             }
-            setData(response.data.data);
+            setLoadedReport({ key: activeKey, payload: response.data.data });
         } catch (loadError) {
             setError(getApiErrorMessage(loadError));
-            setData(null);
+            setLoadedReport(null);
         } finally {
             setLoading(false);
         }
