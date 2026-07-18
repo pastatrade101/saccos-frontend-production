@@ -122,7 +122,8 @@ const navItems: NavItem[] = [
     { to: "/all-reports/member-statement", label: "Member Profit Statement", roles: ["branch_manager"], section: "finance", icon: DescriptionRoundedIcon },
     { to: "/all-reports/utt", label: "UTT Investments", roles: ["branch_manager"], section: "finance", icon: AccountBalanceRoundedIcon },
     { to: "/all-reports/performance-targets", label: "Performance Targets", roles: ["branch_manager"], section: "finance", icon: TrackChangesRoundedIcon },
-    { to: "/all-reports/commitments", label: "Monthly Commitments", roles: ["branch_manager"], section: "finance", icon: EventRepeatRoundedIcon }
+    { to: "/all-reports/commitments", label: "Monthly Commitments", roles: ["branch_manager"], section: "finance", icon: EventRepeatRoundedIcon },
+    { to: "/all-reports/summary-sorted", label: "Sorted Summary", roles: ["branch_manager"], section: "finance", icon: SummarizeRoundedIcon }
 ];
 
 const navGroups: NavGroup[] = [
@@ -358,6 +359,7 @@ export function AppLayout() {
                                 "/all-reports/utt",
                                 "/all-reports/performance-targets",
                                 "/all-reports/commitments",
+                                "/all-reports/summary-sorted",
                                 "/reports"
                             ]
                         }

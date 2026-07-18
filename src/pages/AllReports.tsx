@@ -33,7 +33,7 @@ import type { Member } from "../types/api";
 import { downloadFile } from "../utils/downloadFile";
 import { formatCurrency, formatDate } from "../utils/format";
 
-type ReportKey = "contributions" | "monthly" | "dividends" | "positions" | "member-statement" | "utt" | "performance-targets" | "commitments";
+type ReportKey = "contributions" | "monthly" | "dividends" | "positions" | "member-statement" | "utt" | "performance-targets" | "commitments" | "summary-sorted";
 
 const REPORTS: { key: ReportKey; label: string; description: string }[] = [
     { key: "contributions", label: "Contributions Summary", description: "Per member: savings, shares and social contributions with withdrawals netted." },
@@ -43,7 +43,8 @@ const REPORTS: { key: ReportKey; label: string; description: string }[] = [
     { key: "member-statement", label: "Member Profit Statement", description: "A single member's dividend history with running total." },
     { key: "utt", label: "UTT Investments", description: "UTT register: deposits, fund income, position and funding sources." },
     { key: "performance-targets", label: "Performance Targets", description: "Each member's annual target vs actual savings — % reached, remaining, position." },
-    { key: "commitments", label: "Monthly Commitments", description: "Shares and monthly savings commitment compliance per member: expected vs paid, arrears and status." }
+    { key: "commitments", label: "Monthly Commitments", description: "Shares and monthly savings commitment compliance per member: expected vs paid, arrears and status." },
+    { key: "summary-sorted", label: "Sorted Summary", description: "The full member schedule: entry fee, shares, monthly plan, needed to date, surplus/deficit and UTT flag — ranked by actual." }
 ];
 
 interface ContributionsSummaryData {
@@ -104,6 +105,13 @@ interface CommitmentComplianceData {
         status: string;
     }[];
     totals: { actual: number; shares: number; expected: number; paid: number; needed: number; behind_count: number };
+}
+
+interface SummarySortedData {
+    months: string[];
+    config: { kiingilio: number; shares_required: number; monthly_required: number; needed: number };
+    rows: { position: number; member_no: string | null; full_name: string; actual: number; utt: boolean; status_amount: number }[];
+    totals: { actual: number; above_needed: number; utt_count: number };
 }
 
 interface UttInvestmentsData {
@@ -207,6 +215,8 @@ export function AllReportsPage() {
     const [rowsPerPage, setRowsPerPage] = useState(25);
     const [search, setSearch] = useState("");
     const [exportAnchor, setExportAnchor] = useState<null | HTMLElement>(null);
+    // Sorted Summary schedule start (YYYY-MM); empty = first contribution month.
+    const [scheduleStart, setScheduleStart] = useState("2024-10");
 
     // Back to the first page whenever the report, its data or the search changes.
     useEffect(() => {
@@ -290,6 +300,10 @@ export function AllReportsPage() {
                 response = await api.get<{ data: PerformanceTargetsData }>(endpoints.allReports.performanceTargets());
             } else if (activeKey === "commitments") {
                 response = await api.get<{ data: CommitmentComplianceData }>(endpoints.allReports.commitments());
+            } else if (activeKey === "summary-sorted") {
+                response = await api.get<{ data: SummarySortedData }>(endpoints.allReports.summarySorted(), {
+                    params: scheduleStart ? { start_month: scheduleStart } : {}
+                });
             } else {
                 response = await api.get<{ data: UttInvestmentsData }>(endpoints.allReports.uttInvestments());
             }
@@ -300,7 +314,7 @@ export function AllReportsPage() {
         } finally {
             setLoading(false);
         }
-    }, [activeKey, startDate, endDate, selectedMember]);
+    }, [activeKey, startDate, endDate, selectedMember, scheduleStart]);
 
     useEffect(() => {
         void load();
@@ -375,6 +389,30 @@ export function AllReportsPage() {
                 title: `Member Profit Statement — ${typed.member.full_name} (${typed.member.member_no || ""})`,
                 headers: ["Date", "Distribution", "Source", "Amount", "Running Total"],
                 rows: typed.rows.map((row) => [row.date, row.label, row.source, row.amount, row.running_total])
+            };
+        }
+        if (activeKey === "summary-sorted") {
+            const typed = data as SummarySortedData;
+            const monthLabelShort = (month: string) => {
+                const [year, mm] = month.split("-");
+                return `${["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"][Number(mm) - 1]} ${year}`;
+            };
+            return {
+                name: "sorted-summary",
+                title: "Sorted Summary",
+                headers: ["Position", "Member No", "Member", "Actual", "Kiingilio", "Shares", ...typed.months.map(monthLabelShort), "Needed", "Status", "UTT"],
+                rows: typed.rows.map((row) => [
+                    row.position,
+                    row.member_no,
+                    row.full_name,
+                    row.actual,
+                    typed.config.kiingilio,
+                    typed.config.shares_required,
+                    ...typed.months.map(() => typed.config.monthly_required),
+                    typed.config.needed,
+                    row.status_amount,
+                    row.utt ? "YES" : "NO"
+                ] as (string | number | null)[])
             };
         }
         if (activeKey === "performance-targets") {
@@ -769,6 +807,74 @@ export function AllReportsPage() {
             );
         }
 
+        if (activeKey === "summary-sorted") {
+            const typed = data as SummarySortedData;
+            const filtered = typed.rows.filter((row) => matchesSearch(row.member_no, row.full_name));
+            const stickySx = { position: "sticky" as const, left: 0, zIndex: 1, bgcolor: "background.paper" };
+            const monthShort = (month: string) => {
+                const [year, mm] = month.split("-");
+                return `${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][Number(mm) - 1]} ${year.slice(2)}`;
+            };
+            return (
+                <Stack spacing={2}>
+                    <StatTiles items={[
+                        { label: "Members", value: String(filtered.length) },
+                        { label: "Needed to date", value: formatCurrency(typed.config.needed), helper: `Kiingilio ${formatCurrency(typed.config.kiingilio)} + shares ${formatCurrency(typed.config.shares_required)} + ${typed.months.length} × ${formatCurrency(typed.config.monthly_required)}` },
+                        { label: "Above needed", value: `${typed.totals.above_needed} of ${typed.rows.length}` },
+                        { label: "Via UTT", value: String(typed.totals.utt_count) }
+                    ]} />
+                    <TableContainer sx={{ maxHeight: 560, borderRadius: 1.5, border: `1px solid ${theme.palette.divider}` }}>
+                        <Table size="small" stickyHeader sx={zebraSx}>
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell sx={{ ...headCellSx, ...stickySx, zIndex: 3 }}>Member</TableCell>
+                                    <TableCell align="right" sx={headCellSx}>Actual</TableCell>
+                                    <TableCell align="right" sx={headCellSx}>Kiingilio</TableCell>
+                                    <TableCell align="right" sx={headCellSx}>Shares</TableCell>
+                                    {typed.months.map((month) => (
+                                        <TableCell key={month} align="right" sx={headCellSx}>{monthShort(month)}</TableCell>
+                                    ))}
+                                    <TableCell align="right" sx={headCellSx}>Needed</TableCell>
+                                    <TableCell align="right" sx={headCellSx}>Status</TableCell>
+                                    <TableCell sx={headCellSx}>UTT</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {paginate(filtered).map((row) => (
+                                    <TableRow key={`${row.position}-${row.member_no}`}>
+                                        <TableCell sx={stickySx}>
+                                            <Stack direction="row" spacing={1} alignItems="center">
+                                                <Chip size="small" label={row.position} color={row.position <= 3 ? "primary" : "default"} variant={row.position <= 3 ? "filled" : "outlined"} sx={{ fontWeight: 700, minWidth: 36 }} />
+                                                <MemberCell memberNo={row.member_no} name={row.full_name} />
+                                            </Stack>
+                                        </TableCell>
+                                        <TableCell align="right"><Money value={row.actual} bold /></TableCell>
+                                        <TableCell align="right"><Money value={typed.config.kiingilio} /></TableCell>
+                                        <TableCell align="right"><Money value={typed.config.shares_required} /></TableCell>
+                                        {typed.months.map((month) => (
+                                            <TableCell key={month} align="right" sx={{ color: "text.secondary", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                                                {new Intl.NumberFormat("en-US").format(typed.config.monthly_required)}
+                                            </TableCell>
+                                        ))}
+                                        <TableCell align="right"><Money value={typed.config.needed} /></TableCell>
+                                        <TableCell align="right">
+                                            <Typography component="span" variant="body2" sx={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, color: row.status_amount >= 0 ? "success.main" : "error.main" }}>
+                                                {formatCurrency(row.status_amount)}
+                                            </Typography>
+                                        </TableCell>
+                                        <TableCell>
+                                            <Chip size="small" label={row.utt ? "YES" : "NO"} color={row.utt ? "primary" : "default"} variant="outlined" sx={{ fontWeight: 700 }} />
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                    {paginationBar(filtered.length)}
+                </Stack>
+            );
+        }
+
         if (activeKey === "performance-targets") {
             const typed = data as PerformanceTargetsData;
             const filtered = typed.rows.filter((row) => matchesSearch(row.member_no, row.full_name));
@@ -1006,9 +1112,9 @@ export function AllReportsPage() {
             <Card variant="outlined" sx={{ borderRadius: 2.5 }}>
                 <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
                     <Stack spacing={2}>
-                        {showDateFilters || ["member-statement", "positions", "performance-targets", "commitments"].includes(activeKey) ? (
+                        {showDateFilters || ["member-statement", "positions", "performance-targets", "commitments", "summary-sorted"].includes(activeKey) ? (
                             <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }} flexWrap="wrap" useFlexGap>
-                                {["contributions", "monthly", "positions", "performance-targets", "commitments"].includes(activeKey) ? (
+                                {["contributions", "monthly", "positions", "performance-targets", "commitments", "summary-sorted"].includes(activeKey) ? (
                                     <TextField
                                         label="Search member"
                                         size="small"
@@ -1039,6 +1145,17 @@ export function AllReportsPage() {
                                             </Typography>
                                         )}
                                     </>
+                                ) : null}
+                                {activeKey === "summary-sorted" ? (
+                                    <TextField
+                                        label="Schedule start"
+                                        type="month"
+                                        size="small"
+                                        value={scheduleStart}
+                                        onChange={(event) => setScheduleStart(event.target.value)}
+                                        helperText="Month the standard plan starts"
+                                        slotProps={{ inputLabel: { shrink: true } }}
+                                    />
                                 ) : null}
                                 {activeKey === "member-statement" ? (
                                     <Autocomplete
