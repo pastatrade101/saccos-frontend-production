@@ -188,7 +188,13 @@ export function LeaguesPage() {
                 generatedBy: profile?.full_name || "Branch Manager",
                 includeNames,
                 totalMembers,
-                tiers: tiers.map((tier) => ({ name: tier.name, color: tier.color, member_count: tier.member_count })),
+                tiers: tiers.map((tier) => ({
+                    name: tier.name,
+                    color: tier.color,
+                    member_count: tier.member_count,
+                    range_label: tierRangeLabel(tier),
+                    min_amount: tier.min_amount
+                })),
                 rows: visibleRows.map((row) => ({
                     tier_index: row.tier_index,
                     tier_name: row.tier_name,

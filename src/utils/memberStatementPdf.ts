@@ -60,7 +60,13 @@ interface LeagueStaffPdfPayload {
     generatedBy?: string | null;
     includeNames: boolean;
     totalMembers: number;
-    tiers: Array<{ name: string; color?: string | null; member_count?: number }>;
+    tiers: Array<{
+        name: string;
+        color?: string | null;
+        member_count?: number;
+        range_label?: string | null;
+        min_amount?: number | null;
+    }>;
     rows: LeagueStaffRow[];
 }
 
@@ -487,25 +493,42 @@ export function downloadLeagueStaffPdf(payload: LeagueStaffPdfPayload) {
     doc.text("League Summary", margin, cursorY);
     cursorY += 8;
 
+    // Strictly ordered by savings range (highest league first) so the reader
+    // never jumps between ranges, even if the setup list is out of order.
+    // Duplicate tier names in the setup (e.g. "Pearl" listed twice) are
+    // collapsed to their first occurrence so no league section repeats.
+    const seenTierNames = new Set<string>();
+    const tiersByRangeDesc = [...payload.tiers]
+        .sort((left, right) => Number(right.min_amount ?? 0) - Number(left.min_amount ?? 0))
+        .filter((tier) => {
+            const key = tier.name.trim().toLowerCase();
+            if (seenTierNames.has(key)) {
+                return false;
+            }
+            seenTierNames.add(key);
+            return true;
+        });
+
     autoTable(doc, {
         startY: cursorY,
-        head: [["League", "Members"]],
-        body: payload.tiers.map((tier) => [
+        head: [["League", "Savings Range", "Members"]],
+        body: tiersByRangeDesc.map((tier) => [
             tier.name,
+            tier.range_label || "—",
             String(payload.rows.filter((row) => row.tier_name === tier.name).length || tier.member_count || 0)
         ]),
         theme: "grid",
         headStyles: { fillColor: primary, textColor: 255, fontStyle: "bold" },
         styles: { font: "helvetica", fontSize: 9, cellPadding: 5, textColor: text },
-        columnStyles: { 1: { halign: "right", cellWidth: 90 } },
+        columnStyles: { 1: { halign: "right", cellWidth: 190 }, 2: { halign: "right", cellWidth: 70 } },
         margin: { left: margin, right: margin }
     });
 
     cursorY = (doc as jsPDF & { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY || cursorY;
     cursorY += 20;
 
-    // Highest league first, mirroring the on-screen order.
-    const orderedTiers = [...payload.tiers].map((tier, index) => ({ tier, index })).reverse();
+    // Highest savings range first — same order as the summary table above.
+    const orderedTiers = tiersByRangeDesc.map((tier, index) => ({ tier, index }));
 
     orderedTiers.forEach(({ tier }) => {
         const tierRows = payload.rows
@@ -521,12 +544,18 @@ export function downloadLeagueStaffPdf(payload: LeagueStaffPdfPayload) {
         doc.setFont("helvetica", "bold");
         doc.setFontSize(11);
         doc.setTextColor(...tierColor);
-        doc.text(`${tier.name} League  (${tierRows.length})`, margin, cursorY);
+        doc.text(
+            `${tier.name} League${tier.range_label ? `  ·  ${tier.range_label}` : ""}  (${tierRows.length})`,
+            margin,
+            cursorY
+        );
         cursorY += 6;
 
+        // Branch and Savings columns intentionally omitted: single-branch SACCO,
+        // and exact balances stay off the shared standings sheet.
         const head = payload.includeNames
-            ? [["Pos", "Member", "ID", "Branch", "Trend", "Savings"]]
-            : [["Pos", "Member ID", "Branch", "Trend", "Savings"]];
+            ? [["Pos", "Member", "ID", "Trend"]]
+            : [["Pos", "Member ID", "Trend"]];
 
         const body = tierRows.map((row) => {
             const trend = row.rank_change == null || row.rank_change === 0
@@ -534,11 +563,10 @@ export function downloadLeagueStaffPdf(payload: LeagueStaffPdfPayload) {
                 : row.rank_change > 0
                     ? `Up ${row.rank_change}`
                     : `Down ${Math.abs(row.rank_change)}`;
-            const savings = row.amount == null ? "-" : formatCurrency(Number(row.amount));
 
             return payload.includeNames
-                ? [`#${row.tier_rank}`, row.member_name || "-", row.member_no, row.branch_name || "-", trend, savings]
-                : [`#${row.tier_rank}`, row.member_no, row.branch_name || "-", trend, savings];
+                ? [`#${row.tier_rank}`, row.member_name || "-", row.member_no, trend]
+                : [`#${row.tier_rank}`, row.member_no, trend];
         });
 
         autoTable(doc, {
@@ -550,8 +578,8 @@ export function downloadLeagueStaffPdf(payload: LeagueStaffPdfPayload) {
             styles: { font: "helvetica", fontSize: 8.5, cellPadding: 5, textColor: text },
             alternateRowStyles: { fillColor: [248, 250, 252] },
             columnStyles: payload.includeNames
-                ? { 0: { cellWidth: 40 }, 4: { halign: "center", cellWidth: 60 }, 5: { halign: "right", cellWidth: 100 } }
-                : { 0: { cellWidth: 50 }, 3: { halign: "center", cellWidth: 70 }, 4: { halign: "right", cellWidth: 110 } },
+                ? { 0: { cellWidth: 40 }, 3: { halign: "center", cellWidth: 80 } }
+                : { 0: { cellWidth: 50 }, 2: { halign: "center", cellWidth: 90 } },
             margin: { left: margin, right: margin }
         });
 
