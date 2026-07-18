@@ -356,6 +356,7 @@ const routeMap = {
         performanceTargets: "/all-reports/performance-targets",
         commitments: "/all-reports/commitments",
         summarySorted: "/all-reports/summary-sorted",
+        loans: "/all-reports/loans",
         myStatement: "/all-reports/my-statement",
         myMonthly: "/all-reports/my-monthly",
         myPosition: "/all-reports/my-position"
@@ -657,6 +658,7 @@ export const endpoints = {
         performanceTargets: () => routeMap.allReports.performanceTargets,
         commitments: () => routeMap.allReports.commitments,
         summarySorted: () => routeMap.allReports.summarySorted,
+        loans: () => routeMap.allReports.loans,
         myStatement: () => routeMap.allReports.myStatement,
         myMonthly: () => routeMap.allReports.myMonthly,
         myPosition: () => routeMap.allReports.myPosition

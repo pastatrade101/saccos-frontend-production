@@ -33,7 +33,7 @@ import type { Member } from "../types/api";
 import { downloadFile } from "../utils/downloadFile";
 import { formatCurrency, formatDate } from "../utils/format";
 
-type ReportKey = "contributions" | "monthly" | "dividends" | "positions" | "member-statement" | "utt" | "performance-targets" | "commitments" | "summary-sorted";
+type ReportKey = "contributions" | "monthly" | "dividends" | "positions" | "member-statement" | "utt" | "performance-targets" | "commitments" | "summary-sorted" | "loans";
 
 const REPORTS: { key: ReportKey; label: string; description: string }[] = [
     { key: "contributions", label: "Contributions Summary", description: "Per member: savings, shares and social contributions with withdrawals netted." },
@@ -44,7 +44,8 @@ const REPORTS: { key: ReportKey; label: string; description: string }[] = [
     { key: "utt", label: "UTT Investments", description: "UTT register: deposits, fund income, position and funding sources." },
     { key: "performance-targets", label: "Performance Targets", description: "Each member's annual target vs actual savings — % reached, remaining, position." },
     { key: "commitments", label: "Monthly Commitments", description: "Shares and monthly savings commitment compliance per member: expected vs paid, arrears and status." },
-    { key: "summary-sorted", label: "Sorted Summary", description: "The full member schedule: entry fee, shares, monthly plan, needed to date, surplus/deficit and UTT flag — ranked by actual." }
+    { key: "summary-sorted", label: "Sorted Summary", description: "The full member schedule: entry fee, shares, monthly plan, needed to date, surplus/deficit and UTT flag — ranked by actual." },
+    { key: "loans", label: "Loans (MIKOPO)", description: "Every loan: amount, interest, total due, repayment trail with running balance, guarantors, collateral and status." }
 ];
 
 interface ContributionsSummaryData {
@@ -105,6 +106,27 @@ interface CommitmentComplianceData {
         status: string;
     }[];
     totals: { actual: number; shares: number; expected: number; paid: number; needed: number; behind_count: number };
+}
+
+interface LoansReportData {
+    rows: {
+        index: number;
+        loan_number: string;
+        date_applied: string;
+        member_no: string | null;
+        member_name: string;
+        principal: number;
+        interest: number;
+        total_due: number;
+        due_date: string | null;
+        paid: number;
+        balance: number;
+        guarantors: string;
+        collateral: number;
+        status: string;
+        repayments?: { date: string; amount: number; balance: number }[];
+    }[];
+    totals: { count: number; principal: number; interest: number; total: number; paid: number; balance: number };
 }
 
 interface SummarySortedData {
@@ -304,6 +326,10 @@ export function AllReportsPage() {
                 response = await api.get<{ data: SummarySortedData }>(endpoints.allReports.summarySorted(), {
                     params: scheduleStart ? { start_month: scheduleStart } : {}
                 });
+            } else if (activeKey === "loans") {
+                response = await api.get<{ data: LoansReportData }>(endpoints.allReports.loans(), {
+                    params: { include_repayments: "true" }
+                });
             } else {
                 response = await api.get<{ data: UttInvestmentsData }>(endpoints.allReports.uttInvestments());
             }
@@ -389,6 +415,18 @@ export function AllReportsPage() {
                 title: `Member Profit Statement — ${typed.member.full_name} (${typed.member.member_no || ""})`,
                 headers: ["Date", "Distribution", "Source", "Amount", "Running Total"],
                 rows: typed.rows.map((row) => [row.date, row.label, row.source, row.amount, row.running_total])
+            };
+        }
+        if (activeKey === "loans") {
+            const typed = data as LoansReportData;
+            return {
+                name: "loans-mikopo",
+                title: "Loans (MIKOPO)",
+                headers: ["#", "Date", "Member No", "Member", "Loan Amount", "Interest", "Total + Interest", "Due Date", "Paid", "Balance", "Guarantors", "Collateral", "Status"],
+                rows: [
+                    ...typed.rows.map((row) => [row.index, row.date_applied, row.member_no, row.member_name, row.principal, row.interest, row.total_due, row.due_date, row.paid, row.balance, row.guarantors, row.collateral, row.status] as (string | number | null)[]),
+                    ["", "", "", "TOTAL", typed.totals.principal, typed.totals.interest, typed.totals.total, "", typed.totals.paid, typed.totals.balance, "", "", `${typed.totals.count} loans`]
+                ]
             };
         }
         if (activeKey === "summary-sorted") {
@@ -807,6 +845,102 @@ export function AllReportsPage() {
             );
         }
 
+        if (activeKey === "loans") {
+            const typed = data as LoansReportData;
+            const filtered = typed.rows.filter((row) => matchesSearch(row.member_no, row.member_name));
+            const statusColor = (status: string): "success" | "warning" | "error" | "default" =>
+                status === "closed" ? "success" : status === "in_arrears" ? "error" : status === "active" ? "warning" : "default";
+            return (
+                <Stack spacing={2}>
+                    <StatTiles items={[
+                        { label: "Loans", value: String(filtered.length) },
+                        { label: "Principal", value: formatCurrency(typed.totals.principal) },
+                        { label: "Interest", value: formatCurrency(typed.totals.interest) },
+                        { label: "Paid", value: formatCurrency(typed.totals.paid) },
+                        { label: "Outstanding", value: formatCurrency(typed.totals.balance) }
+                    ]} />
+                    <TableContainer sx={{ maxHeight: 560, borderRadius: 1.5, border: `1px solid ${theme.palette.divider}` }}>
+                        <Table size="small" stickyHeader sx={zebraSx}>
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell sx={headCellSx}>#</TableCell>
+                                    <TableCell sx={headCellSx}>Date</TableCell>
+                                    <TableCell sx={headCellSx}>Member</TableCell>
+                                    <TableCell align="right" sx={headCellSx}>Loan Amount</TableCell>
+                                    <TableCell align="right" sx={headCellSx}>Interest</TableCell>
+                                    <TableCell align="right" sx={headCellSx}>Total + Interest</TableCell>
+                                    <TableCell align="right" sx={headCellSx}>Paid</TableCell>
+                                    <TableCell align="right" sx={headCellSx}>Balance</TableCell>
+                                    <TableCell sx={headCellSx}>Guarantors</TableCell>
+                                    <TableCell align="right" sx={headCellSx}>Collateral</TableCell>
+                                    <TableCell sx={headCellSx}>Status</TableCell>
+                                    <TableCell sx={headCellSx} />
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {paginate(filtered).map((row) => {
+                                    const batchKey = row.loan_number;
+                                    const expanded = expandedBatch === batchKey;
+                                    return [
+                                        <TableRow key={batchKey}>
+                                            <TableCell>{row.index}</TableCell>
+                                            <TableCell sx={{ whiteSpace: "nowrap" }}>{formatDate(row.date_applied)}</TableCell>
+                                            <TableCell><MemberCell memberNo={row.member_no} name={row.member_name} /></TableCell>
+                                            <TableCell align="right"><Money value={row.principal} bold /></TableCell>
+                                            <TableCell align="right"><Money value={row.interest} /></TableCell>
+                                            <TableCell align="right"><Money value={row.total_due} /></TableCell>
+                                            <TableCell align="right"><Money value={row.paid} /></TableCell>
+                                            <TableCell align="right">
+                                                <Typography component="span" variant="body2" sx={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, color: row.balance > 0 ? "warning.main" : "success.main" }}>
+                                                    {formatCurrency(row.balance)}
+                                                </Typography>
+                                            </TableCell>
+                                            <TableCell sx={{ maxWidth: 180 }}>
+                                                <Typography variant="caption">{row.guarantors || "—"}</Typography>
+                                            </TableCell>
+                                            <TableCell align="right"><Money value={row.collateral} /></TableCell>
+                                            <TableCell>
+                                                <Chip size="small" label={row.status.replace(/_/g, " ")} color={statusColor(row.status)} variant="outlined" sx={{ fontWeight: 700 }} />
+                                            </TableCell>
+                                            <TableCell align="right">
+                                                <Button size="small" variant={expanded ? "contained" : "text"} onClick={() => setExpandedBatch(expanded ? null : batchKey)} disabled={!row.repayments?.length}>
+                                                    {expanded ? "Hide" : `Payments (${row.repayments?.length || 0})`}
+                                                </Button>
+                                            </TableCell>
+                                        </TableRow>,
+                                        expanded ? (
+                                            <TableRow key={`${batchKey}-detail`}>
+                                                <TableCell colSpan={12} sx={{ py: 0, bgcolor: alpha(theme.palette.primary.main, 0.03) }}>
+                                                    <Box sx={{ maxHeight: 260, overflow: "auto", my: 1.5, mx: 2, borderRadius: 1, border: `1px solid ${theme.palette.divider}` }}>
+                                                        <Table size="small">
+                                                            <TableBody>
+                                                                {(row.repayments || []).map((payment, paymentIndex) => (
+                                                                    <TableRow key={`${batchKey}-${paymentIndex}`}>
+                                                                        <TableCell sx={{ whiteSpace: "nowrap" }}>{formatDate(payment.date)}</TableCell>
+                                                                        <TableCell align="right"><Money value={payment.amount} /></TableCell>
+                                                                        <TableCell align="right">
+                                                                            <Typography component="span" variant="body2" sx={{ fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>
+                                                                                {payment.balance ? formatCurrency(payment.balance) : "—"}
+                                                                            </Typography>
+                                                                        </TableCell>
+                                                                    </TableRow>
+                                                                ))}
+                                                            </TableBody>
+                                                        </Table>
+                                                    </Box>
+                                                </TableCell>
+                                            </TableRow>
+                                        ) : null
+                                    ];
+                                })}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                    {paginationBar(filtered.length)}
+                </Stack>
+            );
+        }
+
         if (activeKey === "summary-sorted") {
             const typed = data as SummarySortedData;
             const filtered = typed.rows.filter((row) => matchesSearch(row.member_no, row.full_name));
@@ -1112,9 +1246,9 @@ export function AllReportsPage() {
             <Card variant="outlined" sx={{ borderRadius: 2.5 }}>
                 <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
                     <Stack spacing={2}>
-                        {showDateFilters || ["member-statement", "positions", "performance-targets", "commitments", "summary-sorted"].includes(activeKey) ? (
+                        {showDateFilters || ["member-statement", "positions", "performance-targets", "commitments", "summary-sorted", "loans"].includes(activeKey) ? (
                             <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }} flexWrap="wrap" useFlexGap>
-                                {["contributions", "monthly", "positions", "performance-targets", "commitments", "summary-sorted"].includes(activeKey) ? (
+                                {["contributions", "monthly", "positions", "performance-targets", "commitments", "summary-sorted", "loans"].includes(activeKey) ? (
                                     <TextField
                                         label="Search member"
                                         size="small"

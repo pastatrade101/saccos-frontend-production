@@ -19,6 +19,7 @@ import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
 import StoreRoundedIcon from "@mui/icons-material/StoreRounded";
+import CreditScoreRoundedIcon from "@mui/icons-material/CreditScoreRounded";
 import SummarizeRoundedIcon from "@mui/icons-material/SummarizeRounded";
 import PendingActionsRoundedIcon from "@mui/icons-material/PendingActionsRounded";
 import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
@@ -123,7 +124,8 @@ const navItems: NavItem[] = [
     { to: "/all-reports/utt", label: "UTT Investments", roles: ["branch_manager"], section: "finance", icon: AccountBalanceRoundedIcon },
     { to: "/all-reports/performance-targets", label: "Performance Targets", roles: ["branch_manager"], section: "finance", icon: TrackChangesRoundedIcon },
     { to: "/all-reports/commitments", label: "Monthly Commitments", roles: ["branch_manager"], section: "finance", icon: EventRepeatRoundedIcon },
-    { to: "/all-reports/summary-sorted", label: "Sorted Summary", roles: ["branch_manager"], section: "finance", icon: SummarizeRoundedIcon }
+    { to: "/all-reports/summary-sorted", label: "Sorted Summary", roles: ["branch_manager"], section: "finance", icon: SummarizeRoundedIcon },
+    { to: "/all-reports/loans", label: "Loans (MIKOPO)", roles: ["branch_manager"], section: "finance", icon: CreditScoreRoundedIcon }
 ];
 
 const navGroups: NavGroup[] = [
@@ -360,6 +362,7 @@ export function AppLayout() {
                                 "/all-reports/performance-targets",
                                 "/all-reports/commitments",
                                 "/all-reports/summary-sorted",
+                                "/all-reports/loans",
                                 "/reports"
                             ]
                         }
