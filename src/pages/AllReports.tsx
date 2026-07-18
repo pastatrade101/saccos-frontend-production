@@ -33,7 +33,7 @@ import type { Member } from "../types/api";
 import { downloadFile } from "../utils/downloadFile";
 import { formatCurrency, formatDate } from "../utils/format";
 
-type ReportKey = "contributions" | "monthly" | "dividends" | "positions" | "member-statement" | "utt";
+type ReportKey = "contributions" | "monthly" | "dividends" | "positions" | "member-statement" | "utt" | "performance-targets" | "commitments";
 
 const REPORTS: { key: ReportKey; label: string; description: string }[] = [
     { key: "contributions", label: "Contributions Summary", description: "Per member: savings, shares and social contributions with withdrawals netted." },
@@ -41,7 +41,9 @@ const REPORTS: { key: ReportKey; label: string; description: string }[] = [
     { key: "dividends", label: "Dividend Distributions", description: "Every distribution: date, source, pool and member allocations." },
     { key: "positions", label: "Member Positions", description: "Contributions + dividends = cumulative position, ranked." },
     { key: "member-statement", label: "Member Profit Statement", description: "A single member's dividend history with running total." },
-    { key: "utt", label: "UTT Investments", description: "UTT register: deposits, fund income, position and funding sources." }
+    { key: "utt", label: "UTT Investments", description: "UTT register: deposits, fund income, position and funding sources." },
+    { key: "performance-targets", label: "Performance Targets", description: "Each member's annual target vs actual savings — % reached, remaining, position." },
+    { key: "commitments", label: "Monthly Commitments", description: "Shares and monthly savings commitment compliance per member: expected vs paid, arrears and status." }
 ];
 
 interface ContributionsSummaryData {
@@ -77,6 +79,31 @@ interface MemberProfitStatementData {
     member: { id: string; member_no: string | null; full_name: string };
     rows: { date: string; label: string; source: string; amount: number; running_total: number }[];
     totals: { utt: number; loan: number; total: number };
+}
+
+interface PerformanceTargetsData {
+    settings: { enabled: boolean; default_annual_amount: number; required_amount: number; on_track_percent: number };
+    rows: { position: number; member_no: string | null; full_name: string; actual: number; target: number; remaining: number; percent: number; on_track: boolean }[];
+    totals: { actual: number; target: number; remaining: number; on_track_count: number };
+}
+
+interface CommitmentComplianceData {
+    rows: {
+        position: number;
+        member_no: string | null;
+        full_name: string;
+        actual: number;
+        shares: number;
+        commitment: number;
+        start_month: string | null;
+        months_due: number;
+        expected: number;
+        paid: number;
+        needed: number;
+        months_behind: number;
+        status: string;
+    }[];
+    totals: { actual: number; shares: number; expected: number; paid: number; needed: number; behind_count: number };
 }
 
 interface UttInvestmentsData {
@@ -259,6 +286,10 @@ export function AllReportsPage() {
                 response = await api.get<{ data: MemberProfitStatementData }>(endpoints.allReports.memberProfitStatement(), {
                     params: { member_id: selectedMember!.id }
                 });
+            } else if (activeKey === "performance-targets") {
+                response = await api.get<{ data: PerformanceTargetsData }>(endpoints.allReports.performanceTargets());
+            } else if (activeKey === "commitments") {
+                response = await api.get<{ data: CommitmentComplianceData }>(endpoints.allReports.commitments());
             } else {
                 response = await api.get<{ data: UttInvestmentsData }>(endpoints.allReports.uttInvestments());
             }
@@ -344,6 +375,30 @@ export function AllReportsPage() {
                 title: `Member Profit Statement — ${typed.member.full_name} (${typed.member.member_no || ""})`,
                 headers: ["Date", "Distribution", "Source", "Amount", "Running Total"],
                 rows: typed.rows.map((row) => [row.date, row.label, row.source, row.amount, row.running_total])
+            };
+        }
+        if (activeKey === "performance-targets") {
+            const typed = data as PerformanceTargetsData;
+            return {
+                name: "performance-targets",
+                title: "Performance Targets",
+                headers: ["Position", "Member No", "Member", "Actual Savings", "Annual Target", "Remaining", "% Reach", "On Track"],
+                rows: [
+                    ...typed.rows.map((row) => [row.position, row.member_no, row.full_name, row.actual, row.target, row.remaining, `${row.percent}%`, row.on_track ? "YES" : "NO"] as (string | number | null)[]),
+                    ["", "", "TOTAL", typed.totals.actual, typed.totals.target, typed.totals.remaining, "", `${typed.totals.on_track_count} on track`]
+                ]
+            };
+        }
+        if (activeKey === "commitments") {
+            const typed = data as CommitmentComplianceData;
+            return {
+                name: "monthly-commitments",
+                title: "Monthly Commitments",
+                headers: ["Position", "Member No", "Member", "Actual", "Shares", "Commitment/Month", "Since", "Months", "Expected", "Paid", "Needed", "Status"],
+                rows: [
+                    ...typed.rows.map((row) => [row.position, row.member_no, row.full_name, row.actual, row.shares, row.commitment, row.start_month, row.months_due, row.expected, row.paid, row.needed, row.status] as (string | number | null)[]),
+                    ["", "", "TOTAL", typed.totals.actual, typed.totals.shares, "", "", "", typed.totals.expected, typed.totals.paid, typed.totals.needed, `${typed.totals.behind_count} behind`]
+                ]
             };
         }
         const typed = data as UttInvestmentsData;
@@ -714,6 +769,122 @@ export function AllReportsPage() {
             );
         }
 
+        if (activeKey === "performance-targets") {
+            const typed = data as PerformanceTargetsData;
+            const filtered = typed.rows.filter((row) => matchesSearch(row.member_no, row.full_name));
+            return (
+                <Stack spacing={2}>
+                    <StatTiles items={[
+                        { label: "Members", value: String(filtered.length) },
+                        { label: "Total actual", value: formatCurrency(typed.totals.actual) },
+                        { label: "Total targets", value: formatCurrency(typed.totals.target) },
+                        { label: "On track", value: `${typed.totals.on_track_count} of ${typed.rows.length}`, helper: `≥ ${typed.settings.on_track_percent}% of target` }
+                    ]} />
+                    <TableContainer sx={{ maxHeight: 560, borderRadius: 1.5, border: `1px solid ${theme.palette.divider}` }}>
+                        <Table size="small" stickyHeader sx={zebraSx}>
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell sx={headCellSx}>#</TableCell>
+                                    <TableCell sx={headCellSx}>Member</TableCell>
+                                    <TableCell align="right" sx={headCellSx}>Actual Savings</TableCell>
+                                    <TableCell align="right" sx={headCellSx}>Annual Target</TableCell>
+                                    <TableCell align="right" sx={headCellSx}>Remaining</TableCell>
+                                    <TableCell sx={headCellSx}>Progress</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {paginate(filtered).map((row) => (
+                                    <TableRow key={`${row.position}-${row.member_no}`}>
+                                        <TableCell>
+                                            <Chip size="small" label={row.position} color={row.position <= 3 ? "primary" : "default"} variant={row.position <= 3 ? "filled" : "outlined"} sx={{ fontWeight: 700, minWidth: 40 }} />
+                                        </TableCell>
+                                        <TableCell><MemberCell memberNo={row.member_no} name={row.full_name} /></TableCell>
+                                        <TableCell align="right"><Money value={row.actual} bold /></TableCell>
+                                        <TableCell align="right"><Money value={row.target} /></TableCell>
+                                        <TableCell align="right"><Money value={row.remaining} /></TableCell>
+                                        <TableCell sx={{ minWidth: 160 }}>
+                                            <Stack direction="row" spacing={1} alignItems="center">
+                                                <Box sx={{ flex: 1, height: 8, borderRadius: 999, bgcolor: "action.hover", overflow: "hidden" }}>
+                                                    <Box sx={{ width: `${Math.min(row.percent, 100)}%`, height: "100%", bgcolor: row.on_track ? "success.main" : "warning.main" }} />
+                                                </Box>
+                                                <Typography variant="caption" sx={{ fontVariantNumeric: "tabular-nums", minWidth: 44, textAlign: "right", fontWeight: 700 }}>
+                                                    {row.percent.toFixed(0)}%
+                                                </Typography>
+                                            </Stack>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                    {paginationBar(filtered.length)}
+                </Stack>
+            );
+        }
+
+        if (activeKey === "commitments") {
+            const typed = data as CommitmentComplianceData;
+            const filtered = typed.rows.filter((row) => matchesSearch(row.member_no, row.full_name));
+            return (
+                <Stack spacing={2}>
+                    <StatTiles items={[
+                        { label: "Members", value: String(filtered.length) },
+                        { label: "Expected to date", value: formatCurrency(typed.totals.expected) },
+                        { label: "Paid", value: formatCurrency(typed.totals.paid) },
+                        { label: "Arrears", value: formatCurrency(typed.totals.needed), helper: `${typed.totals.behind_count} member(s) behind` }
+                    ]} />
+                    {typed.rows.every((row) => row.commitment === 0) ? (
+                        <Alert severity="info" variant="outlined">
+                            No member has a monthly savings commitment configured yet — set commitments on member profiles for this report to track expected vs paid.
+                        </Alert>
+                    ) : null}
+                    <TableContainer sx={{ maxHeight: 560, borderRadius: 1.5, border: `1px solid ${theme.palette.divider}` }}>
+                        <Table size="small" stickyHeader sx={zebraSx}>
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell sx={headCellSx}>#</TableCell>
+                                    <TableCell sx={headCellSx}>Member</TableCell>
+                                    <TableCell align="right" sx={headCellSx}>Actual</TableCell>
+                                    <TableCell align="right" sx={headCellSx}>Shares</TableCell>
+                                    <TableCell align="right" sx={headCellSx}>Commitment/mo</TableCell>
+                                    <TableCell align="right" sx={headCellSx}>Months</TableCell>
+                                    <TableCell align="right" sx={headCellSx}>Expected</TableCell>
+                                    <TableCell align="right" sx={headCellSx}>Paid</TableCell>
+                                    <TableCell align="right" sx={headCellSx}>Needed</TableCell>
+                                    <TableCell sx={headCellSx}>Status</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {paginate(filtered).map((row) => (
+                                    <TableRow key={`${row.position}-${row.member_no}`}>
+                                        <TableCell>{row.position}</TableCell>
+                                        <TableCell><MemberCell memberNo={row.member_no} name={row.full_name} /></TableCell>
+                                        <TableCell align="right"><Money value={row.actual} bold /></TableCell>
+                                        <TableCell align="right"><Money value={row.shares} /></TableCell>
+                                        <TableCell align="right"><Money value={row.commitment} /></TableCell>
+                                        <TableCell align="right">{row.months_due || "—"}</TableCell>
+                                        <TableCell align="right"><Money value={row.expected} /></TableCell>
+                                        <TableCell align="right"><Money value={row.paid} /></TableCell>
+                                        <TableCell align="right"><Money value={row.needed} /></TableCell>
+                                        <TableCell>
+                                            <Chip
+                                                size="small"
+                                                label={row.status}
+                                                color={row.needed > 0 ? "warning" : "success"}
+                                                variant="outlined"
+                                                sx={{ fontWeight: 700 }}
+                                            />
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                    {paginationBar(filtered.length)}
+                </Stack>
+            );
+        }
+
         const typed = data as UttInvestmentsData;
         return (
             <Stack spacing={2}>
@@ -835,9 +1006,9 @@ export function AllReportsPage() {
             <Card variant="outlined" sx={{ borderRadius: 2.5 }}>
                 <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
                     <Stack spacing={2}>
-                        {showDateFilters || activeKey === "member-statement" || activeKey === "positions" ? (
+                        {showDateFilters || ["member-statement", "positions", "performance-targets", "commitments"].includes(activeKey) ? (
                             <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }} flexWrap="wrap" useFlexGap>
-                                {activeKey === "contributions" || activeKey === "monthly" || activeKey === "positions" ? (
+                                {["contributions", "monthly", "positions", "performance-targets", "commitments"].includes(activeKey) ? (
                                     <TextField
                                         label="Search member"
                                         size="small"

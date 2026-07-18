@@ -353,6 +353,8 @@ const routeMap = {
         memberPositions: "/all-reports/member-positions",
         memberProfitStatement: "/all-reports/member-profit-statement",
         uttInvestments: "/all-reports/utt-investments",
+        performanceTargets: "/all-reports/performance-targets",
+        commitments: "/all-reports/commitments",
         myStatement: "/all-reports/my-statement",
         myMonthly: "/all-reports/my-monthly",
         myPosition: "/all-reports/my-position"
@@ -651,6 +653,8 @@ export const endpoints = {
         memberPositions: () => routeMap.allReports.memberPositions,
         memberProfitStatement: () => routeMap.allReports.memberProfitStatement,
         uttInvestments: () => routeMap.allReports.uttInvestments,
+        performanceTargets: () => routeMap.allReports.performanceTargets,
+        commitments: () => routeMap.allReports.commitments,
         myStatement: () => routeMap.allReports.myStatement,
         myMonthly: () => routeMap.allReports.myMonthly,
         myPosition: () => routeMap.allReports.myPosition
