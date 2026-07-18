@@ -914,6 +914,9 @@ export interface SaccoFinancials {
     investment_cost: number | null;
     investment_value: number | null;
     investment_income: number | null;
+    dividends_distributed: number | null;
+    dividends_utt: number | null;
+    dividends_loan: number | null;
     interest_rate: number | null;
     monthly_contributions: {
         total: number;
@@ -2357,4 +2360,9 @@ export interface SaccoOverview {
     total_shares: number;
     loan_book: number;
     active_loans: number;
+    utt_invested?: number;
+    utt_income?: number;
+    dividends_distributed?: number;
+    dividends_utt?: number;
+    dividends_loan?: number;
 }

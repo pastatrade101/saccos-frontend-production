@@ -46,6 +46,8 @@ import {
     type DividendFormulaTemplatesResponse,
     type DividendOptionsResponse,
     type DividendPaymentRequest,
+    type DividendPoolSuggestion,
+    type DividendPoolSuggestionResponse,
     type FormulaDividendComponentInput,
     type GenerateFormulaManualDividendBatchRequest,
     type ManualDividendBatchDetailResponse,
@@ -176,6 +178,7 @@ const defaultFormulaComponent = (): FormulaDividendComponentInput => ({
     dividend_label: "Current dividend",
     dividend_date: todayDate(),
     source_type: "utt",
+    base_method: "contributions_to_date",
     base_cutoff_date: todayDate(),
     pool_amount: 0
 });
@@ -740,6 +743,28 @@ export function DividendsPage() {
         }));
     };
 
+    const [poolSuggestionRange, setPoolSuggestionRange] = useState(() => {
+        const end = todayDate();
+        const start = `${end.slice(0, 7)}-01`;
+        return { start, end };
+    });
+    const [poolSuggestion, setPoolSuggestion] = useState<DividendPoolSuggestion | null>(null);
+    const [loadingPoolSuggestion, setLoadingPoolSuggestion] = useState(false);
+
+    const fetchPoolSuggestion = async () => {
+        setLoadingPoolSuggestion(true);
+        try {
+            const { data } = await api.get<DividendPoolSuggestionResponse>(endpoints.dividends.poolSuggestion(), {
+                params: { start_date: poolSuggestionRange.start, end_date: poolSuggestionRange.end }
+            });
+            setPoolSuggestion(data.data);
+        } catch (error) {
+            pushToast({ type: "error", title: "Unable to load suggested pool", message: getApiErrorMessage(error) });
+        } finally {
+            setLoadingPoolSuggestion(false);
+        }
+    };
+
     const updateFormulaComponent = (
         index: number,
         patch: Partial<FormulaDividendDraft["components"][number]>
@@ -801,6 +826,7 @@ export function DividendsPage() {
                     dividend_date: component.dividend_date,
                     dividend_label: component.dividend_label,
                     source_type: component.source_type || "other",
+                    base_method: component.base_method || "balance_at_cutoff",
                     base_cutoff_date: component.base_cutoff_date,
                     pool_amount: Number(component.pool_amount || 0)
                 }))
@@ -1333,6 +1359,45 @@ export function DividendsPage() {
                             <Chip label="Posts to savings accounts" variant="outlined" color="success" />
                         </Stack>
 
+                        <Card variant="outlined">
+                            <CardContent>
+                                <Stack spacing={1.5}>
+                                    <Typography variant="subtitle2">Suggested pool from recorded income</Typography>
+                                    <Typography variant="caption" color="text.secondary">
+                                        Loan interest collected plus treasury/UTT income for the period — use it to fill the pool amounts instead of a hand-kept ledger.
+                                    </Typography>
+                                    <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ sm: "center" }}>
+                                        <TextField
+                                            label="From"
+                                            type="date"
+                                            size="small"
+                                            value={poolSuggestionRange.start}
+                                            onChange={(event) => setPoolSuggestionRange((current) => ({ ...current, start: event.target.value }))}
+                                            slotProps={{ inputLabel: { shrink: true } }}
+                                        />
+                                        <TextField
+                                            label="To"
+                                            type="date"
+                                            size="small"
+                                            value={poolSuggestionRange.end}
+                                            onChange={(event) => setPoolSuggestionRange((current) => ({ ...current, end: event.target.value }))}
+                                            slotProps={{ inputLabel: { shrink: true } }}
+                                        />
+                                        <Button size="small" variant="outlined" onClick={fetchPoolSuggestion} disabled={loadingPoolSuggestion}>
+                                            {loadingPoolSuggestion ? "Loading…" : "Fetch income"}
+                                        </Button>
+                                    </Stack>
+                                    {poolSuggestion ? (
+                                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1} flexWrap="wrap" useFlexGap>
+                                            <Chip size="small" variant="outlined" label={`Loan interest: ${formatCurrency(poolSuggestion.loan_interest)}`} />
+                                            <Chip size="small" variant="outlined" label={`UTT/treasury income: ${formatCurrency(poolSuggestion.treasury_income)}`} />
+                                            <Chip size="small" color="primary" label={`Total available: ${formatCurrency(poolSuggestion.total)}`} />
+                                        </Stack>
+                                    ) : null}
+                                </Stack>
+                            </CardContent>
+                        </Card>
+
                         <Stack direction="row" justifyContent="space-between" alignItems="center">
                             <Typography variant="subtitle1">Dividend Pools</Typography>
                             <Button size="small" variant="outlined" onClick={addFormulaComponent} startIcon={<AddCircleOutlineRoundedIcon />}>
@@ -1349,7 +1414,11 @@ export function DividendsPage() {
                                                 <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="center">
                                                     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                                                         <Chip size="small" label={component.key || `POOL-${index + 1}`} />
-                                                        <Chip size="small" label="Savings basis" variant="outlined" />
+                                                        <Chip
+                                                            size="small"
+                                                            label={component.base_method === "contributions_to_date" ? "Contribution basis" : "Savings basis"}
+                                                            variant="outlined"
+                                                        />
                                                     </Stack>
                                                     {formulaDraft.components.length > 1 ? (
                                                         <Button size="small" color="inherit" onClick={() => removeFormulaComponent(index)}>
@@ -1413,10 +1482,25 @@ export function DividendsPage() {
                                                             <MenuItem value="other">Other dividend</MenuItem>
                                                         </TextField>
                                                     </Grid>
+                                                    <Grid size={{ xs: 12, sm: 6 }}>
+                                                        <TextField
+                                                            select
+                                                            label="Allocation basis"
+                                                            size="small"
+                                                            fullWidth
+                                                            value={component.base_method || "balance_at_cutoff"}
+                                                            onChange={(event) => updateFormulaComponent(index, { base_method: event.target.value as FormulaDividendComponentInput["base_method"] })}
+                                                        >
+                                                            <MenuItem value="contributions_to_date">Total contributions to cutoff</MenuItem>
+                                                            <MenuItem value="balance_at_cutoff">Savings balance at cutoff</MenuItem>
+                                                        </TextField>
+                                                    </Grid>
                                                 </Grid>
 
                                                 <Typography variant="caption" color="text.secondary">
-                                                    Formula: member savings at {formatDate(component.base_cutoff_date)} / total branch savings at cutoff * {formatCurrency(component.pool_amount || 0)}.
+                                                    {component.base_method === "contributions_to_date"
+                                                        ? `Formula: member contributions up to ${formatDate(component.base_cutoff_date)} / total contributions at cutoff * ${formatCurrency(component.pool_amount || 0)}. Prior dividends are excluded from the basis.`
+                                                        : `Formula: member savings at ${formatDate(component.base_cutoff_date)} / total branch savings at cutoff * ${formatCurrency(component.pool_amount || 0)}.`}
                                                 </Typography>
                                             </Stack>
                                         </CardContent>

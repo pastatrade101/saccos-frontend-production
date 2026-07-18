@@ -32,7 +32,8 @@ import { crestGold } from "../theme/colors";
 import { getAuditorReasonMeta, getSeverityScore } from "../components/auditor/auditorUtils";
 import { api, getApiErrorMessage } from "../lib/api";
 import { endpoints, type AuditorExceptionTrendsResponse, type AuditorExceptionsResponse, type AuditorRiskSummaryResponse, type AuditorSummaryResponse, type AuditorWorkstationOverviewResponse } from "../lib/endpoints";
-import type { AuditorException, AuditorExceptionTrends, AuditorRiskSummary, AuditorSummary, AuditorWorkstationOverview } from "../types/api";
+import type { AuditorException, AuditorExceptionTrends, AuditorRiskSummary, AuditorSummary, AuditorWorkstationOverview, SaccoOverview } from "../types/api";
+import { formatCurrency } from "../utils/format";
 
 function MetricCard({
     label,
@@ -75,9 +76,15 @@ export function AuditorDashboardPage() {
     const [exceptionTrends, setExceptionTrends] = useState<AuditorExceptionTrends | null>(null);
     const [workstationOverview, setWorkstationOverview] = useState<AuditorWorkstationOverview | null>(null);
     const [topExceptions, setTopExceptions] = useState<AuditorException[]>([]);
+    const [saccoOverview, setSaccoOverview] = useState<SaccoOverview | null>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
+        // Best-effort: distributions oversight should not block the core audit view.
+        void api
+            .get<{ data: SaccoOverview }>(endpoints.members.saccoOverview())
+            .then((response) => setSaccoOverview(response.data.data))
+            .catch(() => setSaccoOverview(null));
         void Promise.all([
             api.get<AuditorSummaryResponse>(endpoints.auditor.summary()),
             api.get<AuditorRiskSummaryResponse>(endpoints.auditor.riskSummary()),
@@ -266,6 +273,26 @@ export function AuditorDashboardPage() {
                         icon={<HistoryRoundedIcon fontSize="small" />}
                     />
                 </Grid>
+                {saccoOverview?.utt_invested ? (
+                    <Grid size={{ xs: 12, sm: 6, lg: 4 }}>
+                        <MetricCard
+                            label="UTT Portfolio"
+                            value={formatCurrency(saccoOverview.utt_invested)}
+                            helper={`Income recorded: ${formatCurrency(saccoOverview.utt_income ?? 0)}.`}
+                            icon={<InsightsRoundedIcon fontSize="small" />}
+                        />
+                    </Grid>
+                ) : null}
+                {saccoOverview?.dividends_distributed ? (
+                    <Grid size={{ xs: 12, sm: 6, lg: 4 }}>
+                        <MetricCard
+                            label="Dividends Distributed"
+                            value={formatCurrency(saccoOverview.dividends_distributed)}
+                            helper={`UTT ${formatCurrency(saccoOverview.dividends_utt ?? 0)} · Loans ${formatCurrency(saccoOverview.dividends_loan ?? 0)}.`}
+                            icon={<BalanceRoundedIcon fontSize="small" />}
+                        />
+                    </Grid>
+                ) : null}
             </Grid>
 
             <Grid container spacing={2}>

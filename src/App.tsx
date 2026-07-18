@@ -44,6 +44,7 @@ const SaccoSettingsPage = lazy(() => import("./pages/SaccoSettings").then((m) =>
 const PerformanceTargetsPage = lazy(() => import("./pages/PerformanceTargets").then((m) => ({ default: m.PerformanceTargetsPage })));
 const LeaguesPage = lazy(() => import("./pages/Leagues").then((m) => ({ default: m.LeaguesPage })));
 const MilestonesPage = lazy(() => import("./pages/Milestones").then((m) => ({ default: m.MilestonesPage })));
+const AllReportsPage = lazy(() => import("./pages/AllReports").then((m) => ({ default: m.AllReportsPage })));
 const TreasuryPage = lazy(() => import("./pages/Treasury").then((m) => ({ default: m.TreasuryPage })));
 const TreasuryPolicySettingsPage = lazy(() => import("./pages/TreasuryPolicySettings").then((m) => ({ default: m.TreasuryPolicySettingsPage })));
 const MemberPortalPage = lazy(() => import("./pages/MemberPortal").then((m) => ({ default: m.MemberPortalPage })));
@@ -264,6 +265,16 @@ export default function App() {
                             <Route path="/performance-targets" element={<PerformanceTargetsPage />} />
                             <Route path="/leagues" element={<LeaguesPage />} />
                             <Route path="/milestones" element={<MilestonesPage />} />
+                        </Route>
+                        <Route
+                            element={
+                                <ProtectedRoute
+                                    allowedRoles={["super_admin", "branch_manager", "auditor"]}
+                                    allowInternalOps={false}
+                                />
+                            }
+                        >
+                            <Route path="/all-reports/:report" element={<AllReportsPage />} />
                         </Route>
                         <Route
                             element={

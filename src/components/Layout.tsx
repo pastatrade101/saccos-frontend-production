@@ -79,7 +79,7 @@ interface SearchOption {
 }
 
 interface NavGroup {
-    key: "workspace" | "products" | "finance" | "operations" | "analytics" | "setup" | "treasury";
+    key: "workspace" | "products" | "finance" | "operations" | "analytics" | "all_reports" | "setup" | "treasury";
     label: string;
     itemTos: string[];
 }
@@ -114,7 +114,13 @@ const navItems: NavItem[] = [
     { to: "/treasury", label: "Treasury", roles: ["super_admin", "treasury_officer", "auditor"], section: "finance", icon: AccountBalanceRoundedIcon },
     { to: "/treasury/policy-settings", label: "Treasury Setup", roles: ["branch_manager"], section: "finance", icon: PolicyRoundedIcon },
     { to: "/reports", label: "Reports", roles: ["super_admin", "branch_manager", "treasury_officer", "loan_officer"], section: "finance", icon: DescriptionRoundedIcon },
-    { to: "/auditor/reports", label: "Reports", roles: ["auditor"], section: "finance", icon: DescriptionRoundedIcon }
+    { to: "/auditor/reports", label: "Reports", roles: ["auditor"], section: "finance", icon: DescriptionRoundedIcon },
+    { to: "/all-reports/contributions", label: "Contributions Summary", roles: ["branch_manager"], section: "finance", icon: SummarizeRoundedIcon },
+    { to: "/all-reports/monthly", label: "Monthly Contributions", roles: ["branch_manager"], section: "finance", icon: SummarizeRoundedIcon },
+    { to: "/all-reports/dividends", label: "Dividend Distributions", roles: ["branch_manager"], section: "finance", icon: EventRepeatRoundedIcon },
+    { to: "/all-reports/positions", label: "Member Positions", roles: ["branch_manager"], section: "finance", icon: GroupRoundedIcon },
+    { to: "/all-reports/member-statement", label: "Member Profit Statement", roles: ["branch_manager"], section: "finance", icon: DescriptionRoundedIcon },
+    { to: "/all-reports/utt", label: "UTT Investments", roles: ["branch_manager"], section: "finance", icon: AccountBalanceRoundedIcon }
 ];
 
 const navGroups: NavGroup[] = [
@@ -320,17 +326,45 @@ export function AppLayout() {
     });
 
     const isTreasuryWorkspaceRole = profile?.role === "treasury_officer";
+    const isBranchManagerRole = profile?.role === "branch_manager";
     const effectiveNavGroups = useMemo<NavGroup[]>(() => {
-        if (!isTreasuryWorkspaceRole) {
-            return navGroups;
+        if (isTreasuryWorkspaceRole) {
+            return [
+                { key: "treasury", label: "Treasury", itemTos: ["/treasury"] },
+                { key: "operations", label: "Operations", itemTos: ["/approvals"] },
+                { key: "analytics", label: "Analytics", itemTos: ["/reports"] }
+            ];
         }
 
-        return [
-            { key: "treasury", label: "Treasury", itemTos: ["/treasury"] },
-            { key: "operations", label: "Operations", itemTos: ["/approvals"] },
-            { key: "analytics", label: "Analytics", itemTos: ["/reports"] }
-        ];
-    }, [isTreasuryWorkspaceRole]);
+        if (isBranchManagerRole) {
+            // Branch managers get a dedicated "All Reports" group; Reports moves
+            // out of Analytics into it. Future report sub-pages register their
+            // routes here.
+            return navGroups.flatMap<NavGroup>((group) => {
+                if (group.key === "analytics") {
+                    return [
+                        { ...group, itemTos: group.itemTos.filter((to) => to !== "/reports") },
+                        {
+                            key: "all_reports",
+                            label: "All Reports",
+                            itemTos: [
+                                "/all-reports/contributions",
+                                "/all-reports/monthly",
+                                "/all-reports/dividends",
+                                "/all-reports/positions",
+                                "/all-reports/member-statement",
+                                "/all-reports/utt",
+                                "/reports"
+                            ]
+                        }
+                    ];
+                }
+                return [group];
+            });
+        }
+
+        return navGroups;
+    }, [isTreasuryWorkspaceRole, isBranchManagerRole]);
 
     const topLevelItems = useMemo(
         () => visibleItems.filter((item) => item.to === "/dashboard"),

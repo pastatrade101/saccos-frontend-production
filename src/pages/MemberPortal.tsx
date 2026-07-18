@@ -54,6 +54,12 @@ import {
     DialogTitle,
     Chip,
     CircularProgress,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
     Drawer,
     FormControlLabel,
     Grid,
@@ -904,6 +910,12 @@ const portalSections = [
         label: "Payments",
         subtitle: "Track Mobile Money requests, failures, and posted mobile money receipts.",
         icon: WorkspacesRoundedIcon
+    },
+    {
+        id: "member-reports",
+        label: "My Reports",
+        subtitle: "Your contributions, dividends and standing — your data only.",
+        icon: TimelineRoundedIcon
     }
 ] as const;
 
@@ -1228,6 +1240,59 @@ export function MemberPortalPage() {
     const [saccoOverview, setSaccoOverview] = useState<SaccoOverview | null>(null);
     const [saccoOverviewLoading, setSaccoOverviewLoading] = useState(false);
     const [milestoneBoard, setMilestoneBoard] = useState<SaccoMilestoneBoard | null>(null);
+
+    interface MyReportsData {
+        position: { rank: number | null; total_ranked_members: number; contributions: number; dividends: number; cumulative: number };
+        statement: { rows: { date: string; label: string; source: string; amount: number; running_total: number }[] };
+        monthly: { rows: { month: string; amount: number }[]; grand_total: number };
+        utt: {
+            deposits: { date: string; reference: string; amount: number }[];
+            income: { date: string; type: string; description: string | null; amount: number }[];
+            totals: { invested: number; income: number; grand_total: number };
+        } | null;
+    }
+    const [myReports, setMyReports] = useState<MyReportsData | null>(null);
+    const [myReportsLoading, setMyReportsLoading] = useState(false);
+
+    // Lazy-load the member's self-scoped reports when they open My Reports.
+    // The first three endpoints resolve the member from the session server-side;
+    // the UTT register is cooperative-wide aggregates (fetched best-effort).
+    useEffect(() => {
+        if (activeSection !== "member-reports" || myReports) {
+            return;
+        }
+        let active = true;
+        setMyReportsLoading(true);
+        Promise.all([
+            api.get<{ data: MyReportsData["position"] }>(endpoints.allReports.myPosition()),
+            api.get<{ data: MyReportsData["statement"] }>(endpoints.allReports.myStatement()),
+            api.get<{ data: MyReportsData["monthly"] }>(endpoints.allReports.myMonthly()),
+            api.get<{ data: NonNullable<MyReportsData["utt"]> }>(endpoints.allReports.uttInvestments()).catch(() => null)
+        ])
+            .then(([positionRes, statementRes, monthlyRes, uttRes]) => {
+                if (active) {
+                    setMyReports({
+                        position: positionRes.data.data,
+                        statement: statementRes.data.data,
+                        monthly: monthlyRes.data.data,
+                        utt: uttRes?.data.data ?? null
+                    });
+                }
+            })
+            .catch(() => {
+                if (active) {
+                    setMyReports(null);
+                }
+            })
+            .finally(() => {
+                if (active) {
+                    setMyReportsLoading(false);
+                }
+            });
+        return () => {
+            active = false;
+        };
+    }, [activeSection, myReports]);
 
     // Lazy-load the curated SACCOS overview only when the member opens that view.
     useEffect(() => {
@@ -1582,6 +1647,31 @@ export function MemberPortalPage() {
         return new Map(
             Array.from(latestBalances.entries()).map(([accountId, entry]) => [accountId, entry.runningBalance])
         );
+    }, [statements]);
+    // Dividends credited to this member (UTT + loan interest distributions).
+    // Reversals post as direction 'out' with the same transaction type — net
+    // them so a reversed distribution contributes zero.
+    const myDividends = useMemo(() => {
+        let total = 0;
+        let count = 0;
+        let lastDate: string | null = null;
+        for (const row of statements) {
+            if (row.transaction_type !== "dividend_allocation") {
+                continue;
+            }
+            if (row.direction === "out") {
+                total -= Number(row.amount || 0);
+                count -= 1;
+                continue;
+            }
+            total += Number(row.amount || 0);
+            count += 1;
+            const date = row.transaction_date || null;
+            if (date && (!lastDate || date > lastDate)) {
+                lastDate = date;
+            }
+        }
+        return { total: Math.max(total, 0), count: Math.max(count, 0), lastDate };
     }, [statements]);
     const savingsEligibilityBalance = useMemo(
         () => accounts
@@ -3437,7 +3527,9 @@ export function MemberPortalPage() {
         () =>
             statements
                 .filter((statement) => statement.transaction_type === "dividend_allocation")
-                .reduce((sum, statement) => sum + statement.amount, 0),
+                // Reversals post as direction "out" — net them so a reversed
+                // distribution contributes zero instead of doubling.
+                .reduce((sum, statement) => sum + (statement.direction === "out" ? -statement.amount : statement.amount), 0),
         [statements]
     );
     const contributionHistory = useMemo(
@@ -3787,7 +3879,10 @@ export function MemberPortalPage() {
         [saccoYearContributionRows]
     );
     const contributionEntriesCount = filteredContributions.filter((row) => row.transaction_type === "share_contribution").length;
-    const dividendEntriesCount = filteredContributions.filter((row) => row.transaction_type === "dividend_allocation").length;
+    const dividendEntriesCount = filteredContributions.reduce(
+        (count, row) => (row.transaction_type === "dividend_allocation" ? count + (row.direction === "out" ? -1 : 1) : count),
+        0
+    );
     const contributionBaselineMonthly = DEFAULT_MEMBER_MONTHLY_CONTRIBUTION_AMOUNT;
     const targetActualAmount = performanceTargetPosition.actualFormAmount;
     const contributionExpected = performanceTargetPosition.annualTargetAmount;
@@ -3799,7 +3894,8 @@ export function MemberPortalPage() {
             .filter((row) => row.transaction_type === "dividend_allocation")
             .forEach((row) => {
                 const year = new Date(row.transaction_date).getFullYear().toString();
-                grouped.set(year, (grouped.get(year) || 0) + row.amount);
+                const signed = row.direction === "out" ? -row.amount : row.amount;
+                grouped.set(year, (grouped.get(year) || 0) + signed);
             });
 
         return Array.from(grouped.entries())
@@ -3877,7 +3973,7 @@ export function MemberPortalPage() {
             }
 
             if (row.transaction_type === "dividend_allocation") {
-                existing.dividend += row.amount;
+                existing.dividend += row.direction === "out" ? -row.amount : row.amount;
             }
 
             grouped.set(key, existing);
@@ -5772,7 +5868,17 @@ export function MemberPortalPage() {
                 { label: "Total Members", value: String(saccoOverview.total_members ?? 0), helper: `${saccoOverview.active_members ?? 0} active` },
                 { label: "Total Savings", value: tzs(saccoOverview.total_savings), helper: "" },
                 { label: "Share Capital", value: tzs(saccoOverview.total_shares), helper: "" },
-                { label: "Loan Book", value: tzs(saccoOverview.loan_book), helper: `${saccoOverview.active_loans ?? 0} active loans` }
+                { label: "Loan Book", value: tzs(saccoOverview.loan_book), helper: `${saccoOverview.active_loans ?? 0} active loans` },
+                ...(saccoOverview.utt_invested
+                    ? [{ label: "UTT Investments", value: tzs(saccoOverview.utt_invested), helper: `${tzs(saccoOverview.utt_income ?? 0)} income earned` }]
+                    : []),
+                ...(saccoOverview.dividends_distributed
+                    ? [{
+                        label: "Dividends Shared",
+                        value: tzs(saccoOverview.dividends_distributed),
+                        helper: `UTT ${tzs(saccoOverview.dividends_utt ?? 0)} · Loans ${tzs(saccoOverview.dividends_loan ?? 0)}`
+                    }]
+                    : [])
             ]
             : [];
         return (
@@ -5998,6 +6104,18 @@ export function MemberPortalPage() {
                         tone="success"
                     />
                 </Grid>
+                {myDividends.count > 0 ? (
+                    <Grid size={{ xs: 12, sm: 6, lg: 4 }}>
+                        <AccountSummaryCard
+                            icon={SavingsRoundedIcon}
+                            label="My Dividends"
+                            value={formatCurrencyCompact(myDividends.total)}
+                            valueTitle={formatCurrency(myDividends.total)}
+                            helper={`${myDividends.count} distribution(s)${myDividends.lastDate ? ` · latest ${formatDate(myDividends.lastDate)}` : ""}`}
+                            tone="primary"
+                        />
+                    </Grid>
+                ) : null}
             </Grid>
 
             {canUsePortalDeposits ? (
@@ -7599,6 +7717,325 @@ export function MemberPortalPage() {
         </Stack>
     );
 
+    const renderMyReportsView = () => {
+        const tzsFull = (value: number) => `TZS ${new Intl.NumberFormat("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(Number(value) || 0)}`;
+        const monthName = (month: string) => {
+            const [year, mm] = month.split("-");
+            return `${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][Number(mm) - 1]} ${year}`;
+        };
+
+        // Month-over-month trend: compare the latest COMPLETE month against the
+        // one before it (the current month is still accumulating, so comparing
+        // it would always look like a drop).
+        const monthlyRows = myReports?.monthly.rows ?? [];
+        const currentMonthKey = new Date().toISOString().slice(0, 7);
+        const completeMonths = monthlyRows.filter((row) => row.month < currentMonthKey);
+        const lastMonth = completeMonths[completeMonths.length - 1] ?? null;
+        const prevMonth = completeMonths[completeMonths.length - 2] ?? null;
+        const trendDelta = lastMonth && prevMonth ? lastMonth.amount - prevMonth.amount : null;
+        const trendPercent = trendDelta !== null && prevMonth && prevMonth.amount > 0
+            ? (trendDelta / prevMonth.amount) * 100
+            : null;
+        const trendUp = (trendDelta ?? 0) >= 0;
+        const recentMonths = monthlyRows.slice(-6);
+        const recentMax = Math.max(...recentMonths.map((row) => row.amount), 1);
+
+        // Remaining months of the SACCO financial year (incl. current month) —
+        // the runway for closing the gap to the annual target.
+        const fyEnd = financialYearPeriod.endDate;
+        const now = new Date();
+        const monthsLeft = Math.max(
+            (fyEnd.getFullYear() - now.getFullYear()) * 12 + (fyEnd.getMonth() - now.getMonth()) + 1,
+            1
+        );
+        const monthlyNeeded = savingsTargetRemaining > 0 ? savingsTargetRemaining / monthsLeft : 0;
+        const progressPercent = Math.min(Math.max(savingsTargetProgress, 0), 100);
+
+        return (
+            <Stack spacing={3} data-tour="member-portal-reports">
+                {myReportsLoading && !myReports ? (
+                    <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
+                        <CircularProgress />
+                    </Box>
+                ) : myReports ? (
+                    <>
+                        <MotionCard variant="outlined" sx={contentCardSx}>
+                            <CardContent sx={{ p: { xs: 2.25, md: 2.75 } }}>
+                                <Typography variant="h6" sx={{ fontWeight: 800, mb: 0.5 }}>My Contribution Trend &amp; Annual Target</Typography>
+                                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                    Mwenendo wa uchangiaji wako na lengo la mwaka — where you are, and what it takes to get there.
+                                </Typography>
+                                <Grid container spacing={2.5}>
+                                    <Grid size={{ xs: 12, md: 6 }}>
+                                        <Stack spacing={1.25}>
+                                            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                                                <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>Monthly trend</Typography>
+                                                {trendDelta !== null ? (
+                                                    <Chip
+                                                        size="small"
+                                                        color={trendUp ? "success" : "error"}
+                                                        label={`${trendUp ? "▲ Growing" : "▼ Dropping"}${trendPercent !== null ? ` ${Math.abs(trendPercent).toFixed(0)}%` : ""} vs ${prevMonth ? monthName(prevMonth.month) : ""}`}
+                                                        sx={{ fontWeight: 700 }}
+                                                    />
+                                                ) : (
+                                                    <Chip size="small" variant="outlined" label="Not enough history yet" />
+                                                )}
+                                            </Stack>
+                                            {lastMonth && prevMonth ? (
+                                                <Typography variant="caption" color="text.secondary">
+                                                    {monthName(lastMonth.month)}: {tzsFull(lastMonth.amount)} · {monthName(prevMonth.month)}: {tzsFull(prevMonth.amount)}
+                                                </Typography>
+                                            ) : null}
+                                            <Stack spacing={0.75} sx={{ mt: 0.5 }}>
+                                                {recentMonths.map((row) => (
+                                                    <Stack key={row.month} direction="row" spacing={1} alignItems="center">
+                                                        <Typography variant="caption" sx={{ minWidth: 64, color: "text.secondary" }}>
+                                                            {monthName(row.month).slice(0, 3)} {row.month.slice(2, 4)}
+                                                        </Typography>
+                                                        <Box sx={{ flex: 1, height: 10, borderRadius: 999, bgcolor: "action.hover", overflow: "hidden" }}>
+                                                            <Box
+                                                                sx={{
+                                                                    width: `${Math.max((row.amount / recentMax) * 100, row.amount > 0 ? 3 : 0)}%`,
+                                                                    height: "100%",
+                                                                    borderRadius: 999,
+                                                                    bgcolor: row.month === lastMonth?.month ? (trendUp ? "success.main" : "error.main") : "primary.main",
+                                                                    opacity: row.month === currentMonthKey ? 0.5 : 1
+                                                                }}
+                                                            />
+                                                        </Box>
+                                                        <Typography variant="caption" sx={{ minWidth: 96, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                                                            {tzsFull(row.amount)}
+                                                        </Typography>
+                                                    </Stack>
+                                                ))}
+                                            </Stack>
+                                        </Stack>
+                                    </Grid>
+                                    <Grid size={{ xs: 12, md: 6 }}>
+                                        <Stack spacing={1.25}>
+                                            <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
+                                                <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>Annual target ({financialYearPeriod.startLabel} – {financialYearPeriod.endLabel})</Typography>
+                                                <Chip size="small" variant="outlined" label={savingsTargetLevel.label} />
+                                            </Stack>
+                                            <Typography variant="h5" sx={{ fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
+                                                {tzsFull(annualSavingsTarget)}
+                                            </Typography>
+                                            <LinearProgress
+                                                variant="determinate"
+                                                value={progressPercent}
+                                                sx={{ height: 12, borderRadius: 999 }}
+                                            />
+                                            <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                                                Umefikia {progressPercent.toFixed(1)}% — {tzsFull(Math.max(annualSavingsTarget - savingsTargetRemaining, 0))} reached
+                                            </Typography>
+                                            {savingsTargetRemaining > 0 ? (
+                                                <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: "action.hover" }}>
+                                                    <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                                                        Kilichobaki: {tzsFull(savingsTargetRemaining)}
+                                                    </Typography>
+                                                    <Typography variant="body2" color="text.secondary">
+                                                        Ili kufikia lengo, changia takriban <b>{tzsFull(Math.ceil(monthlyNeeded))}</b> kwa mwezi kwa miezi <b>{monthsLeft}</b> iliyobaki
+                                                        {savingsTargetNextRequired > 0 ? ` (next suggested top-up: ${tzsFull(savingsTargetNextRequired)})` : ""}.
+                                                    </Typography>
+                                                </Box>
+                                            ) : (
+                                                <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: "action.hover" }}>
+                                                    <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                                                        🎉 Hongera — umeshafikia lengo lako la mwaka!
+                                                    </Typography>
+                                                </Box>
+                                            )}
+                                        </Stack>
+                                    </Grid>
+                                </Grid>
+                            </CardContent>
+                        </MotionCard>
+
+                        <MotionCard variant="outlined" sx={contentCardSx}>
+                            <CardContent sx={{ p: { xs: 2.25, md: 2.75 } }}>
+                                <Typography variant="h6" sx={{ fontWeight: 800, mb: 0.5 }}>My Standing</Typography>
+                                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                    Everything you have put in plus every dividend credited to you.
+                                </Typography>
+                                <Grid container spacing={2}>
+                                    {[
+                                        { label: "My Contributions", value: tzsFull(myReports.position.contributions) },
+                                        { label: "My Dividends", value: tzsFull(myReports.position.dividends) },
+                                        { label: "My Total Position", value: tzsFull(myReports.position.cumulative) },
+                                        {
+                                            label: "My Rank",
+                                            value: myReports.position.rank
+                                                ? `#${myReports.position.rank} of ${myReports.position.total_ranked_members}`
+                                                : "—"
+                                        }
+                                    ].map((tile) => (
+                                        <Grid key={tile.label} size={{ xs: 6, md: 3 }}>
+                                            <Card variant="outlined" sx={{ height: "100%" }}>
+                                                <CardContent>
+                                                    <Typography variant="caption" color="text.secondary">{tile.label}</Typography>
+                                                    <Typography variant="h6" sx={{ fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{tile.value}</Typography>
+                                                </CardContent>
+                                            </Card>
+                                        </Grid>
+                                    ))}
+                                </Grid>
+                            </CardContent>
+                        </MotionCard>
+
+                        <MotionCard variant="outlined" sx={contentCardSx}>
+                            <CardContent sx={{ p: { xs: 2.25, md: 2.75 } }}>
+                                <Typography variant="h6" sx={{ fontWeight: 800, mb: 0.5 }}>My Dividend Statement</Typography>
+                                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                    Every distribution credited to you, oldest first.
+                                </Typography>
+                                {myReports.statement.rows.length ? (
+                                    <TableContainer sx={{ maxHeight: 420 }}>
+                                        <Table size="small" stickyHeader>
+                                            <TableHead>
+                                                <TableRow>
+                                                    <TableCell>Date</TableCell>
+                                                    <TableCell>Distribution</TableCell>
+                                                    <TableCell>Source</TableCell>
+                                                    <TableCell align="right">Amount</TableCell>
+                                                    <TableCell align="right">Running total</TableCell>
+                                                </TableRow>
+                                            </TableHead>
+                                            <TableBody>
+                                                {myReports.statement.rows.map((row) => (
+                                                    <TableRow key={`${row.date}-${row.label}-${row.amount}`} hover>
+                                                        <TableCell sx={{ whiteSpace: "nowrap" }}>{formatDate(row.date)}</TableCell>
+                                                        <TableCell>{row.label}</TableCell>
+                                                        <TableCell>
+                                                            <Chip size="small" variant="outlined" label={row.source.toUpperCase()} />
+                                                        </TableCell>
+                                                        <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums" }}>{tzsFull(row.amount)}</TableCell>
+                                                        <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>{tzsFull(row.running_total)}</TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    </TableContainer>
+                                ) : (
+                                    <Typography variant="body2" color="text.secondary">No dividends credited yet.</Typography>
+                                )}
+                            </CardContent>
+                        </MotionCard>
+
+                        <MotionCard variant="outlined" sx={contentCardSx}>
+                            <CardContent sx={{ p: { xs: 2.25, md: 2.75 } }}>
+                                <Typography variant="h6" sx={{ fontWeight: 800, mb: 0.5 }}>My Monthly Contributions</Typography>
+                                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                    What you deposited each month since joining.
+                                </Typography>
+                                {myReports.monthly.rows.length ? (
+                                    <TableContainer sx={{ maxHeight: 420 }}>
+                                        <Table size="small" stickyHeader>
+                                            <TableHead>
+                                                <TableRow>
+                                                    <TableCell>Month</TableCell>
+                                                    <TableCell align="right">Amount</TableCell>
+                                                </TableRow>
+                                            </TableHead>
+                                            <TableBody>
+                                                {myReports.monthly.rows.map((row) => (
+                                                    <TableRow key={row.month} hover>
+                                                        <TableCell>{monthName(row.month)}</TableCell>
+                                                        <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums" }}>{tzsFull(row.amount)}</TableCell>
+                                                    </TableRow>
+                                                ))}
+                                                <TableRow>
+                                                    <TableCell sx={{ fontWeight: 800 }}>TOTAL</TableCell>
+                                                    <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums", fontWeight: 800 }}>{tzsFull(myReports.monthly.grand_total)}</TableCell>
+                                                </TableRow>
+                                            </TableBody>
+                                        </Table>
+                                    </TableContainer>
+                                ) : (
+                                    <Typography variant="body2" color="text.secondary">No contributions recorded yet.</Typography>
+                                )}
+                            </CardContent>
+                        </MotionCard>
+
+                        {myReports.utt ? (
+                            <MotionCard variant="outlined" sx={contentCardSx}>
+                                <CardContent sx={{ p: { xs: 2.25, md: 2.75 } }}>
+                                    <Typography variant="h6" sx={{ fontWeight: 800, mb: 0.5 }}>Our UTT Investments</Typography>
+                                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                        Where the cooperative&apos;s money is invested — the UTT Liquid Fund register.
+                                    </Typography>
+                                    <Grid container spacing={2} sx={{ mb: 2 }}>
+                                        {[
+                                            { label: "Total Invested", value: tzsFull(myReports.utt.totals.invested) },
+                                            { label: "Fund Income Earned", value: tzsFull(myReports.utt.totals.income) },
+                                            { label: "Grand Total", value: tzsFull(myReports.utt.totals.grand_total) }
+                                        ].map((tile) => (
+                                            <Grid key={tile.label} size={{ xs: 12, sm: 4 }}>
+                                                <Card variant="outlined" sx={{ height: "100%" }}>
+                                                    <CardContent>
+                                                        <Typography variant="caption" color="text.secondary">{tile.label}</Typography>
+                                                        <Typography variant="h6" sx={{ fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{tile.value}</Typography>
+                                                    </CardContent>
+                                                </Card>
+                                            </Grid>
+                                        ))}
+                                    </Grid>
+                                    <Grid container spacing={2}>
+                                        <Grid size={{ xs: 12, md: 7 }}>
+                                            <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1 }}>Deposits into the fund</Typography>
+                                            <TableContainer sx={{ maxHeight: 320 }}>
+                                                <Table size="small" stickyHeader>
+                                                    <TableHead>
+                                                        <TableRow>
+                                                            <TableCell>Date</TableCell>
+                                                            <TableCell align="right">Amount</TableCell>
+                                                        </TableRow>
+                                                    </TableHead>
+                                                    <TableBody>
+                                                        {myReports.utt.deposits.map((row) => (
+                                                            <TableRow key={row.reference} hover>
+                                                                <TableCell sx={{ whiteSpace: "nowrap" }}>{formatDate(row.date)}</TableCell>
+                                                                <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums" }}>{tzsFull(row.amount)}</TableCell>
+                                                            </TableRow>
+                                                        ))}
+                                                    </TableBody>
+                                                </Table>
+                                            </TableContainer>
+                                        </Grid>
+                                        <Grid size={{ xs: 12, md: 5 }}>
+                                            <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1 }}>Fund income received</Typography>
+                                            <TableContainer sx={{ maxHeight: 320 }}>
+                                                <Table size="small" stickyHeader>
+                                                    <TableHead>
+                                                        <TableRow>
+                                                            <TableCell>Date</TableCell>
+                                                            <TableCell align="right">Amount</TableCell>
+                                                        </TableRow>
+                                                    </TableHead>
+                                                    <TableBody>
+                                                        {myReports.utt.income.map((row, index) => (
+                                                            <TableRow key={`${row.date}-${index}`} hover>
+                                                                <TableCell sx={{ whiteSpace: "nowrap" }}>{formatDate(row.date)}</TableCell>
+                                                                <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums" }}>{tzsFull(row.amount)}</TableCell>
+                                                            </TableRow>
+                                                        ))}
+                                                    </TableBody>
+                                                </Table>
+                                            </TableContainer>
+                                        </Grid>
+                                    </Grid>
+                                </CardContent>
+                            </MotionCard>
+                        ) : null}
+                    </>
+                ) : (
+                    <Typography variant="body2" color="text.secondary">
+                        Your reports are unavailable right now. Please try again shortly.
+                    </Typography>
+                )}
+            </Stack>
+        );
+    };
+
     const renderActiveView = () => {
         switch (activeSection) {
             case "member-accounts":
@@ -7611,6 +8048,8 @@ export function MemberPortalPage() {
                 return renderContributionsView();
             case "member-payments":
                 return renderPaymentsView();
+            case "member-reports":
+                return renderMyReportsView();
             default:
                 return renderOverviewView();
         }

@@ -190,6 +190,9 @@ export function MilestonesPage() {
                     ["ACTIVE LOANS", financials.active_loans_outstanding],
                     ["TOTAL UTT INVESTED", financials.investment_cost == null ? "—" : financials.investment_cost],
                     ["UTT INTEREST", financials.investment_income == null ? "—" : financials.investment_income],
+                    ["DIVIDENDS DISTRIBUTED", financials.dividends_distributed == null ? "—" : financials.dividends_distributed],
+                    ["DIVIDENDS FROM UTT", financials.dividends_utt == null ? "—" : financials.dividends_utt],
+                    ["DIVIDENDS FROM LOANS", financials.dividends_loan == null ? "—" : financials.dividends_loan],
                     ["TOTAL CONTRIBUTIONS", financials.total_contributions],
                     ["INTEREST RATE", financials.interest_rate == null ? "—" : `${financials.interest_rate}%`]
                 ]
@@ -362,7 +365,12 @@ export function MilestonesPage() {
                                 { label: "Cash at Bank", value: formatMoneyOrDash(financials.cash_at_bank), sub: "Treasury cash position" },
                                 { label: "Loan Interest", value: formatCurrency(financials.loan_interest), sub: "Accrued" },
                                 { label: "Total UTT Invested", value: formatMoneyOrDash(financials.investment_cost), sub: "Treasury portfolio" },
-                                { label: "UTT Interest", value: formatMoneyOrDash(financials.investment_income), sub: "Investment income" }
+                                { label: "UTT Interest", value: formatMoneyOrDash(financials.investment_income), sub: "Investment income" },
+                                {
+                                    label: "Dividends Distributed",
+                                    value: formatMoneyOrDash(financials.dividends_distributed),
+                                    sub: `UTT ${formatMoneyOrDash(financials.dividends_utt)} · Loans ${formatMoneyOrDash(financials.dividends_loan)}`
+                                }
                             ].map((stat) => (
                                 <Grid key={stat.label} size={{ xs: 6, md: 3 }}>
                                     <Box sx={{ p: 1.5, borderRadius: 1.5, border: `1px solid ${alpha(theme.palette.divider, 0.9)}`, height: "100%" }}>

@@ -253,6 +253,7 @@ const routeMap = {
         manualBatches: "/dividends/manual-batches",
         formulaTemplates: "/dividends/formula-templates",
         formulaManualBatch: "/dividends/manual-batches/formula",
+        poolSuggestion: "/dividends/pool-suggestion",
         manualBatch: (batchId: string) => `/dividends/manual-batches/${batchId}`,
         submitManualBatch: (batchId: string) => `/dividends/manual-batches/${batchId}/submit`,
         postManualBatch: (batchId: string) => `/dividends/manual-batches/${batchId}/post`,
@@ -344,6 +345,17 @@ const routeMap = {
     },
     saccoDashboard: {
         financials: "/sacco-dashboard/financials"
+    },
+    allReports: {
+        contributionsSummary: "/all-reports/contributions-summary",
+        monthlyContributions: "/all-reports/monthly-contributions",
+        dividendDistributions: "/all-reports/dividend-distributions",
+        memberPositions: "/all-reports/member-positions",
+        memberProfitStatement: "/all-reports/member-profit-statement",
+        uttInvestments: "/all-reports/utt-investments",
+        myStatement: "/all-reports/my-statement",
+        myMonthly: "/all-reports/my-monthly",
+        myPosition: "/all-reports/my-position"
     },
     notifications: {
         list: "/notifications",
@@ -539,6 +551,7 @@ export const endpoints = {
         manualBatches: () => routeMap.dividends.manualBatches,
         formulaTemplates: () => routeMap.dividends.formulaTemplates,
         formulaManualBatch: () => routeMap.dividends.formulaManualBatch,
+        poolSuggestion: () => routeMap.dividends.poolSuggestion,
         manualBatch: (batchId: string) => routeMap.dividends.manualBatch(batchId),
         submitManualBatch: (batchId: string) => routeMap.dividends.submitManualBatch(batchId),
         postManualBatch: (batchId: string) => routeMap.dividends.postManualBatch(batchId),
@@ -630,6 +643,17 @@ export const endpoints = {
     },
     saccoDashboard: {
         financials: () => routeMap.saccoDashboard.financials
+    },
+    allReports: {
+        contributionsSummary: () => routeMap.allReports.contributionsSummary,
+        monthlyContributions: () => routeMap.allReports.monthlyContributions,
+        dividendDistributions: () => routeMap.allReports.dividendDistributions,
+        memberPositions: () => routeMap.allReports.memberPositions,
+        memberProfitStatement: () => routeMap.allReports.memberProfitStatement,
+        uttInvestments: () => routeMap.allReports.uttInvestments,
+        myStatement: () => routeMap.allReports.myStatement,
+        myMonthly: () => routeMap.allReports.myMonthly,
+        myPosition: () => routeMap.allReports.myPosition
     },
     notifications: {
         list: () => routeMap.notifications.list,
@@ -1722,8 +1746,21 @@ export interface FormulaDividendComponentInput {
     dividend_date: string;
     dividend_label: string;
     source_type: "utt" | "loan" | "other";
+    base_method?: "balance_at_cutoff" | "contributions_to_date";
     base_cutoff_date: string;
     pool_amount: number;
+}
+
+export interface DividendPoolSuggestion {
+    start_date: string;
+    end_date: string;
+    loan_interest: number;
+    treasury_income: number;
+    total: number;
+}
+
+export interface DividendPoolSuggestionResponse {
+    data: DividendPoolSuggestion;
 }
 
 export interface DividendFormulaTemplate {

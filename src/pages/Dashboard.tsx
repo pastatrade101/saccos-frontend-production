@@ -2694,7 +2694,9 @@ export function DashboardPage() {
                 ? [
                     { label: "Branch Savings", value: formatCurrency(metrics.branchSavings) },
                     { label: "Branch Loan Portfolio", value: formatCurrency(metrics.branchOutstanding) },
-                    { label: "Active Members", value: String(metrics.branchActiveMembers) }
+                    { label: "Active Members", value: String(metrics.branchActiveMembers) },
+                    { label: "UTT Invested", value: formatCurrency(state.saccoOverview?.utt_invested ?? 0) },
+                    { label: "Dividends Distributed", value: formatCurrency(state.saccoOverview?.dividends_distributed ?? 0) }
                 ]
                 : role === "auditor"
                     ? [
@@ -2710,6 +2712,9 @@ export function DashboardPage() {
                         { label: "Total Members", value: String(state.saccoOverview?.total_members ?? metrics.totalMembers) },
                         { label: "Savings Balance", value: formatCurrency(state.saccoOverview?.total_savings ?? (metrics.totalDeposits - metrics.totalWithdrawals)) },
                         { label: "Loan Portfolio", value: formatCurrency(state.saccoOverview?.loan_book ?? metrics.outstandingLoans) },
+                        { label: "UTT Invested", value: formatCurrency(state.saccoOverview?.utt_invested ?? 0) },
+                        { label: "UTT Income", value: formatCurrency(state.saccoOverview?.utt_income ?? 0) },
+                        { label: "Dividends Distributed", value: formatCurrency(state.saccoOverview?.dividends_distributed ?? 0) },
                         { label: "PAR Signals", value: `${metrics.overdueLoans} overdue loans` }
                     ];
     const branchDashboardCashInToday = metrics.branchCashControlRows ? metrics.branchCashControlInflowToday : metrics.branchInflowsToday;

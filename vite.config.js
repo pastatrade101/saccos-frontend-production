@@ -5,6 +5,13 @@ export default defineConfig({
     server: {
         port: 5173
     },
+    optimizeDeps: {
+        // Pre-bundle deps that are only reachable through lazy routes/dynamic
+        // imports (reports page). Without this, Vite discovers them on first
+        // navigation, re-optimizes mid-session and aborts that route's import —
+        // showing the "page failed to load" boundary once per fresh cache.
+        include: ["flatpickr", "xlsx", "jspdf", "jspdf-autotable"]
+    },
     build: {
         chunkSizeWarningLimit: 1600,
         rollupOptions: {
@@ -21,7 +28,8 @@ export default defineConfig({
                     if (id.includes("jspdf")
                         || id.includes("html2canvas")
                         || id.includes("dompurify")
-                        || id.includes("canvg")) {
+                        || id.includes("canvg")
+                        || id.includes("xlsx")) {
                         return undefined;
                     }
                     return "vendor";
