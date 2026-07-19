@@ -297,6 +297,30 @@ export function AllReportsPage() {
         }
     };
 
+    // Assign an unattributed loan-fee line to a member (moves it into the grid).
+    const [assignRow, setAssignRow] = useState<{ id: string; label: string } | null>(null);
+    const [assignMember, setAssignMember] = useState<Member | null>(null);
+    const [assignSubmitting, setAssignSubmitting] = useState(false);
+    const [assignError, setAssignError] = useState<string | null>(null);
+
+    const submitAssign = async () => {
+        if (!assignRow || !assignMember) return;
+        setAssignSubmitting(true);
+        setAssignError(null);
+        try {
+            await api.post(endpoints.operations.assignLoanFee(assignRow.id.replace(/^loanfee-/, "")), {
+                member_id: assignMember.id
+            });
+            setAssignRow(null);
+            setAssignMember(null);
+            await load();
+        } catch (submitError) {
+            setAssignError(getApiErrorMessage(submitError));
+        } finally {
+            setAssignSubmitting(false);
+        }
+    };
+
     // Back to the first page whenever the report, its data or the search changes.
     useEffect(() => {
         setPage(0);
@@ -1003,7 +1027,9 @@ export function AllReportsPage() {
                                         {canManageOperations ? (
                                             <TableCell align="right">
                                                 {row.source === "loan_fee" ? (
-                                                    <Typography variant="caption" color="text.secondary">auto (loan)</Typography>
+                                                    <Button size="small" onClick={() => setAssignRow({ id: row.id, label: row.label })}>
+                                                        Assign member
+                                                    </Button>
                                                 ) : (
                                                     <Button size="small" color="inherit" onClick={() => void reverseOperationsEntry(row.id)}>Reverse</Button>
                                                 )}
@@ -1495,6 +1521,33 @@ export function AllReportsPage() {
                     </Stack>
                 </CardContent>
             </Card>
+
+            <Dialog open={Boolean(assignRow)} onClose={() => !assignSubmitting && setAssignRow(null)} maxWidth="xs" fullWidth>
+                <DialogTitle sx={{ fontWeight: 800 }}>Assign Fee to Member</DialogTitle>
+                <DialogContent>
+                    <Stack spacing={2} sx={{ mt: 0.5 }}>
+                        {assignError ? <Alert severity="error" variant="outlined">{assignError}</Alert> : null}
+                        <Typography variant="body2" color="text.secondary">{assignRow?.label}</Typography>
+                        <Autocomplete
+                            options={members}
+                            value={assignMember}
+                            onChange={(_, value) => setAssignMember(value)}
+                            getOptionLabel={(member) => `${member.member_no ? `${member.member_no} — ` : ""}${member.full_name}`}
+                            isOptionEqualToValue={(left, right) => left.id === right.id}
+                            renderInput={(params) => <TextField {...params} label="Member" size="small" />}
+                        />
+                        <Typography variant="caption" color="text.secondary">
+                            The fee moves into that member&apos;s column in the grid. The ledger is not re-posted — no double count.
+                        </Typography>
+                    </Stack>
+                </DialogContent>
+                <DialogActions>
+                    <Button color="inherit" onClick={() => setAssignRow(null)} disabled={assignSubmitting}>Cancel</Button>
+                    <Button variant="contained" onClick={() => void submitAssign()} disabled={assignSubmitting || !assignMember}>
+                        {assignSubmitting ? "Assigning…" : "Assign"}
+                    </Button>
+                </DialogActions>
+            </Dialog>
 
             <Dialog open={entryOpen} onClose={() => !entrySubmitting && setEntryOpen(false)} maxWidth="xs" fullWidth>
                 <DialogTitle sx={{ fontWeight: 800 }}>Add Operations Entry</DialogTitle>

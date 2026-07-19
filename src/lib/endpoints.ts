@@ -652,7 +652,8 @@ export const endpoints = {
     },
     operations: {
         entries: () => "/operations/entries",
-        reverse: (id: string) => `/operations/entries/${id}/reverse`
+        reverse: (id: string) => `/operations/entries/${id}/reverse`,
+        assignLoanFee: (journalId: string) => `/operations/loan-fees/${journalId}/assign`
     },
     allReports: {
         contributionsSummary: () => routeMap.allReports.contributionsSummary,
