@@ -138,7 +138,7 @@ interface LoansReportData {
 interface OperationsFundData {
     months: string[];
     member_rows: { member_id: string; member_no: string | null; full_name: string; values: number[]; total: number }[];
-    line_rows: { id: string; entry_type: string; label: string; date: string; month: string; amount: number }[];
+    line_rows: { id: string; source?: string; entry_type: string; label: string; date: string; month: string; amount: number }[];
     month_totals: number[];
     totals: { member_fees: number; other_income: number; expenses: number; net: number };
 }
@@ -1002,7 +1002,11 @@ export function AllReportsPage() {
                                         </TableCell>
                                         {canManageOperations ? (
                                             <TableCell align="right">
-                                                <Button size="small" color="inherit" onClick={() => void reverseOperationsEntry(row.id)}>Reverse</Button>
+                                                {row.source === "loan_fee" ? (
+                                                    <Typography variant="caption" color="text.secondary">auto (loan)</Typography>
+                                                ) : (
+                                                    <Button size="small" color="inherit" onClick={() => void reverseOperationsEntry(row.id)}>Reverse</Button>
+                                                )}
                                             </TableCell>
                                         ) : null}
                                     </TableRow>
