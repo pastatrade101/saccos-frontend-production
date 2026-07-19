@@ -357,6 +357,7 @@ const routeMap = {
         commitments: "/all-reports/commitments",
         summarySorted: "/all-reports/summary-sorted",
         loans: "/all-reports/loans",
+        operationsFund: "/all-reports/operations-fund",
         myStatement: "/all-reports/my-statement",
         myMonthly: "/all-reports/my-monthly",
         myPosition: "/all-reports/my-position",
@@ -649,6 +650,10 @@ export const endpoints = {
     saccoDashboard: {
         financials: () => routeMap.saccoDashboard.financials
     },
+    operations: {
+        entries: () => "/operations/entries",
+        reverse: (id: string) => `/operations/entries/${id}/reverse`
+    },
     allReports: {
         contributionsSummary: () => routeMap.allReports.contributionsSummary,
         monthlyContributions: () => routeMap.allReports.monthlyContributions,
@@ -660,6 +665,7 @@ export const endpoints = {
         commitments: () => routeMap.allReports.commitments,
         summarySorted: () => routeMap.allReports.summarySorted,
         loans: () => routeMap.allReports.loans,
+        operationsFund: () => routeMap.allReports.operationsFund,
         myStatement: () => routeMap.allReports.myStatement,
         myMonthly: () => routeMap.allReports.myMonthly,
         myPosition: () => routeMap.allReports.myPosition,

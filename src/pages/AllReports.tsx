@@ -8,6 +8,10 @@ import {
     CardContent,
     Chip,
     CircularProgress,
+    Dialog,
+    DialogActions,
+    DialogContent,
+    DialogTitle,
     Grid,
     Menu,
     MenuItem,
@@ -26,6 +30,7 @@ import { alpha, useTheme } from "@mui/material/styles";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
+import { useAuth } from "../auth/AuthContext";
 import { FlatDateRangePicker } from "../components/FlatDateRangePicker";
 import { api, getApiErrorMessage } from "../lib/api";
 import { endpoints, type MembersResponse } from "../lib/endpoints";
@@ -33,7 +38,7 @@ import type { Member } from "../types/api";
 import { downloadFile } from "../utils/downloadFile";
 import { formatCurrency, formatDate } from "../utils/format";
 
-type ReportKey = "contributions" | "monthly" | "dividends" | "positions" | "member-statement" | "utt" | "performance-targets" | "commitments" | "summary-sorted" | "loans";
+type ReportKey = "contributions" | "monthly" | "dividends" | "positions" | "member-statement" | "utt" | "performance-targets" | "commitments" | "summary-sorted" | "loans" | "operations";
 
 const REPORTS: { key: ReportKey; label: string; description: string }[] = [
     { key: "contributions", label: "Contributions Summary", description: "Per member: savings, shares and social contributions with withdrawals netted." },
@@ -45,7 +50,8 @@ const REPORTS: { key: ReportKey; label: string; description: string }[] = [
     { key: "performance-targets", label: "Performance Targets", description: "Each member's annual target vs actual savings — % reached, remaining, position." },
     { key: "commitments", label: "Monthly Commitments", description: "Shares and monthly savings commitment compliance per member: expected vs paid, arrears and status." },
     { key: "summary-sorted", label: "Sorted Summary", description: "The full member schedule: entry fee, shares, monthly plan, needed to date, surplus/deficit and UTT flag — ranked by actual." },
-    { key: "loans", label: "Loans (MIKOPO)", description: "Every loan: amount, interest, total due, repayment trail with running balance, guarantors, collateral and status." }
+    { key: "loans", label: "Loans (MIKOPO)", description: "Every loan: amount, interest, total due, repayment trail with running balance, guarantors, collateral and status." },
+    { key: "operations", label: "Operations Fund", description: "Running-cost ledger: member operations fees by month, other income, expenses and the fund's net." }
 ];
 
 interface ContributionsSummaryData {
@@ -127,6 +133,14 @@ interface LoansReportData {
         repayments?: { date: string; amount: number; balance: number }[];
     }[];
     totals: { count: number; principal: number; interest: number; total: number; paid: number; balance: number };
+}
+
+interface OperationsFundData {
+    months: string[];
+    member_rows: { member_id: string; member_no: string | null; full_name: string; values: number[]; total: number }[];
+    line_rows: { id: string; entry_type: string; label: string; date: string; month: string; amount: number }[];
+    month_totals: number[];
+    totals: { member_fees: number; other_income: number; expenses: number; net: number };
 }
 
 interface SummarySortedData {
@@ -239,6 +253,49 @@ export function AllReportsPage() {
     const [exportAnchor, setExportAnchor] = useState<null | HTMLElement>(null);
     // Sorted Summary schedule start (YYYY-MM); empty = first contribution month.
     const [scheduleStart, setScheduleStart] = useState("2024-10");
+    const { profile } = useAuth();
+    const canManageOperations = ["super_admin", "branch_manager"].includes(profile?.role || "");
+    // Operations Fund entry dialog.
+    const [entryOpen, setEntryOpen] = useState(false);
+    const [entrySubmitting, setEntrySubmitting] = useState(false);
+    const [entryError, setEntryError] = useState<string | null>(null);
+    const [entryForm, setEntryForm] = useState({
+        entry_type: "member_fee" as "member_fee" | "income" | "expense",
+        member: null as Member | null,
+        label: "",
+        amount: "15000",
+        entry_date: new Date().toISOString().slice(0, 10)
+    });
+
+    const submitEntry = async () => {
+        setEntrySubmitting(true);
+        setEntryError(null);
+        try {
+            await api.post(endpoints.operations.entries(), {
+                entry_type: entryForm.entry_type,
+                member_id: entryForm.entry_type === "member_fee" ? entryForm.member?.id : undefined,
+                label: entryForm.label || undefined,
+                amount: Number(entryForm.amount),
+                entry_date: entryForm.entry_date
+            });
+            setEntryOpen(false);
+            setEntryForm((current) => ({ ...current, member: null, label: "", amount: current.entry_type === "member_fee" ? "15000" : "" }));
+            await load();
+        } catch (submitError) {
+            setEntryError(getApiErrorMessage(submitError));
+        } finally {
+            setEntrySubmitting(false);
+        }
+    };
+
+    const reverseOperationsEntry = async (id: string) => {
+        try {
+            await api.post(endpoints.operations.reverse(id), {});
+            await load();
+        } catch (reverseError) {
+            setError(getApiErrorMessage(reverseError));
+        }
+    };
 
     // Back to the first page whenever the report, its data or the search changes.
     useEffect(() => {
@@ -330,6 +387,8 @@ export function AllReportsPage() {
                 response = await api.get<{ data: LoansReportData }>(endpoints.allReports.loans(), {
                     params: { include_repayments: "true" }
                 });
+            } else if (activeKey === "operations") {
+                response = await api.get<{ data: OperationsFundData }>(endpoints.allReports.operationsFund());
             } else {
                 response = await api.get<{ data: UttInvestmentsData }>(endpoints.allReports.uttInvestments());
             }
@@ -347,7 +406,7 @@ export function AllReportsPage() {
     }, [load]);
 
     useEffect(() => {
-        if (activeKey !== "member-statement" || members.length) {
+        if (!["member-statement", "operations"].includes(activeKey) || members.length) {
             return;
         }
         void api
@@ -415,6 +474,28 @@ export function AllReportsPage() {
                 title: `Member Profit Statement — ${typed.member.full_name} (${typed.member.member_no || ""})`,
                 headers: ["Date", "Distribution", "Source", "Amount", "Running Total"],
                 rows: typed.rows.map((row) => [row.date, row.label, row.source, row.amount, row.running_total])
+            };
+        }
+        if (activeKey === "operations") {
+            const typed = data as OperationsFundData;
+            const monthLabel = (month: string) => {
+                const [year, mm] = month.split("-");
+                return `${["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"][Number(mm) - 1]} ${year}`;
+            };
+            return {
+                name: "operations-fund",
+                title: "Operations Fund",
+                headers: ["Member No", "Member / Line", ...typed.months.map(monthLabel), "Total"],
+                rows: [
+                    ...typed.member_rows.map((row) => [row.member_no, row.full_name, ...row.values, row.total] as (string | number | null)[]),
+                    ...typed.line_rows.map((row) => [
+                        "",
+                        row.label,
+                        ...typed.months.map((month) => (month === row.month ? row.amount : "")),
+                        row.amount
+                    ] as (string | number | null)[]),
+                    ["", "MONTH TOTALS", ...typed.month_totals, typed.totals.net]
+                ]
             };
         }
         if (activeKey === "loans") {
@@ -845,6 +926,103 @@ export function AllReportsPage() {
             );
         }
 
+        if (activeKey === "operations") {
+            const typed = data as OperationsFundData;
+            const filtered = typed.member_rows.filter((row) => matchesSearch(row.member_no, row.full_name));
+            const stickySx = { position: "sticky" as const, left: 0, zIndex: 1, bgcolor: "background.paper" };
+            const monthShort = (month: string) => {
+                const [year, mm] = month.split("-");
+                return `${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][Number(mm) - 1]} ${year.slice(2)}`;
+            };
+            return (
+                <Stack spacing={2}>
+                    <StatTiles items={[
+                        { label: "Member fees", value: formatCurrency(typed.totals.member_fees), helper: `${typed.member_rows.length} member(s) paid` },
+                        { label: "Other income", value: formatCurrency(typed.totals.other_income) },
+                        { label: "Expenses", value: formatCurrency(Math.abs(typed.totals.expenses)) },
+                        { label: "Fund net", value: formatCurrency(typed.totals.net), helper: typed.totals.net < 0 ? "Deficit — costs exceed ops income" : "Surplus" }
+                    ]} />
+
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>Member operations fees</Typography>
+                    <TableContainer sx={{ maxHeight: 420, borderRadius: 1.5, border: `1px solid ${theme.palette.divider}` }}>
+                        <Table size="small" stickyHeader sx={zebraSx}>
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell sx={{ ...headCellSx, ...stickySx, zIndex: 3 }}>Member</TableCell>
+                                    {typed.months.map((month) => (
+                                        <TableCell key={month} align="right" sx={headCellSx}>{monthShort(month)}</TableCell>
+                                    ))}
+                                    <TableCell align="right" sx={headCellSx}>Total</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {paginate(filtered).map((row) => (
+                                    <TableRow key={row.member_id}>
+                                        <TableCell sx={stickySx}><MemberCell memberNo={row.member_no} name={row.full_name} /></TableCell>
+                                        {row.values.map((value, index) => (
+                                            <TableCell key={typed.months[index]} align="right"><Money value={value} /></TableCell>
+                                        ))}
+                                        <TableCell align="right"><Money value={row.total} bold /></TableCell>
+                                    </TableRow>
+                                ))}
+                                <TableRow sx={totalRowSx}>
+                                    <TableCell sx={stickySx}><Typography variant="body2" sx={{ fontWeight: 800 }}>FEES TOTAL</Typography></TableCell>
+                                    <TableCell colSpan={typed.months.length} />
+                                    <TableCell align="right"><Money value={typed.totals.member_fees} bold /></TableCell>
+                                </TableRow>
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                    {paginationBar(filtered.length)}
+
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>Other income & expenses</Typography>
+                    <TableContainer sx={{ borderRadius: 1.5, border: `1px solid ${theme.palette.divider}` }}>
+                        <Table size="small" sx={zebraSx}>
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell sx={headCellSx}>Date</TableCell>
+                                    <TableCell sx={headCellSx}>Line</TableCell>
+                                    <TableCell sx={headCellSx}>Type</TableCell>
+                                    <TableCell align="right" sx={headCellSx}>Amount</TableCell>
+                                    {canManageOperations ? <TableCell sx={headCellSx} /> : null}
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {typed.line_rows.map((row) => (
+                                    <TableRow key={row.id}>
+                                        <TableCell sx={{ whiteSpace: "nowrap" }}>{formatDate(row.date)}</TableCell>
+                                        <TableCell>{row.label}</TableCell>
+                                        <TableCell>
+                                            <Chip size="small" variant="outlined" label={row.entry_type === "expense" ? "EXPENSE" : "INCOME"} color={row.entry_type === "expense" ? "error" : "success"} sx={{ fontWeight: 700 }} />
+                                        </TableCell>
+                                        <TableCell align="right">
+                                            <Typography component="span" variant="body2" sx={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, color: row.amount < 0 ? "error.main" : "success.main" }}>
+                                                {formatCurrency(row.amount)}
+                                            </Typography>
+                                        </TableCell>
+                                        {canManageOperations ? (
+                                            <TableCell align="right">
+                                                <Button size="small" color="inherit" onClick={() => void reverseOperationsEntry(row.id)}>Reverse</Button>
+                                            </TableCell>
+                                        ) : null}
+                                    </TableRow>
+                                ))}
+                                <TableRow sx={totalRowSx}>
+                                    <TableCell colSpan={3}><Typography variant="body2" sx={{ fontWeight: 800 }}>FUND NET (fees + income − expenses)</Typography></TableCell>
+                                    <TableCell align="right">
+                                        <Typography component="span" variant="body2" sx={{ fontVariantNumeric: "tabular-nums", fontWeight: 800, color: typed.totals.net < 0 ? "error.main" : "success.main" }}>
+                                            {formatCurrency(typed.totals.net)}
+                                        </Typography>
+                                    </TableCell>
+                                    {canManageOperations ? <TableCell /> : null}
+                                </TableRow>
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                </Stack>
+            );
+        }
+
         if (activeKey === "loans") {
             const typed = data as LoansReportData;
             const filtered = typed.rows.filter((row) => matchesSearch(row.member_no, row.member_name));
@@ -1246,9 +1424,14 @@ export function AllReportsPage() {
             <Card variant="outlined" sx={{ borderRadius: 2.5 }}>
                 <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
                     <Stack spacing={2}>
-                        {showDateFilters || ["member-statement", "positions", "performance-targets", "commitments", "summary-sorted", "loans"].includes(activeKey) ? (
+                        {showDateFilters || ["member-statement", "positions", "performance-targets", "commitments", "summary-sorted", "loans", "operations"].includes(activeKey) ? (
                             <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }} flexWrap="wrap" useFlexGap>
-                                {["contributions", "monthly", "positions", "performance-targets", "commitments", "summary-sorted", "loans"].includes(activeKey) ? (
+                                {activeKey === "operations" && canManageOperations ? (
+                                    <Button variant="contained" size="small" onClick={() => setEntryOpen(true)}>
+                                        Add entry
+                                    </Button>
+                                ) : null}
+                                {["contributions", "monthly", "positions", "performance-targets", "commitments", "summary-sorted", "loans", "operations"].includes(activeKey) ? (
                                     <TextField
                                         label="Search member"
                                         size="small"
@@ -1308,6 +1491,84 @@ export function AllReportsPage() {
                     </Stack>
                 </CardContent>
             </Card>
+
+            <Dialog open={entryOpen} onClose={() => !entrySubmitting && setEntryOpen(false)} maxWidth="xs" fullWidth>
+                <DialogTitle sx={{ fontWeight: 800 }}>Add Operations Entry</DialogTitle>
+                <DialogContent>
+                    <Stack spacing={2} sx={{ mt: 0.5 }}>
+                        {entryError ? <Alert severity="error" variant="outlined">{entryError}</Alert> : null}
+                        <TextField
+                            select
+                            label="Entry type"
+                            size="small"
+                            value={entryForm.entry_type}
+                            onChange={(event) => {
+                                const entryType = event.target.value as typeof entryForm.entry_type;
+                                setEntryForm((current) => ({
+                                    ...current,
+                                    entry_type: entryType,
+                                    amount: entryType === "member_fee" ? "15000" : current.amount === "15000" ? "" : current.amount
+                                }));
+                            }}
+                        >
+                            <MenuItem value="member_fee">Member operations fee</MenuItem>
+                            <MenuItem value="income">Other income (interest, contributions)</MenuItem>
+                            <MenuItem value="expense">Expense (charges, costs)</MenuItem>
+                        </TextField>
+                        {entryForm.entry_type === "member_fee" ? (
+                            <Autocomplete
+                                options={members}
+                                value={entryForm.member}
+                                onChange={(_, value) => setEntryForm((current) => ({ ...current, member: value }))}
+                                getOptionLabel={(member) => `${member.member_no ? `${member.member_no} — ` : ""}${member.full_name}`}
+                                isOptionEqualToValue={(left, right) => left.id === right.id}
+                                renderInput={(params) => <TextField {...params} label="Member" size="small" />}
+                            />
+                        ) : (
+                            <TextField
+                                label="Description"
+                                size="small"
+                                placeholder="e.g. Bank charges June"
+                                value={entryForm.label}
+                                onChange={(event) => setEntryForm((current) => ({ ...current, label: event.target.value }))}
+                            />
+                        )}
+                        <TextField
+                            label="Amount (TZS)"
+                            size="small"
+                            type="number"
+                            value={entryForm.amount}
+                            onChange={(event) => setEntryForm((current) => ({ ...current, amount: event.target.value }))}
+                        />
+                        <TextField
+                            label="Date"
+                            size="small"
+                            type="date"
+                            value={entryForm.entry_date}
+                            onChange={(event) => setEntryForm((current) => ({ ...current, entry_date: event.target.value }))}
+                            slotProps={{ inputLabel: { shrink: true } }}
+                        />
+                        <Typography variant="caption" color="text.secondary">
+                            Fees and income post Dr Cash / Cr Operations Income; expenses post Dr Operations Expense / Cr Cash — Cash at Bank updates immediately.
+                        </Typography>
+                    </Stack>
+                </DialogContent>
+                <DialogActions>
+                    <Button color="inherit" onClick={() => setEntryOpen(false)} disabled={entrySubmitting}>Cancel</Button>
+                    <Button
+                        variant="contained"
+                        onClick={() => void submitEntry()}
+                        disabled={
+                            entrySubmitting
+                            || !Number(entryForm.amount)
+                            || !entryForm.entry_date
+                            || (entryForm.entry_type === "member_fee" ? !entryForm.member : !entryForm.label.trim())
+                        }
+                    >
+                        {entrySubmitting ? "Posting…" : "Post entry"}
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Stack>
     );
 }
