@@ -1,5 +1,6 @@
 import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 import {
+    Alert,
     Box,
     Button,
     CardContent,
@@ -18,7 +19,7 @@ import { MotionCard } from "../ui/motion";
 import { AppLoader } from "./AppLoader";
 import { DataTable, type Column } from "./DataTable";
 import { FlatDateRangePicker } from "./FlatDateRangePicker";
-import { api } from "../lib/api";
+import { api, getApiErrorMessage } from "../lib/api";
 import { endpoints, type StatementsResponse } from "../lib/endpoints";
 import type { StatementRow } from "../types/api";
 import { downloadFile } from "../utils/downloadFile";
@@ -47,6 +48,7 @@ export function CashTransactionsReport({ tenantId }: { tenantId: string | null }
     const [typeFilter, setTypeFilter] = useState("all");
     const [search, setSearch] = useState("");
     const [page, setPage] = useState(1);
+    const [error, setError] = useState<string | null>(null);
     const [exportAnchor, setExportAnchor] = useState<null | HTMLElement>(null);
 
     useEffect(() => {
@@ -55,25 +57,39 @@ export function CashTransactionsReport({ tenantId }: { tenantId: string | null }
         }
         let active = true;
         setLoading(true);
-        api
-            .get<StatementsResponse>(endpoints.finance.statements(), {
-                params: {
-                    tenant_id: tenantId,
-                    page: 1,
-                    limit: 1000,
-                    ...(range.start ? { from_date: range.start } : {}),
-                    ...(range.end ? { to_date: range.end } : {})
+        setError(null);
+        // The statements endpoint caps limit at 100 — page through until a
+        // short page (bounded at 20 pages / 2000 rows for one period).
+        (async () => {
+            const collected: StatementRow[] = [];
+            for (let pageNumber = 1; pageNumber <= 20; pageNumber += 1) {
+                const { data } = await api.get<StatementsResponse>(endpoints.finance.statements(), {
+                    params: {
+                        tenant_id: tenantId,
+                        page: pageNumber,
+                        limit: 100,
+                        ...(range.start ? { from_date: range.start } : {}),
+                        ...(range.end ? { to_date: range.end } : {})
+                    }
+                });
+                const batch = data.data || [];
+                collected.push(...batch);
+                if (batch.length < 100) {
+                    break;
                 }
-            })
-            .then((response) => {
+            }
+            return collected;
+        })()
+            .then((collected) => {
                 if (active) {
-                    setRows(response.data.data || []);
+                    setRows(collected);
                     setPage(1);
                 }
             })
-            .catch(() => {
+            .catch((loadError) => {
                 if (active) {
                     setRows([]);
+                    setError(getApiErrorMessage(loadError));
                 }
             })
             .finally(() => {
@@ -294,6 +310,7 @@ export function CashTransactionsReport({ tenantId }: { tenantId: string | null }
                     ))}
                 </Grid>
 
+                {error ? <Alert severity="error" variant="outlined" sx={{ mb: 2 }}>{error}</Alert> : null}
                 {loading ? (
                     <AppLoader fullscreen={false} minHeight={260} message="Loading cash movements..." />
                 ) : (
