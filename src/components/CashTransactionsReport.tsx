@@ -1,10 +1,16 @@
 import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
+import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import {
     Alert,
     Box,
     Button,
     CardContent,
+    Dialog,
+    DialogActions,
+    DialogContent,
+    DialogTitle,
     Grid,
+    IconButton,
     Menu,
     MenuItem,
     Pagination,
@@ -15,6 +21,7 @@ import {
 import { useTheme } from "@mui/material/styles";
 import { useEffect, useMemo, useState } from "react";
 
+import { useAuth } from "../auth/AuthContext";
 import { MotionCard } from "../ui/motion";
 import { AppLoader } from "./AppLoader";
 import { DataTable, type Column } from "./DataTable";
@@ -50,6 +57,43 @@ export function CashTransactionsReport({ tenantId }: { tenantId: string | null }
     const [page, setPage] = useState(1);
     const [error, setError] = useState<string | null>(null);
     const [exportAnchor, setExportAnchor] = useState<null | HTMLElement>(null);
+    // Teller-only edit of the bank statement annotation (no ledger impact).
+    const { profile } = useAuth();
+    const canEditBankMeta = profile?.role === "teller";
+    const [editRow, setEditRow] = useState<StatementRow | null>(null);
+    const [editDescription, setEditDescription] = useState("");
+    const [editReference, setEditReference] = useState("");
+    const [editSaving, setEditSaving] = useState(false);
+    const [editError, setEditError] = useState<string | null>(null);
+
+    const openEdit = (row: StatementRow) => {
+        setEditRow(row);
+        setEditDescription(row.bank_description || "");
+        setEditReference(row.bank_reference || "");
+        setEditError(null);
+    };
+
+    const saveEdit = async () => {
+        if (!editRow) return;
+        setEditSaving(true);
+        setEditError(null);
+        try {
+            await api.patch(endpoints.finance.updateBankMeta(editRow.transaction_id), {
+                bank_description: editDescription || null,
+                bank_reference: editReference || null
+            });
+            setRows((current) => current.map((row) => (
+                row.transaction_id === editRow.transaction_id
+                    ? { ...row, bank_description: editDescription || null, bank_reference: editReference || null }
+                    : row
+            )));
+            setEditRow(null);
+        } catch (saveError) {
+            setEditError(getApiErrorMessage(saveError));
+        } finally {
+            setEditSaving(false);
+        }
+    };
 
     useEffect(() => {
         if (!tenantId) {
@@ -181,7 +225,18 @@ export function CashTransactionsReport({ tenantId }: { tenantId: string | null }
             )
         },
         { key: "balance", header: "Balance", render: (row) => formatCurrency(row.running_balance) },
-        { key: "reference", header: "Reference", render: (row) => row.reference || "N/A" }
+        { key: "reference", header: "Reference", render: (row) => row.reference || "N/A" },
+        ...(canEditBankMeta
+            ? [{
+                key: "edit",
+                header: "",
+                render: (row: StatementRow) => (
+                    <IconButton size="small" onClick={() => openEdit(row)} title="Edit bank statement details">
+                        <EditRoundedIcon fontSize="small" />
+                    </IconButton>
+                )
+            } satisfies Column<StatementRow>]
+            : [])
     ];
 
     const exportReport = async (format: "csv" | "excel" | "pdf") => {
@@ -346,6 +401,41 @@ export function CashTransactionsReport({ tenantId }: { tenantId: string | null }
                     </Stack>
                 )}
             </CardContent>
+
+            <Dialog open={Boolean(editRow)} onClose={() => !editSaving && setEditRow(null)} maxWidth="xs" fullWidth>
+                <DialogTitle sx={{ fontWeight: 800 }}>Edit Bank Statement Details</DialogTitle>
+                <DialogContent>
+                    <Stack spacing={2} sx={{ mt: 0.5 }}>
+                        {editError ? <Alert severity="error" variant="outlined">{editError}</Alert> : null}
+                        <Typography variant="body2" color="text.secondary">
+                            {editRow ? `${formatDate(editRow.transaction_date)} · ${editRow.member_name} · ${formatCurrency(editRow.amount)}` : ""}
+                        </Typography>
+                        <TextField
+                            label="Description (as per bank statement)"
+                            fullWidth
+                            multiline
+                            minRows={2}
+                            value={editDescription}
+                            onChange={(event) => setEditDescription(event.target.value)}
+                        />
+                        <TextField
+                            label="Bank reference number"
+                            fullWidth
+                            value={editReference}
+                            onChange={(event) => setEditReference(event.target.value)}
+                        />
+                        <Typography variant="caption" color="text.secondary">
+                            Only the bank statement annotation changes — amounts, dates and the ledger stay untouched. Edits are audit-logged.
+                        </Typography>
+                    </Stack>
+                </DialogContent>
+                <DialogActions>
+                    <Button color="inherit" onClick={() => setEditRow(null)} disabled={editSaving}>Cancel</Button>
+                    <Button variant="contained" onClick={() => void saveEdit()} disabled={editSaving}>
+                        {editSaving ? "Saving…" : "Save"}
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </MotionCard>
     );
 }
