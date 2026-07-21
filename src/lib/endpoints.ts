@@ -1039,6 +1039,7 @@ export interface UpdateMemberRequest {
     no_conflicting_business_declared?: boolean | null;
     initial_share_amount?: number | null;
     monthly_savings_commitment?: number | null;
+    performance_target_amount?: number | null;
     kyc_status?: "pending" | "verified" | "rejected" | "waived";
     kyc_reason?: string | null;
     notes?: string | null;

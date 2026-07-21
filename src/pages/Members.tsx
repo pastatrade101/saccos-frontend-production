@@ -148,6 +148,8 @@ const updateSchema = z.object({
     branch_id: z.string().uuid("Select a branch."),
     status: z.enum(["active", "suspended", "exited", "approved_pending_payment"]).default("active"),
     membership_started_on: z.string().trim().optional().or(z.literal("")),
+    performance_target_amount: z.union([z.literal(""), z.coerce.number().min(0, "Target cannot be negative.")]).optional(),
+    monthly_savings_commitment: z.union([z.literal(""), z.coerce.number().min(0, "Commitment cannot be negative.")]).optional(),
     school_completion_level: z.enum(["form_4", "form_6"]).optional().or(z.literal("")),
     school_completion_year: z.union([z.literal(""), z.coerce.number().int().min(1960, "Year must be 1960 or later.").max(2100, "Enter a valid year.")]).optional(),
     school_examination_number: z.string().trim().max(60).optional().or(z.literal("")),
@@ -873,6 +875,8 @@ export function MembersPage() {
             branch_id: selectedMember?.branch_id || selectedBranchId || branches[0]?.id || "",
             status: selectedMember?.status || "active",
             membership_started_on: selectedMember?.membership_started_on || "",
+            performance_target_amount: selectedMember?.performance_target_amount ?? "",
+            monthly_savings_commitment: selectedMember?.monthly_savings_commitment ?? "",
             school_completion_level: selectedMember?.school_completion_level || "",
             school_completion_year: selectedMember?.school_completion_year || "",
             school_examination_number: selectedMember?.school_examination_number || "",
@@ -1260,6 +1264,12 @@ export function MembersPage() {
                 branch_id: values.branch_id,
                 status: values.status,
                 membership_started_on: values.membership_started_on ? values.membership_started_on : null,
+                performance_target_amount: values.performance_target_amount === "" || values.performance_target_amount === undefined
+                    ? null
+                    : Number(values.performance_target_amount),
+                monthly_savings_commitment: values.monthly_savings_commitment === "" || values.monthly_savings_commitment === undefined
+                    ? null
+                    : Number(values.monthly_savings_commitment),
                 school_completion_level: values.school_completion_level ? values.school_completion_level : null,
                 school_completion_year: values.school_completion_year === "" || values.school_completion_year === undefined
                     ? null
@@ -2591,6 +2601,32 @@ export function MembersPage() {
                                                                 InputLabelProps={{ shrink: true }}
                                                                 {...updateForm.register("membership_started_on")}
                                                                 helperText="Founding members: 01/10/2024. Others: the date they actually joined."
+                                                            />
+                                                        </Grid>
+                                                        <Grid size={{ xs: 12, md: 6 }}>
+                                                            <TextField
+                                                                type="number"
+                                                                label="Annual savings target (TZS)"
+                                                                fullWidth
+                                                                {...updateForm.register("performance_target_amount")}
+                                                                error={Boolean(updateForm.formState.errors.performance_target_amount)}
+                                                                helperText={
+                                                                    (updateForm.formState.errors.performance_target_amount?.message as string)
+                                                                    || "Drives the Performance Targets report and the member's portal target card. Empty = tenant default."
+                                                                }
+                                                            />
+                                                        </Grid>
+                                                        <Grid size={{ xs: 12, md: 6 }}>
+                                                            <TextField
+                                                                type="number"
+                                                                label="Monthly savings commitment (TZS)"
+                                                                fullWidth
+                                                                {...updateForm.register("monthly_savings_commitment")}
+                                                                error={Boolean(updateForm.formState.errors.monthly_savings_commitment)}
+                                                                helperText={
+                                                                    (updateForm.formState.errors.monthly_savings_commitment?.message as string)
+                                                                    || "Used by the Monthly Commitments report and the loan-eligibility monthly check."
+                                                                }
                                                             />
                                                         </Grid>
                                                     </Grid>
