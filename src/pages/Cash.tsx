@@ -19,6 +19,7 @@ import {
     Grid,
     InputAdornment,
     InputLabel,
+    Menu,
     MenuItem,
     Pagination,
     Stack,
@@ -66,6 +67,8 @@ import {
 } from "../lib/endpoints";
 import { supabase } from "../lib/supabase";
 import type { ApiEnvelope, ChartOfAccountOption, DailyCashSummary, FeeRule, Loan, Member, MemberAccount, ReceiptPolicy, StatementRow, TellerSession, TellerPaymentTransactionType } from "../types/api";
+import { FlatDateRangePicker } from "../components/FlatDateRangePicker";
+import { downloadFile } from "../utils/downloadFile";
 import { formatCurrency, formatDate } from "../utils/format";
 
 const depositKindSchema = z.enum(["savings_deposit", "loan_repayment", "membership_fee", "fee_revenue"]);
@@ -469,6 +472,148 @@ export function CashPage() {
     const [page, setPage] = useState(1);
     const pageSize = 10;
 
+    // Cash transactions report: date-ranged statement rows, default current month.
+    const monthDefault = (() => {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = now.getMonth();
+        const first = `${year}-${String(month + 1).padStart(2, "0")}-01`;
+        const last = new Date(year, month + 1, 0);
+        return { start: first, end: `${year}-${String(month + 1).padStart(2, "0")}-${String(last.getDate()).padStart(2, "0")}` };
+    })();
+    const [reportRange, setReportRange] = useState(monthDefault);
+    const [reportLoading, setReportLoading] = useState(false);
+    const [reportType, setReportType] = useState("all");
+    const [reportSearch, setReportSearch] = useState("");
+    const [reportExportAnchor, setReportExportAnchor] = useState<null | HTMLElement>(null);
+
+    useEffect(() => {
+        if (!selectedTenantId) {
+            return;
+        }
+        let active = true;
+        setReportLoading(true);
+        api
+            .get<StatementsResponse>(endpoints.finance.statements(), {
+                params: {
+                    tenant_id: selectedTenantId,
+                    page: 1,
+                    limit: 1000,
+                    ...(reportRange.start ? { from_date: reportRange.start } : {}),
+                    ...(reportRange.end ? { to_date: reportRange.end } : {})
+                }
+            })
+            .then((response) => {
+                if (active) {
+                    setTransactions(response.data.data || []);
+                    setPage(1);
+                }
+            })
+            .catch(() => {
+                if (active) {
+                    setTransactions([]);
+                }
+            })
+            .finally(() => {
+                if (active) {
+                    setReportLoading(false);
+                }
+            });
+        return () => {
+            active = false;
+        };
+    }, [selectedTenantId, reportRange.start, reportRange.end]);
+
+    const reportTypes = useMemo(
+        () => [...new Set(transactions.map((row) => row.transaction_type))].sort(),
+        [transactions]
+    );
+    const filteredTransactions = useMemo(() => {
+        const needle = reportSearch.trim().toLowerCase();
+        return transactions.filter((row) => {
+            if (reportType !== "all" && row.transaction_type !== reportType) {
+                return false;
+            }
+            if (!needle) {
+                return true;
+            }
+            return (
+                (row.member_name || "").toLowerCase().includes(needle)
+                || (row.reference || "").toLowerCase().includes(needle)
+            );
+        });
+    }, [transactions, reportType, reportSearch]);
+    const reportTotals = useMemo(() => {
+        let moneyIn = 0;
+        let moneyOut = 0;
+        for (const row of filteredTransactions) {
+            if (row.direction === "out") {
+                moneyOut += Number(row.amount || 0);
+            } else {
+                moneyIn += Number(row.amount || 0);
+            }
+        }
+        return { moneyIn, moneyOut, net: moneyIn - moneyOut, count: filteredTransactions.length };
+    }, [filteredTransactions]);
+
+    const exportCashReport = async (format: "csv" | "excel" | "pdf") => {
+        setReportExportAnchor(null);
+        const title = `Cash Transactions ${reportRange.start || ""} – ${reportRange.end || ""}`;
+        const headers = ["Date", "Member", "Type", "Direction", "Amount", "Balance", "Reference"];
+        const rows = filteredTransactions.map((row) => [
+            (row.transaction_date || "").slice(0, 10),
+            row.member_name,
+            row.transaction_type,
+            row.direction,
+            row.direction === "out" ? -Number(row.amount) : Number(row.amount),
+            Number(row.running_balance),
+            row.reference || ""
+        ] as (string | number)[]);
+        rows.push(["", "TOTAL", "", "", reportTotals.net, "", `${reportTotals.count} transactions`]);
+
+        if (format === "csv") {
+            const escape = (value: string | number) => {
+                const text = String(value ?? "");
+                return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+            };
+            const csv = [headers.map(escape).join(","), ...rows.map((row) => row.map(escape).join(","))].join("\n");
+            downloadFile(new Blob([csv], { type: "text/csv;charset=utf-8" }), "cash-transactions.csv");
+            return;
+        }
+        if (format === "excel") {
+            const XLSX = await import("xlsx");
+            const sheet = XLSX.utils.aoa_to_sheet([[title], [], headers, ...rows]);
+            sheet["!cols"] = headers.map((header) => ({ wch: Math.max(header.length + 2, 16) }));
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, sheet, "Cash Transactions");
+            XLSX.writeFile(workbook, "cash-transactions.xlsx");
+            return;
+        }
+        const { jsPDF } = await import("jspdf");
+        const { default: autoTable } = await import("jspdf-autotable");
+        const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+        doc.setFontSize(14);
+        doc.setFont("helvetica", "bold");
+        doc.text(title, 40, 42);
+        doc.setFontSize(9);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(120);
+        doc.text(
+            `In ${formatCurrency(reportTotals.moneyIn)} · Out ${formatCurrency(reportTotals.moneyOut)} · Net ${formatCurrency(reportTotals.net)} — amounts in TZS`,
+            40,
+            58
+        );
+        autoTable(doc, {
+            startY: 72,
+            head: [headers],
+            body: rows.map((row) => row.map((cell) => (typeof cell === "number" ? cell.toLocaleString("en-US") : cell))),
+            styles: { fontSize: 8, cellPadding: 3 },
+            headStyles: { fillColor: [26, 35, 126], fontStyle: "bold" },
+            alternateRowStyles: { fillColor: [245, 247, 252] }
+        });
+        doc.save("cash-transactions.pdf");
+    };
+
     const defaultAccountId = localStorage.getItem("saccos:selectedAccountId") || "";
 
     const depositForm = useForm<CashValues>({
@@ -852,8 +997,20 @@ export function CashPage() {
     const transactionColumns: Column<StatementRow>[] = [
         { key: "date", header: "Date", render: (row) => formatDate(row.transaction_date) },
         { key: "member", header: "Member", render: (row) => row.member_name },
-        { key: "type", header: "Type", render: (row) => row.transaction_type },
-        { key: "amount", header: "Amount", render: (row) => formatCurrency(row.amount) },
+        { key: "type", header: "Type", render: (row) => row.transaction_type.replace(/_/g, " ") },
+        {
+            key: "amount",
+            header: "Amount",
+            render: (row) => (
+                <Typography
+                    component="span"
+                    variant="body2"
+                    sx={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, color: row.direction === "out" ? "error.main" : "success.main" }}
+                >
+                    {row.direction === "out" ? "−" : "+"}{formatCurrency(row.amount)}
+                </Typography>
+            )
+        },
         { key: "balance", header: "Balance", render: (row) => formatCurrency(row.running_balance) },
         { key: "reference", header: "Reference", render: (row) => row.reference || "N/A" }
     ];
@@ -877,10 +1034,10 @@ export function CashPage() {
         { key: "message", header: "Message", render: (row) => row.message }
     ];
 
-    const totalPages = Math.max(1, Math.ceil(transactions.length / pageSize));
+    const totalPages = Math.max(1, Math.ceil(filteredTransactions.length / pageSize));
     const paginatedTransactions = useMemo(
-        () => transactions.slice((page - 1) * pageSize, page * pageSize),
-        [page, transactions]
+        () => filteredTransactions.slice((page - 1) * pageSize, page * pageSize),
+        [page, filteredTransactions]
     );
 
     const handleSubmit = (type: ActionType, values: CashValues) => {
@@ -1939,19 +2096,88 @@ export function CashPage() {
                         sx={{ mb: 2 }}
                     >
                         <Box>
-                            <Typography variant="h6">Recent Cash Transactions</Typography>
+                            <Typography variant="h6">Cash Transactions Report</Typography>
                             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                                Review the latest posted teller activity across visible accounts.
+                                All posted teller activity for the selected period.
                             </Typography>
                         </Box>
+                        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                            <FlatDateRangePicker
+                                label="Period"
+                                start={reportRange.start}
+                                end={reportRange.end}
+                                onChange={(start, end) => setReportRange({ start, end })}
+                                minWidth={230}
+                            />
+                            <TextField
+                                select
+                                size="small"
+                                label="Type"
+                                value={reportType}
+                                onChange={(event) => {
+                                    setReportType(event.target.value);
+                                    setPage(1);
+                                }}
+                                sx={{ minWidth: 150 }}
+                            >
+                                <MenuItem value="all">All types</MenuItem>
+                                {reportTypes.map((type) => (
+                                    <MenuItem key={type} value={type}>{type.replace(/_/g, " ")}</MenuItem>
+                                ))}
+                            </TextField>
+                            <TextField
+                                size="small"
+                                label="Search"
+                                placeholder="Member or reference"
+                                value={reportSearch}
+                                onChange={(event) => {
+                                    setReportSearch(event.target.value);
+                                    setPage(1);
+                                }}
+                                sx={{ minWidth: 180 }}
+                            />
+                            <Button
+                                variant="outlined"
+                                startIcon={<DownloadRoundedIcon />}
+                                onClick={(event) => setReportExportAnchor(event.currentTarget)}
+                                disabled={reportLoading || !filteredTransactions.length}
+                            >
+                                Export
+                            </Button>
+                            <Menu anchorEl={reportExportAnchor} open={Boolean(reportExportAnchor)} onClose={() => setReportExportAnchor(null)}>
+                                <MenuItem onClick={() => void exportCashReport("excel")}>Excel (.xlsx)</MenuItem>
+                                <MenuItem onClick={() => void exportCashReport("pdf")}>PDF</MenuItem>
+                                <MenuItem onClick={() => void exportCashReport("csv")}>CSV</MenuItem>
+                            </Menu>
+                        </Stack>
                     </Stack>
 
-                    {loading ? (
+                    <Grid container spacing={1.5} sx={{ mb: 2 }}>
+                        {[
+                            { label: "Money In", value: formatCurrency(reportTotals.moneyIn), color: "success.main" },
+                            { label: "Money Out", value: formatCurrency(reportTotals.moneyOut), color: "error.main" },
+                            { label: "Net", value: formatCurrency(reportTotals.net), color: reportTotals.net >= 0 ? "success.main" : "error.main" },
+                            { label: "Transactions", value: String(reportTotals.count), color: "text.primary" }
+                        ].map((tile) => (
+                            <Grid key={tile.label} size={{ xs: 6, md: 3 }}>
+                                <Box sx={{ p: 1.5, borderRadius: 2, border: `1px solid ${theme.palette.divider}` }}>
+                                    <Typography variant="caption" color="text.secondary" sx={{ display: "block", textTransform: "uppercase", letterSpacing: "0.06em", fontSize: "0.66rem" }}>
+                                        {tile.label}
+                                    </Typography>
+                                    <Typography sx={{ fontWeight: 800, fontVariantNumeric: "tabular-nums", color: tile.color }}>
+                                        {tile.value}
+                                    </Typography>
+                                </Box>
+                            </Grid>
+                        ))}
+                    </Grid>
+
+                    {loading || reportLoading ? (
                         <AppLoader fullscreen={false} minHeight={260} message="Loading cash movements..." />
                     ) : (
                         <Stack spacing={2}>
-                            <DataTable rows={paginatedTransactions} columns={transactionColumns} emptyMessage="No cash transactions yet." />
-                            {transactions.length > pageSize ? (
+                            <DataTable rows={paginatedTransactions} columns={transactionColumns} emptyMessage="No cash transactions in this period." />
+                            {filteredTransactions.length > pageSize ? (
                                 <Stack direction="row" justifyContent="flex-end">
                                     <Pagination
                                         count={totalPages}
