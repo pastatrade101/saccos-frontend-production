@@ -1436,6 +1436,7 @@ export interface StatementRow {
     amount: number;
     running_balance: number;
     reference: string | null;
+    description?: string | null;
     transaction_date: string;
     created_at: string;
 }

@@ -28,6 +28,7 @@ const StaffUsersPage = lazy(() => import("./pages/StaffUsers").then((m) => ({ de
 const MembersPage = lazy(() => import("./pages/Members").then((m) => ({ default: m.MembersPage })));
 const MemberApplicationsPage = lazy(() => import("./pages/MemberApplications").then((m) => ({ default: m.MemberApplicationsPage })));
 const CashPage = lazy(() => import("./pages/Cash").then((m) => ({ default: m.CashPage })));
+const CashTransactionsPage = lazy(() => import("./pages/CashTransactions").then((m) => ({ default: m.CashTransactionsPage })));
 const CashControlPage = lazy(() => import("./pages/CashControl").then((m) => ({ default: m.CashControlPage })));
 const ContributionsPage = lazy(() => import("./pages/Contributions").then((m) => ({ default: m.ContributionsPage })));
 const PaymentsPage = lazy(() => import("./pages/Payments").then((m) => ({ default: m.PaymentsPage })));
@@ -338,6 +339,16 @@ export default function App() {
                             }
                         >
                             <Route path="/cash" element={<CashPage />} />
+                        </Route>
+                        <Route
+                            element={
+                                <ProtectedRoute
+                                    allowedRoles={["teller", "branch_manager", "super_admin", "auditor"]}
+                                    allowInternalOps={false}
+                                />
+                            }
+                        >
+                            <Route path="/cash/transactions" element={<CashTransactionsPage />} />
                         </Route>
                         <Route
                             element={
