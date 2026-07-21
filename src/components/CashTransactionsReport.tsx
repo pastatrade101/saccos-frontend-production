@@ -25,7 +25,7 @@ import type { StatementRow } from "../types/api";
 import { downloadFile } from "../utils/downloadFile";
 import { formatCurrency, formatDate } from "../utils/format";
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 20;
 
 function currentMonthRange() {
     const now = new Date();
