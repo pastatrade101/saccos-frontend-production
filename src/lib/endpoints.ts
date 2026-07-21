@@ -1572,6 +1572,8 @@ export interface CashRequest {
     amount: number;
     reference?: string | null;
     description?: string | null;
+    bank_description?: string | null;
+    bank_reference?: string | null;
     approval_request_id?: string;
     value_date?: string;
     receipt_ids?: string[];

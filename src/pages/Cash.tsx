@@ -81,6 +81,7 @@ const actionSchema = z.object({
     amount: z.coerce.number().positive("Amount must be greater than zero."),
     reference: z.string().max(80).optional().or(z.literal("")),
     description: z.string().max(255).optional().or(z.literal("")),
+    bank_reference: z.string().max(80).optional().or(z.literal("")),
     value_date: z.string().optional().or(z.literal(""))
 }).superRefine((values, ctx) => {
     const kind = values.deposit_kind || "savings_deposit";
@@ -109,6 +110,7 @@ const expenseSchema = z.object({
     payee: z.string().max(160).optional().or(z.literal("")),
     reference: z.string().max(80).optional().or(z.literal("")),
     description: z.string().max(255).optional().or(z.literal("")),
+    bank_reference: z.string().max(80).optional().or(z.literal("")),
     value_date: z.string().optional().or(z.literal(""))
 });
 
@@ -485,7 +487,7 @@ export function CashPage() {
             fee_rule_code: "",
             amount: 0,
             reference: "",
-            description: ""
+            description: "", bank_reference: ""
         }
     });
 
@@ -499,7 +501,7 @@ export function CashPage() {
             fee_rule_code: "",
             amount: 0,
             reference: "",
-            description: ""
+            description: "", bank_reference: ""
         }
     });
 
@@ -513,7 +515,7 @@ export function CashPage() {
             fee_rule_code: "",
             amount: 0,
             reference: "",
-            description: ""
+            description: "", bank_reference: ""
         }
     });
 
@@ -524,7 +526,7 @@ export function CashPage() {
             amount: 0,
             payee: "",
             reference: "",
-            description: "",
+            description: "", bank_reference: "",
             value_date: ""
         }
     });
@@ -1099,6 +1101,8 @@ export function CashPage() {
                     amount: action.values.amount,
                     reference: action.values.reference || null,
                     description: action.values.description || null,
+                    bank_description: action.values.description || null,
+                    bank_reference: action.values.bank_reference || null,
                     value_date: (canBackdate && action.values.value_date) ? action.values.value_date : undefined,
                     receipt_ids: receiptIds
                 };
@@ -1140,9 +1144,9 @@ export function CashPage() {
             setActionDialog(null);
             setReceiptFile(null);
             const lastAccountId = payload?.account_id || defaultAccountId;
-            depositForm.reset({ deposit_kind: "savings_deposit", account_id: lastAccountId, loan_id: "", member_id: "", fee_rule_code: "", amount: 0, reference: generateDepositReference("savings_deposit"), description: "", value_date: "" });
-            withdrawForm.reset({ deposit_kind: "savings_deposit", account_id: lastAccountId, loan_id: "", member_id: "", fee_rule_code: "", amount: 0, reference: generateCashReference("withdraw"), description: "", value_date: "" });
-            shareForm.reset({ deposit_kind: "savings_deposit", account_id: "", loan_id: "", member_id: "", fee_rule_code: "", amount: 0, reference: generateCashReference("share_contribution"), description: "", value_date: "" });
+            depositForm.reset({ deposit_kind: "savings_deposit", account_id: lastAccountId, loan_id: "", member_id: "", fee_rule_code: "", amount: 0, reference: generateDepositReference("savings_deposit"), description: "", bank_reference: "", value_date: "" });
+            withdrawForm.reset({ deposit_kind: "savings_deposit", account_id: lastAccountId, loan_id: "", member_id: "", fee_rule_code: "", amount: 0, reference: generateCashReference("withdraw"), description: "", bank_reference: "", value_date: "" });
+            shareForm.reset({ deposit_kind: "savings_deposit", account_id: "", loan_id: "", member_id: "", fee_rule_code: "", amount: 0, reference: generateCashReference("share_contribution"), description: "", bank_reference: "", value_date: "" });
             setDepositAmountInput("");
             setWithdrawAmountInput("");
             setShareAmountInput("");
@@ -1262,7 +1266,7 @@ export function CashPage() {
                 amount: 0,
                 payee: "",
                 reference: generateExpenseReference(),
-                description: "",
+                description: "", bank_reference: "",
                 value_date: ""
             });
             await loadCashData();
@@ -1398,7 +1402,7 @@ export function CashPage() {
             fee_rule_code: "",
             amount: 0,
             reference: generateDepositReference(kind),
-            description: "",
+            description: "", bank_reference: "",
             value_date: ""
         });
         setActionDialog("deposit");
@@ -1496,7 +1500,7 @@ export function CashPage() {
                                         amount: 0,
                                         payee: "",
                                         reference: generateExpenseReference(),
-                                        description: "",
+                                        description: "", bank_reference: "",
                                         value_date: ""
                                     });
                                     setExpenseDialogOpen(true);
@@ -2464,6 +2468,15 @@ export function CashPage() {
                                     helperText="Backdate up to 7 days for a deposit received on a past date. Leave blank for today — the audit log always keeps the real entry time."
                                 />
                             ) : null}
+
+                            <TextField
+                                label="Bank reference number (optional)"
+                                fullWidth
+                                placeholder="e.g. FT26071234567 from the bank statement"
+                                {...currentForm.register("bank_reference")}
+                                error={Boolean(currentForm.formState.errors.bank_reference)}
+                                helperText={currentForm.formState.errors.bank_reference?.message}
+                            />
 
                             <TextField
                                 label="Description (as per bank statement)"

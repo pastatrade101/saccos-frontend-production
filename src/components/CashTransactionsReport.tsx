@@ -116,6 +116,8 @@ export function CashTransactionsReport({ tenantId }: { tenantId: string | null }
                 (row.member_name || "").toLowerCase().includes(needle)
                 || (row.reference || "").toLowerCase().includes(needle)
                 || (row.description || "").toLowerCase().includes(needle)
+                || (row.bank_description || "").toLowerCase().includes(needle)
+                || (row.bank_reference || "").toLowerCase().includes(needle)
             );
         });
     }, [rows, typeFilter, search]);
@@ -142,8 +144,26 @@ export function CashTransactionsReport({ tenantId }: { tenantId: string | null }
             key: "description",
             header: "Description",
             render: (row) => (
-                <Typography variant="body2" sx={{ maxWidth: 260 }} noWrap title={row.description || undefined}>
+                <Typography variant="body2" sx={{ maxWidth: 220 }} noWrap title={row.description || undefined}>
                     {row.description || "—"}
+                </Typography>
+            )
+        },
+        {
+            key: "bank_description",
+            header: "Bank Statement Desc.",
+            render: (row) => (
+                <Typography variant="body2" sx={{ maxWidth: 220 }} noWrap title={row.bank_description || undefined}>
+                    {row.bank_description || "—"}
+                </Typography>
+            )
+        },
+        {
+            key: "bank_reference",
+            header: "Bank Ref",
+            render: (row) => (
+                <Typography variant="body2" sx={{ fontVariantNumeric: "tabular-nums" }} noWrap title={row.bank_reference || undefined}>
+                    {row.bank_reference || "—"}
                 </Typography>
             )
         },
@@ -167,18 +187,20 @@ export function CashTransactionsReport({ tenantId }: { tenantId: string | null }
     const exportReport = async (format: "csv" | "excel" | "pdf") => {
         setExportAnchor(null);
         const title = `Cash Transactions ${range.start || ""} – ${range.end || ""}`;
-        const headers = ["Date", "Member", "Type", "Description", "Direction", "Amount", "Balance", "Reference"];
+        const headers = ["Date", "Member", "Type", "Description", "Bank Statement Desc.", "Bank Ref", "Direction", "Amount", "Balance", "Reference"];
         const body = filtered.map((row) => [
             (row.transaction_date || "").slice(0, 10),
             row.member_name,
             row.transaction_type,
             row.description || "",
+            row.bank_description || "",
+            row.bank_reference || "",
             row.direction,
             row.direction === "out" ? -Number(row.amount) : Number(row.amount),
             Number(row.running_balance),
             row.reference || ""
         ] as (string | number)[]);
-        body.push(["", "TOTAL", "", "", "", totals.net, "", `${totals.count} transactions`]);
+        body.push(["", "TOTAL", "", "", "", "", "", totals.net, "", `${totals.count} transactions`]);
 
         if (format === "csv") {
             const escape = (value: string | number) => {
