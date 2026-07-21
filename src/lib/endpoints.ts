@@ -541,6 +541,7 @@ export const endpoints = {
         operationalBatch: () => routeMap.finance.operationalBatch,
         statements: () => routeMap.finance.statements,
         updateBankMeta: (transactionId: string) => `/finance/transactions/${transactionId}/bank-meta`,
+        reverseTransaction: (transactionId: string) => `/finance/transactions/${transactionId}/reverse`,
         nplReclassStatus: () => routeMap.finance.nplReclassStatus,
         nplReclassRun: () => routeMap.finance.nplReclassRun
     },

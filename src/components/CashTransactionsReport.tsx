@@ -1,5 +1,6 @@
 import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
+import UndoRoundedIcon from "@mui/icons-material/UndoRounded";
 import {
     Alert,
     Box,
@@ -60,6 +61,33 @@ export function CashTransactionsReport({ tenantId }: { tenantId: string | null }
     // Teller-only edit of the bank statement annotation (no ledger impact).
     const { profile } = useAuth();
     const canEditBankMeta = profile?.role === "teller";
+    // Branch-manager correction path: reverse a wrong posting, teller re-posts.
+    const canReverse = ["branch_manager", "super_admin"].includes(profile?.role || "");
+    const [reverseRow, setReverseRow] = useState<StatementRow | null>(null);
+    const [reverseReason, setReverseReason] = useState("");
+    const [reverseSaving, setReverseSaving] = useState(false);
+    const [reverseError, setReverseError] = useState<string | null>(null);
+    const [reloadKey, setReloadKey] = useState(0);
+
+    const REVERSIBLE_TYPES = ["deposit", "withdraw", "share_contribution"];
+
+    const submitReverse = async () => {
+        if (!reverseRow) return;
+        setReverseSaving(true);
+        setReverseError(null);
+        try {
+            await api.post(endpoints.finance.reverseTransaction(reverseRow.transaction_id), {
+                reason: reverseReason || null
+            });
+            setReverseRow(null);
+            setReverseReason("");
+            setReloadKey((key) => key + 1);
+        } catch (submitError) {
+            setReverseError(getApiErrorMessage(submitError));
+        } finally {
+            setReverseSaving(false);
+        }
+    };
     const [editRow, setEditRow] = useState<StatementRow | null>(null);
     const [editDescription, setEditDescription] = useState("");
     const [editReference, setEditReference] = useState("");
@@ -144,7 +172,7 @@ export function CashTransactionsReport({ tenantId }: { tenantId: string | null }
         return () => {
             active = false;
         };
-    }, [tenantId, range.start, range.end]);
+    }, [tenantId, range.start, range.end, reloadKey]);
 
     const types = useMemo(() => [...new Set(rows.map((row) => row.transaction_type))].sort(), [rows]);
     const filtered = useMemo(() => {
@@ -234,6 +262,19 @@ export function CashTransactionsReport({ tenantId }: { tenantId: string | null }
                     <IconButton size="small" onClick={() => openEdit(row)} title="Edit bank statement details">
                         <EditRoundedIcon fontSize="small" />
                     </IconButton>
+                )
+            } satisfies Column<StatementRow>]
+            : []),
+        ...(canReverse
+            ? [{
+                key: "reverse",
+                header: "",
+                render: (row: StatementRow) => (
+                    REVERSIBLE_TYPES.includes(row.transaction_type) && !(row.reference || "").startsWith("REV-") ? (
+                        <IconButton size="small" color="warning" onClick={() => setReverseRow(row)} title="Reverse this transaction (posts a counter entry)">
+                            <UndoRoundedIcon fontSize="small" />
+                        </IconButton>
+                    ) : null
                 )
             } satisfies Column<StatementRow>]
             : [])
@@ -401,6 +442,35 @@ export function CashTransactionsReport({ tenantId }: { tenantId: string | null }
                     </Stack>
                 )}
             </CardContent>
+
+            <Dialog open={Boolean(reverseRow)} onClose={() => !reverseSaving && setReverseRow(null)} maxWidth="xs" fullWidth>
+                <DialogTitle sx={{ fontWeight: 800 }}>Reverse Transaction</DialogTitle>
+                <DialogContent>
+                    <Stack spacing={2} sx={{ mt: 0.5 }}>
+                        {reverseError ? <Alert severity="error" variant="outlined">{reverseError}</Alert> : null}
+                        <Alert severity="warning" variant="outlined">
+                            This posts a counter entry for{" "}
+                            <b>{reverseRow ? `${formatCurrency(reverseRow.amount)} ${reverseRow.transaction_type.replace(/_/g, " ")} — ${reverseRow.member_name}` : ""}</b>{" "}
+                            dated {reverseRow ? formatDate(reverseRow.transaction_date) : ""}. The original stays visible; balances are rebuilt. The teller can then re-post the correct figures.
+                        </Alert>
+                        <TextField
+                            label="Reason (recommended)"
+                            fullWidth
+                            multiline
+                            minRows={2}
+                            placeholder="e.g. Wrong amount keyed — should be 500,000"
+                            value={reverseReason}
+                            onChange={(event) => setReverseReason(event.target.value)}
+                        />
+                    </Stack>
+                </DialogContent>
+                <DialogActions>
+                    <Button color="inherit" onClick={() => setReverseRow(null)} disabled={reverseSaving}>Cancel</Button>
+                    <Button variant="contained" color="warning" onClick={() => void submitReverse()} disabled={reverseSaving}>
+                        {reverseSaving ? "Reversing…" : "Reverse"}
+                    </Button>
+                </DialogActions>
+            </Dialog>
 
             <Dialog open={Boolean(editRow)} onClose={() => !editSaving && setEditRow(null)} maxWidth="xs" fullWidth>
                 <DialogTitle sx={{ fontWeight: 800 }}>Edit Bank Statement Details</DialogTitle>
