@@ -117,7 +117,7 @@ function csvEscape(value: unknown): string {
 function downloadCsv(filename: string, accounts: LoginAccount[]) {
     const headers = [
         "Name", "Role", "Type", "Branch", "Member No", "Status", "Risk", "Risk Reasons",
-        "Days Since Last Login", "Onboarded", "Last Login", "Created", "Active"
+        "Days Since Last Login", "Last Login", "Created", "Active"
     ];
     const lines = [headers.join(",")];
     for (const a of accounts) {
@@ -125,7 +125,7 @@ function downloadCsv(filename: string, accounts: LoginAccount[]) {
             a.full_name, formatRole(a.role), a.account_type, a.branch_name || "", a.member_no || "",
             STATUS_META[a.status].label, RISK_META[a.risk_level].label, a.risk_reasons.join("; "),
             a.never_logged_in ? "never" : a.days_since_last_login,
-            a.first_login_at || "", a.last_login_at || "", a.created_at, a.is_active ? "Active" : "Disabled"
+            a.last_login_at || "", a.created_at, a.is_active ? "Active" : "Disabled"
         ].map(csvEscape).join(","));
     }
     const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
