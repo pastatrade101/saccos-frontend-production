@@ -154,6 +154,7 @@ const routeMap = {
         list: "/members",
         summary: "/members/summary",
         saccoOverview: "/members/sacco-overview",
+        saccoInvestments: "/members/sacco-investments",
         accounts: "/members/accounts",
         create: "/members",
         profileCompletion: "/members/me/profile-completion",
@@ -383,6 +384,7 @@ const routeMap = {
         orders: "/treasury/orders",
         reviewOrder: (orderId: string) => `/treasury/orders/${orderId}/review`,
         executeOrder: (orderId: string) => `/treasury/orders/${orderId}/execute`,
+        recordOrderPayment: (orderId: string) => `/treasury/orders/${orderId}/payment`,
         transactions: "/treasury/transactions",
         income: "/treasury/income"
     }
@@ -457,6 +459,7 @@ export const endpoints = {
         list: () => routeMap.members.list,
         summary: () => routeMap.members.summary,
         saccoOverview: () => routeMap.members.saccoOverview,
+        saccoInvestments: () => routeMap.members.saccoInvestments,
         accounts: () => routeMap.members.accounts,
         create: () => routeMap.members.create,
         profileCompletion: () => routeMap.members.profileCompletion,
@@ -694,6 +697,7 @@ export const endpoints = {
         orders: () => routeMap.treasury.orders,
         reviewOrder: (orderId: string) => routeMap.treasury.reviewOrder(orderId),
         executeOrder: (orderId: string) => routeMap.treasury.executeOrder(orderId),
+        recordOrderPayment: (orderId: string) => routeMap.treasury.recordOrderPayment(orderId),
         transactions: () => routeMap.treasury.transactions,
         income: () => routeMap.treasury.income
     }
@@ -1749,7 +1753,7 @@ export interface ManualDividendBatchRowInput {
     member_id: string;
     dividend_date: string;
     dividend_label: string;
-    source_type: "utt" | "loan" | "other";
+    source_type: string;
     amount: number;
     reference?: string | null;
     destination_account_type: "savings" | "shares";
@@ -1767,7 +1771,7 @@ export interface FormulaDividendComponentInput {
     key?: string;
     dividend_date: string;
     dividend_label: string;
-    source_type: "utt" | "loan" | "other";
+    source_type: string;
     base_method?: "balance_at_cutoff" | "contributions_to_date";
     base_cutoff_date: string;
     pool_amount: number;
@@ -1846,7 +1850,7 @@ export type ManualDividendBatchDetailResponse = ApiEnvelope<{
             key: string;
             dividend_label: string;
             dividend_date: string;
-            source_type: "utt" | "loan" | "other";
+            source_type: string;
             base_column: string;
             base_label: string;
             base_cutoff_date: string;

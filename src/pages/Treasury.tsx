@@ -4,6 +4,8 @@ import MonetizationOnRoundedIcon from "@mui/icons-material/MonetizationOnRounded
 import PriceChangeRoundedIcon from "@mui/icons-material/PriceChangeRounded";
 import ShieldRoundedIcon from "@mui/icons-material/ShieldRounded";
 import ShowChartRoundedIcon from "@mui/icons-material/ShowChartRounded";
+import FormatListBulletedRoundedIcon from "@mui/icons-material/FormatListBulletedRounded";
+import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import WalletRoundedIcon from "@mui/icons-material/WalletRounded";
 import {
     Alert,
@@ -17,6 +19,7 @@ import {
     DialogContent,
     DialogTitle,
     Divider,
+    IconButton,
     LinearProgress,
     MenuItem,
     Paper,
@@ -95,6 +98,11 @@ export function TreasuryPage() {
         profile?.role === "branch_manager" ||
         profile?.role === "treasury_officer";
     const canReviewExecute = profile?.role === "super_admin" || profile?.role === "branch_manager";
+    const canRecordPayment =
+        profile?.role === "super_admin" ||
+        profile?.role === "branch_manager" ||
+        profile?.role === "treasury_officer";
+    const canManageOrders = canReviewExecute || canRecordPayment;
     const canConfigurePolicy = profile?.role === "super_admin" || profile?.role === "branch_manager";
     const [activeTab, setActiveTab] = useState<TreasuryTab>("portfolio");
     const [loading, setLoading] = useState(true);
@@ -109,6 +117,7 @@ export function TreasuryPage() {
     const [incomeRows, setIncomeRows] = useState<TreasuryIncome[]>([]);
     const [busy, setBusy] = useState(false);
     const [assetDialogOpen, setAssetDialogOpen] = useState(false);
+    const [assetsListOpen, setAssetsListOpen] = useState(false);
     const [orderDialogOpen, setOrderDialogOpen] = useState(false);
     const [incomeDialogOpen, setIncomeDialogOpen] = useState(false);
     const [valuationDialogOpen, setValuationDialogOpen] = useState(false);
@@ -118,6 +127,14 @@ export function TreasuryPage() {
     const [reviewDecision, setReviewDecision] = useState<"approved" | "rejected">("approved");
     const [reviewReason, setReviewReason] = useState("");
     const [reviewNotes, setReviewNotes] = useState("");
+    const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+    const [paymentOrder, setPaymentOrder] = useState<TreasuryOrder | null>(null);
+    const [paymentForm, setPaymentForm] = useState({
+        amount: "",
+        payment_date: "",
+        reference: "",
+        notes: ""
+    });
     const [assetForm, setAssetForm] = useState({
         asset_name: "",
         asset_type: "Bond Fund",
@@ -130,7 +147,12 @@ export function TreasuryPage() {
         order_type: "buy" as "buy" | "sell",
         units: "",
         unit_price: "",
-        notes: ""
+        notes: "",
+        broker: "",
+        cds_account: "",
+        invoice_ref: "",
+        total_fees: "",
+        amount_paid: ""
     });
     const [incomeForm, setIncomeForm] = useState({
         asset_id: "",
@@ -536,7 +558,12 @@ export function TreasuryPage() {
             order_type: "buy",
             units: "",
             unit_price: "",
-            notes: ""
+            notes: "",
+            broker: "",
+            cds_account: "",
+            invoice_ref: "",
+            total_fees: "",
+            amount_paid: ""
         });
     };
 
@@ -594,7 +621,12 @@ export function TreasuryPage() {
                 units: Number(orderForm.units || 0),
                 unit_price: Number(orderForm.unit_price || 0),
                 total_amount: orderPreviewAmount,
-                notes: orderForm.notes.trim() || null
+                notes: orderForm.notes.trim() || null,
+                broker: orderForm.broker.trim() || null,
+                cds_account: orderForm.cds_account.trim() || null,
+                invoice_ref: orderForm.invoice_ref.trim() || null,
+                total_fees: orderForm.total_fees ? Number(orderForm.total_fees) : null,
+                amount_paid: orderForm.amount_paid ? Number(orderForm.amount_paid) : 0
             });
             setOrderDialogOpen(false);
             resetOrderForm();
@@ -651,6 +683,54 @@ export function TreasuryPage() {
             });
         } catch (error) {
             pushToast({ type: "error", title: "Treasury", message: getApiErrorMessage(error, "Unable to review treasury order.") });
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const openPaymentDialog = (order: TreasuryOrder) => {
+        const outstanding = Math.max(Number(order.total_amount || 0) - Number(order.amount_paid || 0), 0);
+        setPaymentOrder(order);
+        setPaymentForm({
+            amount: outstanding > 0 ? String(outstanding) : "",
+            payment_date: "",
+            reference: "",
+            notes: ""
+        });
+        setPaymentDialogOpen(true);
+    };
+
+    const handleRecordPayment = async () => {
+        if (!paymentOrder) {
+            return;
+        }
+
+        const amount = Number(paymentForm.amount);
+        const outstanding = Math.max(Number(paymentOrder.total_amount || 0) - Number(paymentOrder.amount_paid || 0), 0);
+        if (!Number.isFinite(amount) || amount <= 0) {
+            pushToast({ type: "error", title: "Treasury", message: "Enter a payment amount greater than zero." });
+            return;
+        }
+        if (amount - outstanding > 0.01) {
+            pushToast({ type: "error", title: "Treasury", message: `Payment cannot exceed the outstanding balance of ${formatCurrency(outstanding)}.` });
+            return;
+        }
+
+        setBusy(true);
+        try {
+            await api.post(endpoints.treasury.recordOrderPayment(paymentOrder.id), {
+                tenant_id: tenantId,
+                amount,
+                payment_date: paymentForm.payment_date || undefined,
+                reference: paymentForm.reference.trim() || null,
+                notes: paymentForm.notes.trim() || null
+            });
+            setPaymentDialogOpen(false);
+            setPaymentOrder(null);
+            await loadTreasury();
+            pushToast({ type: "success", title: "Treasury", message: "Payment recorded against the order." });
+        } catch (error) {
+            pushToast({ type: "error", title: "Treasury", message: getApiErrorMessage(error, "Unable to record payment.") });
         } finally {
             setBusy(false);
         }
@@ -919,6 +999,14 @@ export function TreasuryPage() {
                                 sx={secondaryActionSx}
                             >
                                 Add asset
+                            </Button>
+                            <Button
+                                variant="outlined"
+                                startIcon={<FormatListBulletedRoundedIcon />}
+                                onClick={() => setAssetsListOpen(true)}
+                                sx={secondaryActionSx}
+                            >
+                                View assets ({assets.length})
                             </Button>
                             <Button
                                 variant="outlined"
@@ -1381,7 +1469,7 @@ export function TreasuryPage() {
                                                                 <TableCell align="right">Amount</TableCell>
                                                                 <TableCell>Status</TableCell>
                                                                 <TableCell>Date</TableCell>
-                                                                {canReviewExecute ? <TableCell align="right">Action</TableCell> : null}
+                                                                {canManageOrders ? <TableCell align="right">Action</TableCell> : null}
                                                             </TableRow>
                                                         </TableHead>
                                                         <TableBody>
@@ -1402,15 +1490,30 @@ export function TreasuryPage() {
                                                                             {formatCurrency(order.unit_price)} each
                                                                         </Typography>
                                                                     </TableCell>
-                                                                    <TableCell align="right">{formatCurrency(order.total_amount)}</TableCell>
+                                                                    <TableCell align="right">
+                                                                        <Typography variant="body2" fontWeight={700}>{formatCurrency(order.total_amount)}</Typography>
+                                                                        {order.order_type === "buy" && (order.amount_paid != null) ? (() => {
+                                                                            const paid = Number(order.amount_paid || 0);
+                                                                            const outstanding = Math.max(Number(order.total_amount || 0) - paid, 0);
+                                                                            return outstanding > 0.01 ? (
+                                                                                <Typography variant="caption" color="warning.main" display="block">
+                                                                                    {formatCurrency(outstanding)} outstanding
+                                                                                </Typography>
+                                                                            ) : (
+                                                                                <Typography variant="caption" color="success.main" display="block">
+                                                                                    Fully paid
+                                                                                </Typography>
+                                                                            );
+                                                                        })() : null}
+                                                                    </TableCell>
                                                                     <TableCell>
                                                                         <Chip size="small" color={orderStatusColor(order.status)} label={order.status.replace(/_/g, " ")} />
                                                                     </TableCell>
                                                                     <TableCell>{formatDate(order.order_date)}</TableCell>
-                                                                    {canReviewExecute ? (
+                                                                    {canManageOrders ? (
                                                                         <TableCell align="right">
                                                                             <Stack direction={{ xs: "column", sm: "row" }} spacing={1} justifyContent="flex-end">
-                                                                                {order.status === "pending_review" ? (
+                                                                                {canReviewExecute && order.status === "pending_review" ? (
                                                                                     <>
                                                                                         <Button
                                                                                             size="small"
@@ -1439,9 +1542,17 @@ export function TreasuryPage() {
                                                                                         </Button>
                                                                                     </>
                                                                                 ) : null}
-                                                                                {order.status === "approved" || order.status === "pending_approval" ? (
+                                                                                {canReviewExecute && (order.status === "approved" || order.status === "pending_approval") ? (
                                                                                     <Button size="small" variant="contained" onClick={() => handleExecuteOrder(order)}>
                                                                                         Execute
+                                                                                    </Button>
+                                                                                ) : null}
+                                                                                {canRecordPayment
+                                                                                    && order.order_type === "buy"
+                                                                                    && !["cancelled", "rejected"].includes(order.status)
+                                                                                    && Math.max(Number(order.total_amount || 0) - Number(order.amount_paid || 0), 0) > 0.01 ? (
+                                                                                    <Button size="small" variant="outlined" color="warning" onClick={() => openPaymentDialog(order)}>
+                                                                                        Record payment
                                                                                     </Button>
                                                                                 ) : null}
                                                                             </Stack>
@@ -1450,7 +1561,7 @@ export function TreasuryPage() {
                                                                 </TableRow>
                                                             )) : (
                                                                 <TableRow>
-                                                                    <TableCell colSpan={canReviewExecute ? 7 : 6}>
+                                                                    <TableCell colSpan={canManageOrders ? 7 : 6}>
                                                                         <Typography variant="body2" color="text.secondary">
                                                                             No treasury orders yet.
                                                                         </Typography>
@@ -1745,6 +1856,64 @@ export function TreasuryPage() {
                 )}
             </Stack>
 
+            <Dialog open={assetsListOpen} onClose={() => setAssetsListOpen(false)} fullWidth maxWidth="md">
+                <DialogTitle sx={{ pr: 6 }}>
+                    Treasury assets ({assets.length})
+                    <IconButton aria-label="Close" onClick={() => setAssetsListOpen(false)} sx={{ position: "absolute", right: 8, top: 8 }}>
+                        <CloseRoundedIcon />
+                    </IconButton>
+                </DialogTitle>
+                <DialogContent dividers>
+                    {assets.length ? (
+                        <Table size="small">
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell sx={{ fontWeight: 700 }}>Name</TableCell>
+                                    <TableCell sx={{ fontWeight: 700 }}>Type</TableCell>
+                                    <TableCell sx={{ fontWeight: 700 }}>Symbol</TableCell>
+                                    <TableCell sx={{ fontWeight: 700 }}>Market</TableCell>
+                                    <TableCell sx={{ fontWeight: 700 }}>Currency</TableCell>
+                                    <TableCell sx={{ fontWeight: 700 }} align="center">Status</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {assets.map((asset) => (
+                                    <TableRow key={asset.id} hover>
+                                        <TableCell sx={{ fontWeight: 600 }}>{asset.asset_name}</TableCell>
+                                        <TableCell>{asset.asset_type}</TableCell>
+                                        <TableCell>{asset.symbol || "—"}</TableCell>
+                                        <TableCell>{asset.market || "—"}</TableCell>
+                                        <TableCell>{asset.currency}</TableCell>
+                                        <TableCell align="center">
+                                            <Chip
+                                                size="small"
+                                                label={asset.status}
+                                                color={asset.status === "active" ? "success" : "default"}
+                                                variant="outlined"
+                                            />
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    ) : (
+                        <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
+                            No assets yet. Use "Add asset" to register an investment (e.g. NMB Shares, UTT, a bond).
+                        </Typography>
+                    )}
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setAssetsListOpen(false)}>Close</Button>
+                    <Button
+                        variant="contained"
+                        startIcon={<AddRoundedIcon />}
+                        onClick={() => { setAssetsListOpen(false); setAssetDialogOpen(true); }}
+                    >
+                        Add asset
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
             <Dialog open={assetDialogOpen} onClose={() => !busy && setAssetDialogOpen(false)} fullWidth maxWidth="sm">
                 <DialogTitle>Add treasury asset</DialogTitle>
                 <DialogContent dividers>
@@ -1791,6 +1960,15 @@ export function TreasuryPage() {
                         </TextField>
                         <TextField label="Units" value={orderForm.units} onChange={(event) => setOrderForm((current) => ({ ...current, units: event.target.value }))} fullWidth />
                         <TextField label="Unit price (TSh)" value={orderForm.unit_price} onChange={(event) => setOrderForm((current) => ({ ...current, unit_price: event.target.value }))} fullWidth />
+                        {orderForm.order_type === "buy" ? (
+                            <>
+                                <TextField label="Broker (optional)" placeholder="e.g. KADOO SECURITIES CO. LTD" value={orderForm.broker} onChange={(event) => setOrderForm((current) => ({ ...current, broker: event.target.value }))} fullWidth />
+                                <TextField label="CDS account (optional)" value={orderForm.cds_account} onChange={(event) => setOrderForm((current) => ({ ...current, cds_account: event.target.value }))} fullWidth />
+                                <TextField label="Invoice / quote ref (optional)" placeholder="e.g. QT-KHO-B00821" value={orderForm.invoice_ref} onChange={(event) => setOrderForm((current) => ({ ...current, invoice_ref: event.target.value }))} fullWidth />
+                                <TextField label="Total fees / charges (TSh, optional)" value={orderForm.total_fees} onChange={(event) => setOrderForm((current) => ({ ...current, total_fees: event.target.value }))} fullWidth helperText="Broker + DSE + CMSA + CDS + fidelity fees." />
+                                <TextField label="Amount paid so far (TSh, optional)" value={orderForm.amount_paid} onChange={(event) => setOrderForm((current) => ({ ...current, amount_paid: event.target.value }))} fullWidth helperText="For prefunded / partial payments. Leave blank if not yet paid." />
+                            </>
+                        ) : null}
                         <TextField
                             label="Notes"
                             value={orderForm.notes}
@@ -1952,6 +2130,68 @@ export function TreasuryPage() {
                     <Button onClick={() => setReviewDialogOpen(false)} disabled={busy}>Cancel</Button>
                     <Button onClick={() => void handleReviewOrder()} variant="contained" color={reviewDecision === "rejected" ? "error" : "primary"} disabled={busy}>
                         {reviewDecision === "approved" ? "Continue" : "Reject order"}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            <Dialog open={paymentDialogOpen} onClose={() => !busy && setPaymentDialogOpen(false)} fullWidth maxWidth="sm">
+                <DialogTitle>Record payment</DialogTitle>
+                <DialogContent dividers>
+                    <Stack spacing={2}>
+                        {paymentOrder ? (() => {
+                            const total = Number(paymentOrder.total_amount || 0);
+                            const paid = Number(paymentOrder.amount_paid || 0);
+                            const outstanding = Math.max(total - paid, 0);
+                            return (
+                                <Stack spacing={0.5}>
+                                    <Typography variant="body2" fontWeight={700}>
+                                        {assetLabel(paymentOrder.treasury_assets)} • {paymentOrder.reference}
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary">
+                                        Total {formatCurrency(total)} • Paid {formatCurrency(paid)}
+                                    </Typography>
+                                    <Typography variant="caption" color="warning.main">
+                                        Outstanding {formatCurrency(outstanding)}
+                                    </Typography>
+                                </Stack>
+                            );
+                        })() : null}
+                        <TextField
+                            label="Payment amount (TZS)"
+                            type="number"
+                            value={paymentForm.amount}
+                            onChange={(event) => setPaymentForm((prev) => ({ ...prev, amount: event.target.value }))}
+                            fullWidth
+                            inputProps={{ min: 0, step: "0.01" }}
+                        />
+                        <TextField
+                            label="Payment date"
+                            type="date"
+                            value={paymentForm.payment_date}
+                            onChange={(event) => setPaymentForm((prev) => ({ ...prev, payment_date: event.target.value }))}
+                            fullWidth
+                            InputLabelProps={{ shrink: true }}
+                        />
+                        <TextField
+                            label="Reference (e.g. TISS / receipt no.)"
+                            value={paymentForm.reference}
+                            onChange={(event) => setPaymentForm((prev) => ({ ...prev, reference: event.target.value }))}
+                            fullWidth
+                        />
+                        <TextField
+                            label="Notes"
+                            value={paymentForm.notes}
+                            onChange={(event) => setPaymentForm((prev) => ({ ...prev, notes: event.target.value }))}
+                            multiline
+                            minRows={2}
+                            fullWidth
+                        />
+                    </Stack>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setPaymentDialogOpen(false)} disabled={busy}>Cancel</Button>
+                    <Button onClick={() => void handleRecordPayment()} variant="contained" disabled={busy}>
+                        Record payment
                     </Button>
                 </DialogActions>
             </Dialog>

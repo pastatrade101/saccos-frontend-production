@@ -151,7 +151,7 @@ import {
 } from "../lib/endpoints";
 import { brandColors, crestGold, darkThemeColors, displayFontFamily, inkPanel } from "../theme/colors";
 import { useUI } from "../ui/UIProvider";
-import type { Loan, LoanApplication, LoanCapacitySummary, LoanProduct, LoanSchedule, LoanTransaction, Member, MemberAccount, MemberApplication, MemberApplicationStatus, MemberPortalPaymentControls, PaymentOrder, SaccoFinancialYearSettings, SaccoMilestoneBoard, SaccoOverview, SaccoPerformanceTargetSettings, StatementRow } from "../types/api";
+import type { Loan, LoanApplication, LoanCapacitySummary, LoanProduct, LoanSchedule, LoanTransaction, Member, MemberAccount, MemberApplication, MemberApplicationStatus, MemberPortalPaymentControls, PaymentOrder, SaccoFinancialYearSettings, SaccoMilestoneBoard, SaccoInvestments, SaccoOverview, SaccoPerformanceTargetSettings, StatementRow } from "../types/api";
 import { downloadLoanStatementPdf, downloadMemberStatementPdf, loadReportLogoDataUrl } from "../utils/memberStatementPdf";
 import { memberApplicationStatusLabels } from "../utils/member-application-status";
 import {
@@ -1240,6 +1240,7 @@ export function MemberPortalPage() {
     const [saccoOverview, setSaccoOverview] = useState<SaccoOverview | null>(null);
     const [saccoOverviewLoading, setSaccoOverviewLoading] = useState(false);
     const [milestoneBoard, setMilestoneBoard] = useState<SaccoMilestoneBoard | null>(null);
+    const [saccoInvestments, setSaccoInvestments] = useState<SaccoInvestments | null>(null);
 
     interface MyReportsData {
         position: { rank: number | null; total_ranked_members: number; contributions: number; dividends: number; cumulative: number };
@@ -1366,6 +1367,30 @@ export function MemberPortalPage() {
             active = false;
         };
     }, [overviewMode, milestoneBoard]);
+
+    // SACCO investment holdings (e.g. NMB shares) — so members see where the
+    // cooperative's money is invested.
+    useEffect(() => {
+        if (overviewMode !== "sacco" || saccoInvestments) {
+            return;
+        }
+        let active = true;
+        api
+            .get<{ data: SaccoInvestments }>(endpoints.members.saccoInvestments())
+            .then((res) => {
+                if (active) {
+                    setSaccoInvestments(res.data?.data ?? null);
+                }
+            })
+            .catch(() => {
+                if (active) {
+                    setSaccoInvestments(null);
+                }
+            });
+        return () => {
+            active = false;
+        };
+    }, [overviewMode, saccoInvestments]);
     const [runFeatureTour, setRunFeatureTour] = useState(false);
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -5933,6 +5958,60 @@ export function MemberPortalPage() {
                         SACCOS overview is unavailable right now.
                     </Typography>
                 )}
+
+                {saccoInvestments && saccoInvestments.investments.length ? (
+                    <Box sx={{ mt: 3 }}>
+                        <Typography variant="h6" sx={{ fontWeight: 700 }}>Our Investments</Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                            Where the cooperative has invested. Total {tzs(saccoInvestments.total_value)}
+                            {saccoInvestments.total_paid < saccoInvestments.total_value ? ` · ${tzs(saccoInvestments.total_paid)} paid so far` : ""}.
+                        </Typography>
+                        <Grid container spacing={2}>
+                            {saccoInvestments.investments.map((inv) => (
+                                <Grid key={inv.id} size={{ xs: 12, md: 6 }}>
+                                    <Card variant="outlined" sx={{ height: "100%" }}>
+                                        <CardContent>
+                                            <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1} flexWrap="wrap" useFlexGap>
+                                                <Box sx={{ minWidth: 0 }}>
+                                                    <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+                                                        {inv.asset_name}{inv.symbol ? ` (${inv.symbol})` : ""}
+                                                    </Typography>
+                                                    <Typography variant="caption" color="text.secondary">
+                                                        {inv.units.toLocaleString()} {inv.units === 1 ? "unit" : "units"} @ {tzs(inv.unit_price)}
+                                                        {inv.market ? ` · ${inv.market}` : ""}
+                                                    </Typography>
+                                                </Box>
+                                                <Chip
+                                                    size="small"
+                                                    label={inv.completed ? "Completed" : inv.fully_paid ? "Fully paid" : "In progress"}
+                                                    color={inv.completed || inv.fully_paid ? "success" : "warning"}
+                                                    variant="outlined"
+                                                />
+                                            </Stack>
+                                            <Typography variant="h6" sx={{ fontWeight: 800, mt: 1 }}>{tzs(inv.total_amount)}</Typography>
+                                            {inv.outstanding > 0 ? (
+                                                <>
+                                                    <LinearProgress
+                                                        variant="determinate"
+                                                        value={Math.min((inv.amount_paid / Math.max(inv.total_amount, 1)) * 100, 100)}
+                                                        sx={{ my: 1, height: 8, borderRadius: 999 }}
+                                                    />
+                                                    <Typography variant="body2" color="text.secondary">
+                                                        {tzs(inv.amount_paid)} paid · {tzs(inv.outstanding)} remaining
+                                                    </Typography>
+                                                </>
+                                            ) : (
+                                                <Typography variant="body2" color="success.main" sx={{ mt: 0.5, fontWeight: 600 }}>
+                                                    Fully paid
+                                                </Typography>
+                                            )}
+                                        </CardContent>
+                                    </Card>
+                                </Grid>
+                            ))}
+                        </Grid>
+                    </Box>
+                ) : null}
 
                 {milestoneBoard && milestoneBoard.milestones.length ? (
                     <Box sx={{ mt: 3 }}>

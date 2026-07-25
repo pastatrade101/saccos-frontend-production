@@ -87,6 +87,7 @@ const schema = z.object({
         .regex(/^(?:\+?255|0)\d{9}$/, "Enter a valid phone (e.g. 0712345678 or +255712345678)."),
     email: z.string().email("Enter a valid email.").optional().or(z.literal("")),
     national_id: z.string().min(5, "National ID is required."),
+    member_no: z.string().trim().max(50, "Member number is too long.").optional().or(z.literal("")),
     branch_id: z.string().uuid("Select a branch.").optional(),
     savings_product_id: z.string().uuid("Select a savings product."),
     share_product_id: z.string().uuid("Select a share product."),
@@ -145,6 +146,7 @@ const updateSchema = z.object({
     phone: z.string().min(7, "Phone is required."),
     email: z.string().email("Enter a valid email.").optional().or(z.literal("")),
     national_id: z.string().min(5, "National ID is required."),
+    member_no: z.string().trim().max(50, "Member number is too long.").optional().or(z.literal("")),
     branch_id: z.string().uuid("Select a branch."),
     status: z.enum(["active", "suspended", "exited", "approved_pending_payment"]).default("active"),
     membership_started_on: z.string().trim().optional().or(z.literal("")),
@@ -489,6 +491,7 @@ export function MembersPage() {
             phone: "",
             email: "",
             national_id: "",
+            member_no: "",
         branch_id: selectedBranchId || undefined,
             savings_product_id: "",
             share_product_id: "",
@@ -872,6 +875,7 @@ export function MembersPage() {
             phone: selectedMember?.phone || "",
             email: selectedMember?.email || "",
             national_id: selectedMember?.national_id || "",
+            member_no: selectedMember?.member_no || "",
             branch_id: selectedMember?.branch_id || selectedBranchId || branches[0]?.id || "",
             status: selectedMember?.status || "active",
             membership_started_on: selectedMember?.membership_started_on || "",
@@ -997,6 +1001,7 @@ export function MembersPage() {
                 phone: values.phone,
                 email: values.email || null,
                 national_id: values.national_id,
+                member_no: values.member_no?.trim() ? values.member_no.trim() : null,
                 status: values.status,
                 login: values.create_login
                     ? {
@@ -1037,6 +1042,7 @@ export function MembersPage() {
                 phone: "",
                 email: "",
                 national_id: "",
+                member_no: "",
                 branch_id: values.branch_id,
                 savings_product_id: activeSavingsProducts[0]?.id || "",
                 share_product_id: activeShareProducts[0]?.id || "",
@@ -1261,6 +1267,7 @@ export function MembersPage() {
                 phone: values.phone,
                 email: values.email || null,
                 national_id: values.national_id,
+                member_no: values.member_no?.trim() ? values.member_no.trim() : null,
                 branch_id: values.branch_id,
                 status: values.status,
                 membership_started_on: values.membership_started_on ? values.membership_started_on : null,
@@ -2562,6 +2569,15 @@ export function MembersPage() {
                                                         </Grid>
                                                         <Grid size={{ xs: 12, md: 6 }}>
                                                             <TextField
+                                                                label="Member No."
+                                                                fullWidth
+                                                                {...updateForm.register("member_no")}
+                                                                error={Boolean(updateForm.formState.errors.member_no)}
+                                                                helperText={updateForm.formState.errors.member_no?.message || "e.g. ILS24-F00123"}
+                                                            />
+                                                        </Grid>
+                                                        <Grid size={{ xs: 12, md: 6 }}>
+                                                            <TextField
                                                                 select
                                                                 label="Branch"
                                                                 fullWidth
@@ -3158,6 +3174,16 @@ export function MembersPage() {
                                         {...form.register("national_id")}
                                         error={Boolean(form.formState.errors.national_id)}
                                         helperText={form.formState.errors.national_id?.message}
+                                    />
+                                </Grid>
+                                <Grid size={{ xs: 12, md: 6 }}>
+                                    <TextField
+                                        label="Member No. (optional)"
+                                        placeholder="ILS24-F00123"
+                                        fullWidth
+                                        {...form.register("member_no")}
+                                        error={Boolean(form.formState.errors.member_no)}
+                                        helperText={form.formState.errors.member_no?.message || "Optional — set the SACCO member number."}
                                     />
                                 </Grid>
                             </Grid>

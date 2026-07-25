@@ -118,11 +118,25 @@ const createCycleSchema = z.object({
 
 type CreateCycleFormValues = z.infer<typeof createCycleSchema>;
 
+// Dividend sources are no longer limited to UTT/loan/other — a SACCO invests in
+// NMB shares, CRDB shares, bonds, fixed deposits, etc. and distributes that
+// income too. These are the curated picks; the backend accepts any label.
+const DIVIDEND_SOURCE_OPTIONS = [
+    { value: "utt", label: "UTT dividend" },
+    { value: "loan", label: "Loan interest" },
+    { value: "nmb", label: "NMB shares" },
+    { value: "crdb", label: "CRDB shares" },
+    { value: "shares", label: "Other shares" },
+    { value: "bond", label: "Bonds" },
+    { value: "fixed_deposit", label: "Fixed deposit" },
+    { value: "other", label: "Other" }
+] as const;
+
 const manualDividendRowSchema = z.object({
     member_id: z.string().uuid(),
     dividend_date: z.string().min(1),
     dividend_label: z.string().min(2),
-    source_type: z.enum(["utt", "loan", "other"]).default("utt"),
+    source_type: z.string().min(1).default("utt"),
     amount: z.coerce.number().positive(),
     reference: z.string().optional().or(z.literal("")),
     destination_account_type: z.enum(["savings", "shares"]).default("savings"),
@@ -1475,11 +1489,11 @@ export function DividendsPage() {
                                                             size="small"
                                                             fullWidth
                                                             value={component.source_type || "utt"}
-                                                            onChange={(event) => updateFormulaComponent(index, { source_type: event.target.value as FormulaDividendDraft["components"][number]["source_type"] })}
+                                                            onChange={(event) => updateFormulaComponent(index, { source_type: event.target.value })}
                                                         >
-                                                            <MenuItem value="utt">UTT dividend</MenuItem>
-                                                            <MenuItem value="loan">Loan dividend</MenuItem>
-                                                            <MenuItem value="other">Other dividend</MenuItem>
+                                                            {DIVIDEND_SOURCE_OPTIONS.map((option) => (
+                                                                <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                                                            ))}
                                                         </TextField>
                                                     </Grid>
                                                     <Grid size={{ xs: 12, sm: 6 }}>
@@ -1614,11 +1628,11 @@ export function DividendsPage() {
                                                             label="Source"
                                                             fullWidth
                                                             value={manualForm.watch(`rows.${index}.source_type`) || "utt"}
-                                                            onChange={(event) => manualForm.setValue(`rows.${index}.source_type`, event.target.value as "utt" | "loan" | "other", { shouldValidate: true })}
+                                                            onChange={(event) => manualForm.setValue(`rows.${index}.source_type`, event.target.value, { shouldValidate: true })}
                                                         >
-                                                            <MenuItem value="utt">UTT</MenuItem>
-                                                            <MenuItem value="loan">Loan Dividend</MenuItem>
-                                                            <MenuItem value="other">Other</MenuItem>
+                                                            {DIVIDEND_SOURCE_OPTIONS.map((option) => (
+                                                                <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                                                            ))}
                                                         </TextField>
                                                     </Grid>
                                                     <Grid size={{ xs: 12, md: 3 }}>

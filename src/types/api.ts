@@ -365,6 +365,13 @@ export interface TreasuryOrder {
     rejected_at?: string | null;
     rejection_reason?: string | null;
     notes?: string | null;
+    // Broker purchase / instalment details (e.g. NMB shares bought via KADOO).
+    amount_paid?: number | null;
+    total_fees?: number | null;
+    broker?: string | null;
+    cds_account?: string | null;
+    invoice_ref?: string | null;
+    fee_breakdown?: Record<string, unknown> | null;
     created_at: string;
     updated_at: string;
     treasury_assets?: TreasuryAsset;
@@ -890,6 +897,28 @@ export interface SaccoMilestoneBoard {
     current_milestone: SaccoMilestone | null;
     overall_progress_percent: number;
     milestones: SaccoMilestone[];
+}
+
+export interface SaccoInvestmentHolding {
+    id: string;
+    asset_name: string;
+    symbol: string | null;
+    market: string | null;
+    units: number;
+    unit_price: number;
+    total_amount: number;
+    amount_paid: number;
+    outstanding: number;
+    fully_paid: boolean;
+    order_date: string | null;
+    completed: boolean;
+}
+
+export interface SaccoInvestments {
+    count: number;
+    total_value: number;
+    total_paid: number;
+    investments: SaccoInvestmentHolding[];
 }
 
 export interface SaccoMonthlyContribution {
