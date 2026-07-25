@@ -117,7 +117,7 @@ function csvEscape(value: unknown): string {
 function downloadCsv(filename: string, accounts: LoginAccount[]) {
     const headers = [
         "Name", "Role", "Type", "Branch", "Member No", "Status", "Risk", "Risk Reasons",
-        "Days Since Last Login", "First Login", "Last Login", "Created", "Active"
+        "Days Since Last Login", "Onboarded", "Last Login", "Created", "Active"
     ];
     const lines = [headers.join(",")];
     for (const a of accounts) {
@@ -351,7 +351,9 @@ export function AuditorLoginHistoryPage() {
                                     <TableSortLabel active={sortKey === "created"} direction={sortKey === "created" ? sortDir : "asc"} onClick={() => setSort("created")}>Created</TableSortLabel>
                                 </TableCell>
                                 <TableCell sortDirection={sortKey === "first_login" ? sortDir : false}>
-                                    <TableSortLabel active={sortKey === "first_login"} direction={sortKey === "first_login" ? sortDir : "asc"} onClick={() => setSort("first_login")}>First login</TableSortLabel>
+                                    <Tooltip title="When the account completed initial onboarding (first password set, or first observed sign-in). A dash does not mean the account never logged in — check Last login.">
+                                        <TableSortLabel active={sortKey === "first_login"} direction={sortKey === "first_login" ? sortDir : "asc"} onClick={() => setSort("first_login")}>Onboarded</TableSortLabel>
+                                    </Tooltip>
                                 </TableCell>
                                 <TableCell sortDirection={sortKey === "last_login" ? sortDir : false}>
                                     <TableSortLabel active={sortKey === "last_login"} direction={sortKey === "last_login" ? sortDir : "asc"} onClick={() => setSort("last_login")}>Last login</TableSortLabel>
@@ -443,7 +445,7 @@ export function AuditorLoginHistoryPage() {
                                 {detail.member_no && <Row label="Member No." value={detail.member_no} />}
                                 <Row label="Active" value={detail.is_active ? "Active" : "Disabled"} />
                                 <Row label="Created" value={formatDate(detail.created_at)} />
-                                <Row label="First login" value={detail.first_login_at ? formatDate(detail.first_login_at) : "—"} />
+                                <Row label="Onboarded" value={detail.first_login_at ? formatDate(detail.first_login_at) : "—"} />
                                 <Row label="Last login" value={detail.last_login_at ? `${formatDate(detail.last_login_at)} (${ageLabel(detail.days_since_last_login, detail.never_logged_in)})` : "never"} />
                                 <Row label="Status" value={`${STATUS_META[detail.status].dot} ${STATUS_META[detail.status].label}`} />
                                 <Row label="Risk" value={RISK_META[detail.risk_level].label} />
