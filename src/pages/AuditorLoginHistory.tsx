@@ -210,7 +210,7 @@ export function AuditorLoginHistoryPage() {
         const dir = sortDir === "asc" ? 1 : -1;
         const val = (a: LoginAccount): number | string => {
             switch (sortKey) {
-                case "name": return a.full_name.toLowerCase();
+                case "name": return (a.member_no || a.full_name).toLowerCase();
                 case "first_login": return a.first_login_at ? new Date(a.first_login_at).getTime() : -Infinity;
                 case "last_login": return a.last_login_at ? new Date(a.last_login_at).getTime() : -Infinity;
                 case "risk": return RISK_ORDER[a.risk_level];
@@ -346,7 +346,6 @@ export function AuditorLoginHistoryPage() {
                                 <TableCell sortDirection={sortKey === "name" ? sortDir : false}>
                                     <TableSortLabel active={sortKey === "name"} direction={sortKey === "name" ? sortDir : "asc"} onClick={() => setSort("name")}>Account</TableSortLabel>
                                 </TableCell>
-                                <TableCell>Type / Branch</TableCell>
                                 <TableCell sortDirection={sortKey === "created" ? sortDir : false}>
                                     <TableSortLabel active={sortKey === "created"} direction={sortKey === "created" ? sortDir : "asc"} onClick={() => setSort("created")}>Created</TableSortLabel>
                                 </TableCell>
@@ -362,21 +361,17 @@ export function AuditorLoginHistoryPage() {
                         </TableHead>
                         <TableBody>
                             {pageRows.length === 0 ? (
-                                <TableRow><TableCell colSpan={7}><Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>No accounts match the current filters.</Typography></TableCell></TableRow>
+                                <TableRow><TableCell colSpan={6}><Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>No accounts match the current filters.</Typography></TableCell></TableRow>
                             ) : pageRows.map((a) => (
                                 <TableRow key={a.user_id} hover sx={a.privileged ? { bgcolor: "rgba(29,78,216,0.04)" } : undefined}>
                                     <TableCell>
                                         <Stack spacing={0.25}>
                                             <Stack direction="row" spacing={0.75} alignItems="center">
-                                                <Typography variant="body2" fontWeight={a.privileged ? 800 : 600}>{a.full_name}</Typography>
+                                                <Typography variant="body2" fontWeight={a.privileged ? 800 : 600}>{a.member_no || a.full_name}</Typography>
                                                 {!a.is_active && <Chip size="small" label="Disabled" color="default" variant="outlined" />}
                                             </Stack>
                                             <Chip size="small" label={formatRole(a.role)} variant={a.privileged ? "filled" : "outlined"} color={a.privileged ? "secondary" : "default"} sx={{ width: "fit-content", height: 20 }} />
                                         </Stack>
-                                    </TableCell>
-                                    <TableCell>
-                                        <Typography variant="body2">{a.account_type === "member" ? "Member" : "Staff"}</Typography>
-                                        <Typography variant="caption" color="text.secondary">{a.branch_name || (a.member_no ? a.member_no : "—")}</Typography>
                                     </TableCell>
                                     <TableCell><Typography variant="body2">{formatDate(a.created_at)}</Typography></TableCell>
                                     <TableCell>
