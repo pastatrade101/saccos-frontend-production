@@ -439,7 +439,6 @@ export function AuditorLoginHistoryPage() {
                                 {detail.member_no && <Row label="Member No." value={detail.member_no} />}
                                 <Row label="Active" value={detail.is_active ? "Active" : "Disabled"} />
                                 <Row label="Created" value={formatDate(detail.created_at)} />
-                                <Row label="Onboarded" value={detail.first_login_at ? formatDate(detail.first_login_at) : "—"} />
                                 <Row label="Last login" value={detail.last_login_at ? `${formatDate(detail.last_login_at)} (${ageLabel(detail.days_since_last_login, detail.never_logged_in)})` : "never"} />
                                 <Row label="Status" value={`${STATUS_META[detail.status].dot} ${STATUS_META[detail.status].label}`} />
                                 <Row label="Risk" value={RISK_META[detail.risk_level].label} />
