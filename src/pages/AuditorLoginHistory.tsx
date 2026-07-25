@@ -350,11 +350,6 @@ export function AuditorLoginHistoryPage() {
                                 <TableCell sortDirection={sortKey === "created" ? sortDir : false}>
                                     <TableSortLabel active={sortKey === "created"} direction={sortKey === "created" ? sortDir : "asc"} onClick={() => setSort("created")}>Created</TableSortLabel>
                                 </TableCell>
-                                <TableCell sortDirection={sortKey === "first_login" ? sortDir : false}>
-                                    <Tooltip title="When the account completed initial onboarding (first password set, or first observed sign-in). A dash does not mean the account never logged in — check Last login.">
-                                        <TableSortLabel active={sortKey === "first_login"} direction={sortKey === "first_login" ? sortDir : "asc"} onClick={() => setSort("first_login")}>Onboarded</TableSortLabel>
-                                    </Tooltip>
-                                </TableCell>
                                 <TableCell sortDirection={sortKey === "last_login" ? sortDir : false}>
                                     <TableSortLabel active={sortKey === "last_login"} direction={sortKey === "last_login" ? sortDir : "asc"} onClick={() => setSort("last_login")}>Last login</TableSortLabel>
                                 </TableCell>
@@ -367,7 +362,7 @@ export function AuditorLoginHistoryPage() {
                         </TableHead>
                         <TableBody>
                             {pageRows.length === 0 ? (
-                                <TableRow><TableCell colSpan={8}><Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>No accounts match the current filters.</Typography></TableCell></TableRow>
+                                <TableRow><TableCell colSpan={7}><Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>No accounts match the current filters.</Typography></TableCell></TableRow>
                             ) : pageRows.map((a) => (
                                 <TableRow key={a.user_id} hover sx={a.privileged ? { bgcolor: "rgba(29,78,216,0.04)" } : undefined}>
                                     <TableCell>
@@ -384,7 +379,6 @@ export function AuditorLoginHistoryPage() {
                                         <Typography variant="caption" color="text.secondary">{a.branch_name || (a.member_no ? a.member_no : "—")}</Typography>
                                     </TableCell>
                                     <TableCell><Typography variant="body2">{formatDate(a.created_at)}</Typography></TableCell>
-                                    <TableCell><Typography variant="body2">{a.first_login_at ? formatDate(a.first_login_at) : "—"}</Typography></TableCell>
                                     <TableCell>
                                         <Typography variant="body2">{a.last_login_at ? formatDate(a.last_login_at) : "—"}</Typography>
                                         <Typography variant="caption" sx={{ color: a.never_logged_in ? "#6b7280" : (a.days_since_last_login || 0) > 90 ? "#b45309" : "text.secondary" }}>
