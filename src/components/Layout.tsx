@@ -13,6 +13,7 @@ import MonitorHeartRoundedIcon from "@mui/icons-material/MonitorHeartRounded";
 import PaidRoundedIcon from "@mui/icons-material/PaidRounded";
 import PeopleAltRoundedIcon from "@mui/icons-material/PeopleAltRounded";
 import PolicyRoundedIcon from "@mui/icons-material/PolicyRounded";
+import HistoryRoundedIcon from "@mui/icons-material/HistoryRounded";
 import SavingsRoundedIcon from "@mui/icons-material/SavingsRounded";
 import StorefrontRoundedIcon from "@mui/icons-material/StorefrontRounded";
 import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
@@ -104,6 +105,7 @@ const navItems: NavItem[] = [
     { to: "/auditor/exceptions", label: "Exceptions", roles: ["auditor"], section: "workspace", icon: WarningAmberRoundedIcon },
     { to: "/auditor/journals", label: "Journals", roles: ["auditor"], section: "workspace", icon: RuleFolderRoundedIcon },
     { to: "/auditor/audit-logs", label: "Audit Logs", roles: ["auditor"], section: "workspace", icon: PolicyRoundedIcon },
+    { to: "/auditor/login-history", label: "Login History", roles: ["auditor"], section: "workspace", icon: HistoryRoundedIcon },
     { to: "/savings", label: "Savings", roles: ["branch_manager"], section: "finance", icon: SavingsRoundedIcon },
     { to: "/payments", label: "Payments", roles: ["super_admin", "branch_manager"], section: "finance", icon: PaidRoundedIcon },
     { to: "/revenue", label: "Gross Revenue", roles: ["branch_manager"], section: "finance", icon: PaidRoundedIcon },
@@ -135,7 +137,7 @@ const navGroups: NavGroup[] = [
     { key: "products", label: "Products", itemTos: ["/products"] },
     { key: "finance", label: "Finance", itemTos: ["/savings", "/loans", "/payments", "/revenue", "/dividends", "/cash-control", "/cash", "/cash/transactions", "/treasury", "/treasury/policy-settings"] },
     { key: "operations", label: "Operations", itemTos: ["/approvals"] },
-    { key: "analytics", label: "Analytics", itemTos: ["/performance-targets", "/leagues", "/milestones", "/reports", "/auditor/reports", "/auditor/workbench", "/auditor/exceptions", "/auditor/journals", "/auditor/audit-logs"] },
+    { key: "analytics", label: "Analytics", itemTos: ["/performance-targets", "/leagues", "/milestones", "/reports", "/auditor/reports", "/auditor/workbench", "/auditor/exceptions", "/auditor/journals", "/auditor/audit-logs", "/auditor/login-history"] },
     { key: "setup", label: "Setup", itemTos: ["/setup/super-admin", "/settings/sacco-year"] }
 ];
 
@@ -155,6 +157,7 @@ const searchKeywords: Partial<Record<NavItem["to"], string[]>> = {
     "/auditor/workbench": ["audit workbench", "branch risk", "patterns", "heatmap"],
     "/auditor/journals": ["audit", "journals", "ledger", "entries"],
     "/auditor/audit-logs": ["audit logs", "trail", "changes"],
+    "/auditor/login-history": ["login history", "logins", "last login", "access", "dormant accounts", "never logged in"],
     "/auditor/reports": ["audit reports", "exports", "compliance"],
     "/savings": ["savings", "deposits", "withdrawals", "balances"],
     "/payments": ["member payments", "mobile money", "payment gateway", "teller", "cash desk", "failed payments", "receipts", "reconcile"],
@@ -224,6 +227,10 @@ function getPageSubtitle(pathname: string) {
 
     if (pathname.startsWith("/auditor/journals")) {
         return "Inspect read-only journals, lines, and exception flags.";
+    }
+
+    if (pathname.startsWith("/auditor/login-history")) {
+        return "Review first and last login per account to spot dormant or never-accessed logins.";
     }
 
     if (pathname.startsWith("/auditor/audit-logs")) {

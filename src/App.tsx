@@ -22,6 +22,7 @@ const AuditorWorkbenchPage = lazy(() => import("./pages/AuditorWorkbench").then(
 const AuditorExceptionsPage = lazy(() => import("./pages/AuditorExceptions").then((m) => ({ default: m.AuditorExceptionsPage })));
 const AuditorJournalsPage = lazy(() => import("./pages/AuditorJournals").then((m) => ({ default: m.AuditorJournalsPage })));
 const AuditorAuditLogsPage = lazy(() => import("./pages/AuditorAuditLogs").then((m) => ({ default: m.AuditorAuditLogsPage })));
+const AuditorLoginHistoryPage = lazy(() => import("./pages/AuditorLoginHistory").then((m) => ({ default: m.AuditorLoginHistoryPage })));
 const AuditorReportsPage = lazy(() => import("./pages/AuditorReports").then((m) => ({ default: m.AuditorReportsPage })));
 const AccessDeniedPage = lazy(() => import("./pages/AccessDenied").then((m) => ({ default: m.AccessDeniedPage })));
 const StaffUsersPage = lazy(() => import("./pages/StaffUsers").then((m) => ({ default: m.StaffUsersPage })));
@@ -244,6 +245,7 @@ export default function App() {
                             <Route path="/auditor/journals" element={<AuditorJournalsPage />} />
                             <Route path="/auditor/journals/:id" element={<AuditorJournalsPage />} />
                             <Route path="/auditor/audit-logs" element={<AuditorAuditLogsPage />} />
+                            <Route path="/auditor/login-history" element={<AuditorLoginHistoryPage />} />
                             <Route path="/auditor/reports" element={<AuditorReportsPage />} />
                         </Route>
                         <Route
