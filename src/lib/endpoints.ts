@@ -1899,12 +1899,15 @@ export interface LoanDisburseRequest {
     description?: string | null;
 }
 
+export type LoanRepaymentAllocation = "auto" | "interest_only" | "principal_only";
+
 export interface LoanRepaymentRequest {
     tenant_id?: string;
     loan_id: string;
     amount: number;
     reference?: string | null;
     description?: string | null;
+    allocation?: LoanRepaymentAllocation;
     receipt_ids?: string[];
 }
 

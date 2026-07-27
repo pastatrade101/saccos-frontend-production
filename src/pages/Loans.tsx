@@ -28,6 +28,8 @@ import {
     Tab,
     Tabs,
     TextField,
+    ToggleButton,
+    ToggleButtonGroup,
     Typography
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
@@ -119,6 +121,7 @@ const disburseSchema = z.object({
 const repaySchema = z.object({
     loan_id: z.string().uuid("Select a loan."),
     amount: z.coerce.number().positive("Repayment amount is required."),
+    allocation: z.enum(["auto", "interest_only", "principal_only"]).default("auto"),
     reference: z.string().max(80).optional().or(z.literal("")),
     description: z.string().max(255).optional().or(z.literal(""))
 });
@@ -329,7 +332,12 @@ function getLoanScheduleOutstanding(schedule: LoanSchedule) {
     };
 }
 
-function buildRepaymentInsights(loan: Loan | null, schedules: LoanSchedule[], amount: number) {
+function buildRepaymentInsights(
+    loan: Loan | null,
+    schedules: LoanSchedule[],
+    amount: number,
+    allocation: "auto" | "interest_only" | "principal_only" = "auto"
+) {
     const normalizedAmount = Math.max(Number(amount || 0), 0);
     const orderedSchedules = [...schedules].sort(
         (left, right) =>
@@ -348,16 +356,29 @@ function buildRepaymentInsights(loan: Loan | null, schedules: LoanSchedule[], am
     // prepayment, so its interest total is the stale fixed-annuity figure — using it here
     // would inflate the "settle full" amount and trip "repayment exceeds balance".
     const payableInterest = Number(loan?.accrued_interest || 0);
-    const outstandingBalance = Number(loan?.outstanding_principal || 0) + payableInterest;
+    const outstandingPrincipal = Number(loan?.outstanding_principal || 0);
+    const outstandingBalance = outstandingPrincipal + payableInterest;
     const dueNowAmount = overdueAmount > 0 ? overdueAmount : nextDueAmount;
-    const recommendedAmount = dueNowAmount > 0 ? Math.min(dueNowAmount, outstandingBalance) : outstandingBalance;
-    const interestAllocation = Math.min(normalizedAmount, payableInterest);
-    const principalAllocation = Math.min(Math.max(normalizedAmount - interestAllocation, 0), Number(loan?.outstanding_principal || 0));
-    const excessOverOutstanding = Math.max(normalizedAmount - outstandingBalance, 0);
-    const shortfallAmount = dueNowAmount > 0 ? Math.max(dueNowAmount - normalizedAmount, 0) : 0;
-    const extraAmount = dueNowAmount > 0 ? Math.max(normalizedAmount - dueNowAmount, 0) : 0;
+    // Each allocation mode has its own posting ceiling — the backend rejects anything above it.
+    const modeLimit = allocation === "interest_only"
+        ? payableInterest
+        : allocation === "principal_only"
+            ? outstandingPrincipal
+            : outstandingBalance;
+    const recommendedAmount = allocation === "auto"
+        ? (dueNowAmount > 0 ? Math.min(dueNowAmount, outstandingBalance) : outstandingBalance)
+        : modeLimit;
+    const interestAllocation = allocation === "principal_only" ? 0 : Math.min(normalizedAmount, payableInterest);
+    const principalAllocation = allocation === "interest_only"
+        ? 0
+        : Math.min(Math.max(normalizedAmount - interestAllocation, 0), outstandingPrincipal);
+    const excessOverOutstanding = Math.max(normalizedAmount - modeLimit, 0);
+    const shortfallAmount = allocation === "auto" && dueNowAmount > 0 ? Math.max(dueNowAmount - normalizedAmount, 0) : 0;
+    const extraAmount = allocation === "auto" && dueNowAmount > 0 ? Math.max(normalizedAmount - dueNowAmount, 0) : 0;
 
     return {
+        allocation,
+        modeLimit,
         overdueSchedules,
         nextDueSchedule,
         overdueAmount,
@@ -1249,6 +1270,7 @@ export function LoansPage() {
 
     const selectedRepaymentLoanId = repayForm.watch("loan_id");
     const selectedRepaymentAmount = Number(repayForm.watch("amount") || 0);
+    const selectedRepaymentAllocation = repayForm.watch("allocation") || "auto";
     const selectedRepaymentLoan = useMemo(
         () => loans.find((loan) => loan.id === selectedRepaymentLoanId) || null,
         [loans, selectedRepaymentLoanId]
@@ -1339,21 +1361,27 @@ export function LoansPage() {
         };
     }, [appraisalCapacity]);
     const selectedRepaymentInsights = useMemo(
-        () => buildRepaymentInsights(selectedRepaymentLoan, selectedRepaymentSchedules, selectedRepaymentAmount),
-        [selectedRepaymentAmount, selectedRepaymentLoan, selectedRepaymentSchedules]
+        () => buildRepaymentInsights(selectedRepaymentLoan, selectedRepaymentSchedules, selectedRepaymentAmount, selectedRepaymentAllocation),
+        [selectedRepaymentAllocation, selectedRepaymentAmount, selectedRepaymentLoan, selectedRepaymentSchedules]
     );
+    const selectedAllocationLimitLabel = selectedRepaymentAllocation === "interest_only"
+        ? "accrued interest"
+        : selectedRepaymentAllocation === "principal_only"
+            ? "outstanding principal"
+            : "outstanding balance";
 
     useEffect(() => {
         if (!showRepayModal || !selectedRepaymentLoan) {
             return;
         }
 
-        if (selectedRepaymentInsights.recommendedAmount > 0) {
-            repayForm.setValue(
-                "amount",
-                Number(selectedRepaymentInsights.recommendedAmount.toFixed(2)),
-                { shouldValidate: true }
-            );
+        // Mode-independent prefill (due now, capped at the full balance) so switching the
+        // allocation toggle never overwrites an amount the teller already typed.
+        const prefillAmount = selectedRepaymentInsights.dueNowAmount > 0
+            ? Math.min(selectedRepaymentInsights.dueNowAmount, selectedRepaymentInsights.outstandingBalance)
+            : selectedRepaymentInsights.outstandingBalance;
+        if (prefillAmount > 0) {
+            repayForm.setValue("amount", Number(prefillAmount.toFixed(2)), { shouldValidate: true });
         }
 
         if (!repayForm.getValues("description")) {
@@ -1370,7 +1398,7 @@ export function LoansPage() {
                 { shouldValidate: false }
             );
         }
-    }, [repayForm, selectedRepaymentInsights.recommendedAmount, selectedRepaymentLoan, showRepayModal]);
+    }, [repayForm, selectedRepaymentInsights.dueNowAmount, selectedRepaymentInsights.outstandingBalance, selectedRepaymentLoan, showRepayModal]);
 
     const nextDueByLoan = useMemo(() => {
         const map = new Map<string, string>();
@@ -2044,7 +2072,7 @@ export function LoansPage() {
             pushToast({
                 type: "error",
                 title: "Repayment amount too high",
-                message: `The entered amount exceeds the outstanding balance by ${formatCurrency(selectedRepaymentInsights.excessOverOutstanding)}.`
+                message: `The entered amount exceeds the ${selectedAllocationLimitLabel} by ${formatCurrency(selectedRepaymentInsights.excessOverOutstanding)}.`
             });
             return;
         }
@@ -2136,7 +2164,8 @@ export function LoansPage() {
                     loan_id: pendingMoneyAction.values.loan_id,
                     amount: pendingMoneyAction.values.amount,
                     reference: pendingMoneyAction.values.reference || null,
-                    description: pendingMoneyAction.values.description || null
+                    description: pendingMoneyAction.values.description || null,
+                    allocation: pendingMoneyAction.values.allocation || "auto"
                 };
                 const { data } = await api.post<ApiEnvelope<FinanceResult>>(endpoints.finance.loanRepay(), payload);
                 const repaymentResult = data.data;
@@ -2752,7 +2781,8 @@ export function LoansPage() {
     const pendingRepaymentInsights = buildRepaymentInsights(
         pendingRepaymentLoan,
         pendingRepaymentSchedules,
-        pendingRepaymentAmount
+        pendingRepaymentAmount,
+        pendingMoneyAction?.type === "repay" ? pendingMoneyAction.values.allocation || "auto" : "auto"
     );
     const netOperationalFlow = activitySummary.repaymentVolume - activitySummary.disbursementVolume;
     const topMovementLoan = activitySummary.topLoans[0] || null;
@@ -4451,8 +4481,33 @@ export function LoansPage() {
                 <DialogContent dividers>
                     <Box component="form" id="loan-repay-form" onSubmit={launchRepayment} sx={{ display: "grid", gap: 2, pt: 0.5 }}>
                         <Alert severity="info" variant="outlined">
-                            The entered cash will be allocated to interest first, then principal. Extra cash above the due amount becomes an early principal repayment, while anything above the total outstanding balance is blocked.
+                            {selectedRepaymentAllocation === "interest_only"
+                                ? "The entered cash will be applied to accrued interest only — the principal balance stays unchanged. Anything above the accrued interest is blocked."
+                                : selectedRepaymentAllocation === "principal_only"
+                                    ? "The entered cash will be applied to outstanding principal only — accrued interest stays due. Anything above the outstanding principal is blocked."
+                                    : "The entered cash will be allocated to interest first, then principal. Extra cash above the due amount becomes an early principal repayment, while anything above the total outstanding balance is blocked."}
                         </Alert>
+                        <Box>
+                            <Typography variant="body2" fontWeight={600} sx={{ mb: 0.75 }}>
+                                Pay towards
+                            </Typography>
+                            <ToggleButtonGroup
+                                value={selectedRepaymentAllocation}
+                                exclusive
+                                fullWidth
+                                size="small"
+                                color="primary"
+                                onChange={(_, value) => {
+                                    if (value) {
+                                        repayForm.setValue("allocation", value, { shouldValidate: true });
+                                    }
+                                }}
+                            >
+                                <ToggleButton value="auto">Both (interest first)</ToggleButton>
+                                <ToggleButton value="interest_only">Interest only</ToggleButton>
+                                <ToggleButton value="principal_only">Principal only</ToggleButton>
+                            </ToggleButtonGroup>
+                        </Box>
                         <Box>
                             <Typography variant="body2" fontWeight={600} sx={{ mb: 0.75 }}>
                                 Loan
@@ -4526,17 +4581,21 @@ export function LoansPage() {
                                             size="small"
                                             variant="outlined"
                                             onClick={() => repayForm.setValue("amount", Number(selectedRepaymentInsights.dueNowAmount.toFixed(2)), { shouldValidate: true })}
-                                            disabled={selectedRepaymentInsights.dueNowAmount <= 0}
+                                            disabled={selectedRepaymentInsights.dueNowAmount <= 0 || selectedRepaymentAllocation !== "auto"}
                                         >
                                             Use Due Now
                                         </Button>
                                         <Button
                                             size="small"
                                             variant="outlined"
-                                            onClick={() => repayForm.setValue("amount", Number(selectedRepaymentInsights.outstandingBalance.toFixed(2)), { shouldValidate: true })}
-                                            disabled={selectedRepaymentInsights.outstandingBalance <= 0}
+                                            onClick={() => repayForm.setValue("amount", Number(selectedRepaymentInsights.modeLimit.toFixed(2)), { shouldValidate: true })}
+                                            disabled={selectedRepaymentInsights.modeLimit <= 0}
                                         >
-                                            Clear Loan
+                                            {selectedRepaymentAllocation === "interest_only"
+                                                ? "Pay All Interest"
+                                                : selectedRepaymentAllocation === "principal_only"
+                                                    ? "Clear Principal"
+                                                    : "Clear Loan"}
                                         </Button>
                                     </Stack>
                                     {selectedRepaymentInsights.nextDueSchedule ? (
@@ -4557,7 +4616,7 @@ export function LoansPage() {
                             helperText={
                                 repayForm.formState.errors.amount?.message
                                 || (selectedRepaymentInsights.excessOverOutstanding > 0
-                                    ? `This exceeds the outstanding balance by ${formatCurrency(selectedRepaymentInsights.excessOverOutstanding)}.`
+                                    ? `This exceeds the ${selectedAllocationLimitLabel} by ${formatCurrency(selectedRepaymentInsights.excessOverOutstanding)}.`
                                     : selectedRepaymentLoan
                                         ? `Recommended amount ${formatCurrency(selectedRepaymentInsights.recommendedAmount)}.`
                                         : undefined)
@@ -4587,7 +4646,7 @@ export function LoansPage() {
                                     <Divider flexItem />
                                     {selectedRepaymentInsights.excessOverOutstanding > 0 ? (
                                         <Alert severity="error" variant="outlined">
-                                            The amount is higher than the remaining loan balance and cannot be posted.
+                                            The amount is higher than the {selectedAllocationLimitLabel} and cannot be posted.
                                         </Alert>
                                     ) : selectedRepaymentInsights.shortfallAmount > 0 ? (
                                         <Alert severity="warning" variant="outlined">
@@ -4736,6 +4795,7 @@ export function LoansPage() {
                         <Stack spacing={1.25}>
                             <Stack direction="row" justifyContent="space-between"><Typography variant="body2" color="text.secondary">Loan</Typography><Typography variant="body2">{pendingRepaymentLoan?.loan_number || "Unknown"}</Typography></Stack>
                             <Stack direction="row" justifyContent="space-between"><Typography variant="body2" color="text.secondary">Repayment Amount</Typography><Typography variant="body2">{formatCurrency(pendingRepaymentAmount)}</Typography></Stack>
+                            <Stack direction="row" justifyContent="space-between"><Typography variant="body2" color="text.secondary">Pay towards</Typography><Typography variant="body2">{pendingRepaymentInsights.allocation === "interest_only" ? "Interest only" : pendingRepaymentInsights.allocation === "principal_only" ? "Principal only" : "Both (interest first)"}</Typography></Stack>
                             <Stack direction="row" justifyContent="space-between"><Typography variant="body2" color="text.secondary">Interest component</Typography><Typography variant="body2">{formatCurrency(pendingRepaymentInsights.interestAllocation)}</Typography></Stack>
                             <Stack direction="row" justifyContent="space-between"><Typography variant="body2" color="text.secondary">Principal component</Typography><Typography variant="body2">{formatCurrency(pendingRepaymentInsights.principalAllocation)}</Typography></Stack>
                             <Stack direction="row" justifyContent="space-between"><Typography variant="body2" color="text.secondary">Remaining due after posting</Typography><Typography variant="body2">{formatCurrency(pendingRepaymentInsights.shortfallAmount)}</Typography></Stack>
