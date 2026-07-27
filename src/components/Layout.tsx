@@ -115,7 +115,7 @@ const navItems: NavItem[] = [
     { to: "/cash/transactions", label: "Transactions Report", roles: ["teller", "branch_manager", "super_admin"], section: "finance", icon: SummarizeRoundedIcon },
     { to: "/cash-control", label: "Cash Control", roles: ["branch_manager"], section: "finance", icon: PaidRoundedIcon },
     { to: "/loans", label: "Loans", roles: ["branch_manager", "loan_officer", "teller"], section: "finance", icon: SummarizeRoundedIcon },
-    { to: "/treasury", label: "Treasury", roles: ["super_admin", "treasury_officer", "auditor"], section: "finance", icon: AccountBalanceRoundedIcon },
+    { to: "/treasury", label: "Treasury", roles: ["super_admin", "branch_manager", "treasury_officer", "auditor"], section: "finance", icon: AccountBalanceRoundedIcon },
     { to: "/treasury/policy-settings", label: "Treasury Setup", roles: ["super_admin", "branch_manager"], section: "finance", icon: PolicyRoundedIcon },
     { to: "/reports", label: "Reports", roles: ["super_admin", "branch_manager", "treasury_officer", "loan_officer"], section: "finance", icon: DescriptionRoundedIcon },
     { to: "/auditor/reports", label: "Reports", roles: ["auditor"], section: "finance", icon: DescriptionRoundedIcon },
