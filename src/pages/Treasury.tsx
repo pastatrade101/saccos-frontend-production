@@ -57,6 +57,7 @@ import type {
     TreasuryPortfolioPosition,
     TreasuryTransaction
 } from "../types/api";
+import { crestGold } from "../theme/colors";
 import { formatCurrency, formatDate } from "../utils/format";
 
 type TreasuryTab = "portfolio" | "orders" | "transactions" | "income" | "liquidity";
@@ -820,18 +821,25 @@ export function TreasuryPage() {
         }
     };
 
+    // Portfolio value is the figure a treasurer checks first — it gets the hero
+    // card; the rest support it.
+    const heroCard = overview ? {
+        label: "Portfolio Value",
+        value: formatCurrency(overview.total_portfolio_value),
+        subStats: [
+            { label: "Return", value: `${overview.investment_return_percent.toFixed(2)}%` },
+            { label: "Unrealized gain", value: formatCurrency(overview.unrealized_gains) },
+            { label: "Cost basis", value: formatCurrency(overview.total_investments) },
+            { label: "Income YTD", value: formatCurrency(overview.investment_income_ytd) }
+        ]
+    } : null;
+
     const summaryCards = overview ? [
         {
             label: "Total Investments",
             value: formatCurrency(overview.total_investments),
             helper: `${overview.active_positions_count} active portfolio position(s)`,
             icon: <WalletRoundedIcon color="primary" />
-        },
-        {
-            label: "Portfolio Value",
-            value: formatCurrency(overview.total_portfolio_value),
-            helper: `Return ${overview.investment_return_percent.toFixed(2)}%`,
-            icon: <ShowChartRoundedIcon color="success" />
         },
         {
             label: "Investment Income YTD",
@@ -1054,36 +1062,105 @@ export function TreasuryPage() {
                     </Card>
                 ) : (
                     <>
+                        {heroCard ? (
+                            <Card
+                                variant="outlined"
+                                sx={{
+                                    borderTop: `4px solid ${crestGold.main}`,
+                                    borderRadius: 2.5
+                                }}
+                            >
+                                <CardContent sx={{ p: { xs: 3, md: 4 } }}>
+                                    <Typography
+                                        variant="caption"
+                                        color="text.secondary"
+                                        sx={{ textTransform: "uppercase", letterSpacing: "0.16em", fontWeight: 700 }}
+                                    >
+                                        {heroCard.label}
+                                    </Typography>
+                                    <Typography
+                                        component="p"
+                                        sx={{
+                                            mt: 1,
+                                            fontWeight: 800,
+                                            fontVariantNumeric: "tabular-nums",
+                                            letterSpacing: "-0.02em",
+                                            lineHeight: 1.05,
+                                            fontSize: "clamp(2.4rem, 5vw, 3.6rem)"
+                                        }}
+                                    >
+                                        {heroCard.value}
+                                    </Typography>
+                                    <Stack
+                                        direction="row"
+                                        spacing={{ xs: 3, md: 5 }}
+                                        useFlexGap
+                                        flexWrap="wrap"
+                                        sx={{ mt: 2.5, pt: 2, borderTop: "1px solid", borderColor: "divider" }}
+                                    >
+                                        {heroCard.subStats.map((stat) => (
+                                            <Box key={stat.label}>
+                                                <Typography
+                                                    variant="caption"
+                                                    color="text.secondary"
+                                                    sx={{ textTransform: "uppercase", letterSpacing: "0.12em", display: "block" }}
+                                                >
+                                                    {stat.label}
+                                                </Typography>
+                                                <Typography sx={{ fontWeight: 800, fontVariantNumeric: "tabular-nums", fontSize: "1.15rem" }}>
+                                                    {stat.value}
+                                                </Typography>
+                                            </Box>
+                                        ))}
+                                    </Stack>
+                                </CardContent>
+                            </Card>
+                        ) : null}
                         <Box
                             sx={{
                                 display: "grid",
-                                gap: 2,
+                                gap: 2.5,
                                 gridTemplateColumns: {
                                     xs: "1fr",
-                                    md: "repeat(2, minmax(0, 1fr))",
+                                    sm: "repeat(2, minmax(0, 1fr))",
                                     xl: "repeat(3, minmax(0, 1fr))"
                                 }
                             }}
                         >
                             {summaryCards.map((card) => (
-                                <Card key={card.label} variant="outlined">
-                                    <CardContent>
+                                <Card key={card.label} variant="outlined" sx={{ borderRadius: 2.5 }}>
+                                    <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
                                         <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
-                                            <Box>
-                                                <Typography variant="body2" color="text.secondary">
+                                            <Box sx={{ minWidth: 0 }}>
+                                                <Typography
+                                                    variant="caption"
+                                                    color="text.secondary"
+                                                    sx={{ textTransform: "uppercase", letterSpacing: "0.12em", fontWeight: 700 }}
+                                                >
                                                     {card.label}
                                                 </Typography>
-                                                <Typography variant="h5" fontWeight={800} sx={{ mt: 1 }}>
+                                                <Typography
+                                                    component="p"
+                                                    sx={{
+                                                        mt: 1.25,
+                                                        fontWeight: 800,
+                                                        fontVariantNumeric: "tabular-nums",
+                                                        letterSpacing: "-0.01em",
+                                                        lineHeight: 1.1,
+                                                        fontSize: "clamp(1.45rem, 1.8vw, 1.85rem)"
+                                                    }}
+                                                >
                                                     {card.value}
                                                 </Typography>
-                                                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                                                <Typography variant="body2" color="text.secondary" sx={{ mt: 1.25 }}>
                                                     {card.helper}
                                                 </Typography>
                                             </Box>
                                             <Box
                                                 sx={{
-                                                    width: 46,
-                                                    height: 46,
+                                                    width: 54,
+                                                    height: 54,
+                                                    flexShrink: 0,
                                                     borderRadius: 2,
                                                     display: "grid",
                                                     placeItems: "center",
