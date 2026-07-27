@@ -32,6 +32,7 @@ import {
 } from "../lib/endpoints";
 import type { Branch, DailyCashSummary, ReceiptPolicy, TellerSession } from "../types/api";
 import { downloadFile, getFilenameFromDisposition } from "../utils/downloadFile";
+import { crestGold } from "../theme/colors";
 import { formatCurrency, formatDate } from "../utils/format";
 
 const controlledTransactionTypes: UpdateReceiptPolicyRequest["enforce_on_types"] = [
@@ -243,20 +244,119 @@ export function CashControlPage() {
                 </CardContent>
             </MotionCard>
 
-            <Grid container spacing={2}>
-                <Grid size={{ xs: 12, md: 3 }}><MotionCard variant="outlined"><CardContent><Typography variant="overline">Cash Inflow</Typography><Typography variant="h5">{formatCurrency(totals.inflow)}</Typography><Typography variant="body2" color="text.secondary">Savings, loan repayments, and fee revenue.</Typography></CardContent></MotionCard></Grid>
-                <Grid size={{ xs: 12, md: 3 }}><MotionCard variant="outlined"><CardContent><Typography variant="overline">Cash Outflow</Typography><Typography variant="h5">{formatCurrency(totals.outflow)}</Typography><Typography variant="body2" color="text.secondary">Withdrawals, expenses, and loan disbursements.</Typography></CardContent></MotionCard></Grid>
-                <Grid size={{ xs: 12, md: 3 }}><MotionCard variant="outlined"><CardContent><Typography variant="overline">Net Movement</Typography><Typography variant="h5">{formatCurrency(totals.inflow - totals.outflow)}</Typography><Typography variant="body2" color="text.secondary">{totals.transactions} posted action(s), {totals.receipts} confirmed receipt(s).</Typography></CardContent></MotionCard></Grid>
-                <Grid size={{ xs: 12, md: 3 }}><MotionCard variant="outlined"><CardContent><Typography variant="overline">Variance</Typography><Typography variant="h5">{formatCurrency(totals.variance)}</Typography></CardContent></MotionCard></Grid>
-            </Grid>
+            <MotionCard variant="outlined" sx={{ borderTop: `4px solid ${crestGold.main}`, borderRadius: 2.5 }}>
+                <CardContent sx={{ p: { xs: 3, md: 4 } }}>
+                    <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={2} alignItems={{ md: "flex-start" }}>
+                        <Box>
+                            <Typography
+                                variant="caption"
+                                color="text.secondary"
+                                sx={{ textTransform: "uppercase", letterSpacing: "0.16em", fontWeight: 700 }}
+                            >
+                                Net Movement
+                            </Typography>
+                            <Typography
+                                component="p"
+                                sx={{
+                                    mt: 1,
+                                    fontWeight: 800,
+                                    fontVariantNumeric: "tabular-nums",
+                                    letterSpacing: "-0.02em",
+                                    lineHeight: 1.05,
+                                    fontSize: "clamp(2.2rem, 4.5vw, 3.4rem)"
+                                }}
+                            >
+                                {formatCurrency(totals.inflow - totals.outflow)}
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                                {totals.transactions} posted action(s) · {totals.receipts} confirmed receipt(s)
+                            </Typography>
+                        </Box>
+                        <Box
+                            sx={{
+                                px: 2,
+                                py: 1.25,
+                                borderRadius: 2,
+                                bgcolor: totals.variance === 0 ? "success.main" : "error.main",
+                                color: "#fff",
+                                textAlign: "right",
+                                minWidth: 180
+                            }}
+                        >
+                            <Typography variant="caption" sx={{ textTransform: "uppercase", letterSpacing: "0.12em", fontWeight: 700, opacity: 0.85 }}>
+                                Variance
+                            </Typography>
+                            <Typography sx={{ fontWeight: 800, fontVariantNumeric: "tabular-nums", fontSize: "1.35rem", lineHeight: 1.2 }}>
+                                {totals.variance === 0 ? "Balanced" : formatCurrency(totals.variance)}
+                            </Typography>
+                        </Box>
+                    </Stack>
+                    <Stack
+                        direction="row"
+                        spacing={{ xs: 3, md: 5 }}
+                        useFlexGap
+                        flexWrap="wrap"
+                        sx={{ mt: 2.5, pt: 2, borderTop: "1px solid", borderColor: "divider" }}
+                    >
+                        {[
+                            { label: "Cash Inflow", value: formatCurrency(totals.inflow), color: "success.main" },
+                            { label: "Cash Outflow", value: formatCurrency(totals.outflow), color: "error.main" }
+                        ].map((stat) => (
+                            <Box key={stat.label}>
+                                <Typography
+                                    variant="caption"
+                                    color="text.secondary"
+                                    sx={{ textTransform: "uppercase", letterSpacing: "0.12em", display: "block" }}
+                                >
+                                    {stat.label}
+                                </Typography>
+                                <Typography sx={{ fontWeight: 800, fontVariantNumeric: "tabular-nums", fontSize: "1.25rem", color: stat.color }}>
+                                    {stat.value}
+                                </Typography>
+                            </Box>
+                        ))}
+                    </Stack>
+                </CardContent>
+            </MotionCard>
 
-            <Grid container spacing={2}>
-                <Grid size={{ xs: 12, sm: 6, lg: 2 }}><MotionCard variant="outlined"><CardContent><Typography variant="overline">Savings In</Typography><Typography variant="h6">{formatCurrency(totals.savingsDeposits)}</Typography></CardContent></MotionCard></Grid>
-                <Grid size={{ xs: 12, sm: 6, lg: 2 }}><MotionCard variant="outlined"><CardContent><Typography variant="overline">Savings Out</Typography><Typography variant="h6">{formatCurrency(totals.savingsWithdrawals)}</Typography></CardContent></MotionCard></Grid>
-                <Grid size={{ xs: 12, sm: 6, lg: 2 }}><MotionCard variant="outlined"><CardContent><Typography variant="overline">Loan Repayments</Typography><Typography variant="h6">{formatCurrency(totals.loanRepayments)}</Typography></CardContent></MotionCard></Grid>
-                <Grid size={{ xs: 12, sm: 6, lg: 2 }}><MotionCard variant="outlined"><CardContent><Typography variant="overline">Fee Revenue</Typography><Typography variant="h6">{formatCurrency(totals.feeRevenue)}</Typography></CardContent></MotionCard></Grid>
-                <Grid size={{ xs: 12, sm: 6, lg: 2 }}><MotionCard variant="outlined"><CardContent><Typography variant="overline">Expenses</Typography><Typography variant="h6">{formatCurrency(totals.expensePayments)}</Typography></CardContent></MotionCard></Grid>
-                <Grid size={{ xs: 12, sm: 6, lg: 2 }}><MotionCard variant="outlined"><CardContent><Typography variant="overline">Loan Disbursed</Typography><Typography variant="h6">{formatCurrency(totals.loanDisbursements)}</Typography></CardContent></MotionCard></Grid>
+            <Grid container spacing={2.5}>
+                {[
+                    { label: "Savings In", value: totals.savingsDeposits, direction: "in" },
+                    { label: "Savings Out", value: totals.savingsWithdrawals, direction: "out" },
+                    { label: "Loan Repayments", value: totals.loanRepayments, direction: "in" },
+                    { label: "Fee Revenue", value: totals.feeRevenue, direction: "in" },
+                    { label: "Expenses", value: totals.expensePayments, direction: "out" },
+                    { label: "Loan Disbursed", value: totals.loanDisbursements, direction: "out" }
+                ].map((tile) => (
+                    <Grid key={tile.label} size={{ xs: 6, md: 4, xl: 2 }}>
+                        <MotionCard variant="outlined" sx={{ borderRadius: 2.5, height: "100%" }}>
+                            <CardContent sx={{ p: 2.5 }}>
+                                <Typography
+                                    variant="caption"
+                                    color="text.secondary"
+                                    sx={{ textTransform: "uppercase", letterSpacing: "0.12em", fontWeight: 700 }}
+                                >
+                                    {tile.label}
+                                </Typography>
+                                <Typography
+                                    component="p"
+                                    sx={{
+                                        mt: 1,
+                                        fontWeight: 800,
+                                        fontVariantNumeric: "tabular-nums",
+                                        lineHeight: 1.15,
+                                        fontSize: "clamp(1.2rem, 1.5vw, 1.5rem)"
+                                    }}
+                                >
+                                    {formatCurrency(tile.value)}
+                                </Typography>
+                                <Typography variant="caption" sx={{ color: tile.direction === "in" ? "success.main" : "error.main", fontWeight: 700 }}>
+                                    {tile.direction === "in" ? "↑ Money in" : "↓ Money out"}
+                                </Typography>
+                            </CardContent>
+                        </MotionCard>
+                    </Grid>
+                ))}
             </Grid>
 
             <Grid container spacing={2}>
