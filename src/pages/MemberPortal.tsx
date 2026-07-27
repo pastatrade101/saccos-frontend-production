@@ -138,6 +138,8 @@ import {
     type UpdateOwnMemberProfileCompletionResponse,
     type MemberApplicationResponse,
     type StatementsResponse,
+    type GuarantorCapacityLookup,
+    type GuarantorCapacityResponse,
     type GuarantorConsentRequest,
     type GuarantorRequestItem,
     type GuarantorRequestsResponse,
@@ -1189,6 +1191,18 @@ export function MemberPortalPage() {
     const [loanApplications, setLoanApplications] = useState<LoanApplication[]>([]);
     const [guarantorRequests, setGuarantorRequests] = useState<GuarantorRequestItem[]>([]);
     const [processingGuarantorRequestId, setProcessingGuarantorRequestId] = useState<string | null>(null);
+    const [guarantorAcceptTarget, setGuarantorAcceptTarget] = useState<GuarantorRequestItem | null>(null);
+    const [guarantorAcceptAmount, setGuarantorAcceptAmount] = useState("");
+    const [guarantorDrafts, setGuarantorDrafts] = useState<Array<{
+        member_id: string;
+        member_no: string;
+        full_name: string;
+        available_amount: number | null;
+        guaranteed_amount: number;
+    }>>([]);
+    const [guarantorLookupNo, setGuarantorLookupNo] = useState("");
+    const [guarantorLookupBusy, setGuarantorLookupBusy] = useState(false);
+    const [guarantorMaxCount, setGuarantorMaxCount] = useState(5);
     const [statements, setStatements] = useState<StatementRow[]>([]);
     // Authoritative monthly-commitment status from the backend (same SQL the
     // loan-submit guard enforces with). "error" is a distinct state so a failed
@@ -3415,6 +3429,17 @@ export function MemberPortalPage() {
         () => savingsAccounts.reduce((sum, account) => sum + account.locked_balance, 0),
         [savingsAccounts]
     );
+    // Board process: only the portion of the loan above the member's own savings
+    // needs guaranteed amounts; a fully self-covered loan takes nominal guarantors.
+    const requiredGuaranteeAmount = useMemo(
+        () => Math.max(0, Math.round(((Number(requestedLoanAmount) || 0) - totalSavings) * 100) / 100),
+        [requestedLoanAmount, totalSavings]
+    );
+    const allocatedGuaranteeAmount = useMemo(
+        () => Math.round(guarantorDrafts.reduce((sum, row) => sum + (Number(row.guaranteed_amount) || 0), 0) * 100) / 100,
+        [guarantorDrafts]
+    );
+    const remainingGuaranteeAmount = Math.max(0, Math.round((requiredGuaranteeAmount - allocatedGuaranteeAmount) * 100) / 100);
     const totalShareCapital = 0;
     const performanceTargetPosition = useMemo(
         () => calculateMemberPerformanceTarget(memberRecord, accounts, performanceTargetSettings),
@@ -4413,6 +4438,48 @@ export function MemberPortalPage() {
                 )
         },
         {
+            key: "guarantors",
+            header: "Guarantors",
+            render: (row) => {
+                const guarantors = row.loan_guarantors || [];
+                if (!guarantors.length) {
+                    return "—";
+                }
+                const readiness = row.guarantor_readiness;
+                const accepted = guarantors.filter((item) => item.consent_status === "accepted").length;
+                const rejected = guarantors.filter((item) => item.consent_status === "rejected").length;
+                const requiredAmount = Number(readiness?.required_amount ?? row.required_guarantee_amount ?? 0);
+                return (
+                    <Stack spacing={0.35}>
+                        <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                            {accepted}/{guarantors.length} accepted
+                        </Typography>
+                        {guarantors.map((item) => (
+                            <Typography
+                                key={item.member_id}
+                                variant="caption"
+                                color={item.consent_status === "accepted" ? "success.main" : item.consent_status === "rejected" ? "error.main" : "text.secondary"}
+                            >
+                                {(item.members?.full_name || item.guarantor_name || "Member")}
+                                {Number(item.guaranteed_amount) > 0 ? ` · ${formatCurrency(Number(item.accepted_amount ?? item.guaranteed_amount))}` : ""}
+                                {" — "}{item.consent_status === "accepted" ? "amekubali" : item.consent_status === "rejected" ? "amekataa" : "anasubiri"}
+                            </Typography>
+                        ))}
+                        {requiredAmount > 0 && readiness ? (
+                            <Typography variant="caption" color={readiness.complete ? "success.main" : "warning.main"}>
+                                {formatCurrency(readiness.accepted_amount)} / {formatCurrency(requiredAmount)} guaranteed
+                            </Typography>
+                        ) : null}
+                        {row.status === "submitted" && (rejected > 0 || (readiness && !readiness.complete && readiness.pending_count === 0)) ? (
+                            <Typography variant="caption" color="error.main">
+                                Update your guarantors to continue.
+                            </Typography>
+                        ) : null}
+                    </Stack>
+                );
+            }
+        },
+        {
             key: "updated",
             header: "Last Update",
             render: (row) => formatDate(row.updated_at)
@@ -4454,8 +4521,17 @@ export function MemberPortalPage() {
         },
         {
             key: "amount",
-            header: "Guaranteed Amount",
-            render: (row) => formatCurrency(row.guaranteed_amount)
+            header: "Amount Requested",
+            render: (row) => row.guaranteed_amount > 0 ? formatCurrency(row.guaranteed_amount) : "Witness only"
+        },
+        {
+            key: "accepted_amount",
+            header: "You Agreed",
+            render: (row) => row.consent_status === "accepted"
+                ? (Number(row.accepted_amount ?? row.guaranteed_amount) > 0
+                    ? formatCurrency(Number(row.accepted_amount ?? row.guaranteed_amount))
+                    : "Witness only")
+                : "—"
         },
         {
             key: "application_status",
@@ -4476,7 +4552,14 @@ export function MemberPortalPage() {
                         <Button
                             size="small"
                             variant="contained"
-                            onClick={() => void respondGuarantorRequest(row, "accepted")}
+                            onClick={() => {
+                                if (row.guaranteed_amount > 0) {
+                                    setGuarantorAcceptTarget(row);
+                                    setGuarantorAcceptAmount(String(row.guaranteed_amount));
+                                } else {
+                                    void respondGuarantorRequest(row, "accepted");
+                                }
+                            }}
                             disabled={processingGuarantorRequestId === row.id}
                         >
                             Accept
@@ -4564,6 +4647,13 @@ export function MemberPortalPage() {
         if (application) {
             setEditingLoanApplicationId(application.id);
             setRequestedAmountInput(formatWholeNumber(application.requested_amount));
+            setGuarantorDrafts((application.loan_guarantors || []).map((row) => ({
+                member_id: row.member_id,
+                member_no: row.members?.member_no || "",
+                full_name: row.members?.full_name || row.guarantor_name || "Member",
+                available_amount: null,
+                guaranteed_amount: Number(row.guaranteed_amount || 0)
+            })));
             loanApplicationForm.reset({
                 product_id: application.product_id,
                 purpose: application.purpose,
@@ -4589,6 +4679,7 @@ export function MemberPortalPage() {
         } else {
             setEditingLoanApplicationId(null);
             setRequestedAmountInput("");
+            setGuarantorDrafts([]);
             loanApplicationForm.reset({
                 product_id: "",
                 purpose: "",
@@ -4643,6 +4734,8 @@ export function MemberPortalPage() {
         setPendingDraftDeletion(null);
         setRequestedAmountInput("");
         setLoanFormStep(0);
+        setGuarantorDrafts([]);
+        setGuarantorLookupNo("");
         loanApplicationForm.reset();
     };
 
@@ -4799,6 +4892,29 @@ export function MemberPortalPage() {
             return;
         }
 
+        // Guarantor plan checks (board process): at least one guarantor on
+        // submission; the excess above savings must be exactly covered.
+        if (options.submitAfterSave) {
+            if (!guarantorDrafts.length) {
+                pushToast({
+                    type: "error",
+                    title: "Guarantor required",
+                    message: "Add at least one guarantor before submitting your application."
+                });
+                return;
+            }
+            if (requiredGuaranteeAmount > 0 && Math.abs(allocatedGuaranteeAmount - requiredGuaranteeAmount) > 0.01) {
+                pushToast({
+                    type: "error",
+                    title: allocatedGuaranteeAmount < requiredGuaranteeAmount ? "Guarantee not fully covered" : "Guarantee amounts too high",
+                    message: allocatedGuaranteeAmount < requiredGuaranteeAmount
+                        ? `Your guarantors must cover ${formatCurrency(requiredGuaranteeAmount)} in total — ${formatCurrency(remainingGuaranteeAmount)} is still missing.`
+                        : `Guarantee requests must not exceed ${formatCurrency(requiredGuaranteeAmount)} in total.`
+                });
+                return;
+            }
+        }
+
         setSubmittingApplication(true);
         try {
             const payload: CreateLoanApplicationRequest = {
@@ -4820,7 +4936,11 @@ export function MemberPortalPage() {
                 loan_category: values.loan_category,
                 top_up_of_loan_id: values.loan_category === "top_up" ? (values.top_up_of_loan_id || null) : null,
                 deposit_purchase_amount: values.deposit_purchase_amount || 0,
-                application_fee_paid: values.application_fee_paid
+                application_fee_paid: values.application_fee_paid,
+                guarantors: guarantorDrafts.map((row) => ({
+                    member_id: row.member_id,
+                    guaranteed_amount: requiredGuaranteeAmount > 0 ? row.guaranteed_amount : 0
+                }))
             };
 
             const applicationId = editingLoanApplicationId
@@ -4893,6 +5013,17 @@ export function MemberPortalPage() {
                 errorMessage = `Requested amount must be at least ${formatCurrency(minimumAmount)}.`;
             } else if (errorCode === "LOAN_POOL_TEMPORARILY_EXHAUSTED") {
                 errorMessage = "SACCO loan pool temporarily exhausted. Please try again later.";
+            } else if (errorCode === "GUARANTOR_CAPACITY_INSUFFICIENT") {
+                errorMessage = "One of your guarantors no longer has enough guarantee capacity. Review the amounts or choose another guarantor.";
+            } else if (errorCode === "GUARANTOR_COVERAGE_SHORT") {
+                const shortfall = getNumericDetail(errorDetails, "shortfall");
+                errorMessage = `Your guarantors must cover the full amount above your savings${shortfall !== null ? ` — ${formatCurrency(shortfall)} is still missing` : ""}.`;
+            } else if (errorCode === "GUARANTOR_COVERAGE_EXCESS") {
+                errorMessage = "Guarantee requests must not exceed the amount that needs guaranteeing.";
+            } else if (errorCode === "GUARANTOR_REQUIRED") {
+                errorMessage = "Add at least one guarantor before submitting your application.";
+            } else if (errorCode === "GUARANTOR_LIMIT_EXCEEDED") {
+                errorMessage = `You can select at most ${guarantorMaxCount} guarantors.`;
             } else if (errorCode === "MONTHLY_SAVINGS_COMMITMENT_UNPAID") {
                 const remainingDue = getNumericDetail(errorDetails, "remaining_amount");
                 errorMessage = `This month's mandatory savings is not yet complete${remainingDue !== null ? ` — ${formatCurrency(remainingDue)} remaining` : ""}. Deposit the balance, then submit again.`;
@@ -4922,7 +5053,11 @@ export function MemberPortalPage() {
         await persistLoanApplication(values, { submitAfterSave: false });
     });
 
-    const respondGuarantorRequest = async (request: GuarantorRequestItem, decision: "accepted" | "rejected") => {
+    const respondGuarantorRequest = async (
+        request: GuarantorRequestItem,
+        decision: "accepted" | "rejected",
+        acceptedAmount?: number
+    ) => {
         if (!profile) {
             return;
         }
@@ -4931,7 +5066,10 @@ export function MemberPortalPage() {
         try {
             const payload: GuarantorConsentRequest = {
                 tenant_id: profile.tenant_id,
-                decision
+                decision,
+                accepted_amount: decision === "accepted"
+                    ? (typeof acceptedAmount === "number" ? acceptedAmount : request.guaranteed_amount)
+                    : null
             };
 
             await api.post<LoanApplicationResponse>(
@@ -4945,11 +5083,15 @@ export function MemberPortalPage() {
                         ? {
                             ...item,
                             consent_status: decision,
+                            accepted_amount: decision === "accepted"
+                                ? (typeof acceptedAmount === "number" ? acceptedAmount : request.guaranteed_amount)
+                                : null,
                             consented_at: new Date().toISOString()
                         }
                         : item
                 )
             );
+            setGuarantorAcceptTarget(null);
 
             pushToast({
                 type: "success",
@@ -4966,6 +5108,67 @@ export function MemberPortalPage() {
             });
         } finally {
             setProcessingGuarantorRequestId(null);
+        }
+    };
+
+    const lookupGuarantorByMemberNo = async () => {
+        const memberNo = guarantorLookupNo.trim();
+        if (!memberNo || !profile) {
+            return;
+        }
+        if (guarantorDrafts.length >= guarantorMaxCount) {
+            pushToast({
+                type: "error",
+                title: "Guarantor limit reached",
+                message: `You can select at most ${guarantorMaxCount} guarantors.`
+            });
+            return;
+        }
+
+        setGuarantorLookupBusy(true);
+        try {
+            const { data } = await api.get<GuarantorCapacityResponse>(endpoints.loanApplications.guarantorCapacity(), {
+                params: { tenant_id: profile.tenant_id, member_no: memberNo }
+            });
+            const lookup: GuarantorCapacityLookup = data.data;
+            setGuarantorMaxCount(lookup.policy.max_guarantors_per_application || 5);
+
+            if (guarantorDrafts.some((row) => row.member_id === lookup.member_id)) {
+                pushToast({ type: "error", title: "Already selected", message: `${lookup.full_name} is already on your guarantor list.` });
+                return;
+            }
+            if (!lookup.is_active) {
+                pushToast({ type: "error", title: "Member not eligible", message: `${lookup.full_name} is not an active member.` });
+                return;
+            }
+            if (requiredGuaranteeAmount > 0 && lookup.available_amount <= 0) {
+                pushToast({
+                    type: "error",
+                    title: "No guarantee capacity",
+                    message: `${lookup.full_name} has no remaining guarantee capacity right now, so they cannot be selected.`
+                });
+                return;
+            }
+
+            const suggested = requiredGuaranteeAmount > 0
+                ? Math.min(lookup.available_amount, remainingGuaranteeAmount)
+                : 0;
+            setGuarantorDrafts((prev) => [...prev, {
+                member_id: lookup.member_id,
+                member_no: lookup.member_no,
+                full_name: lookup.full_name,
+                available_amount: lookup.available_amount,
+                guaranteed_amount: Math.max(0, Math.round(suggested * 100) / 100)
+            }]);
+            setGuarantorLookupNo("");
+        } catch (error) {
+            pushToast({
+                type: "error",
+                title: "Guarantor lookup failed",
+                message: getApiErrorMessage(error, "No member was found with that member number.")
+            });
+        } finally {
+            setGuarantorLookupBusy(false);
         }
     };
 
@@ -6795,6 +6998,51 @@ export function MemberPortalPage() {
                     </CardContent>
                 </MotionCard>
             ) : null}
+
+            <Dialog
+                open={Boolean(guarantorAcceptTarget)}
+                onClose={() => setGuarantorAcceptTarget(null)}
+                maxWidth="xs"
+                fullWidth
+            >
+                <DialogTitle>Accept Guarantee Request</DialogTitle>
+                <DialogContent dividers>
+                    <Stack spacing={2} sx={{ pt: 0.5 }}>
+                        <Typography variant="body2">
+                            {guarantorAcceptTarget?.borrower?.full_name || "The borrower"} asked you to guarantee{" "}
+                            <strong>{formatCurrency(guarantorAcceptTarget?.guaranteed_amount || 0)}</strong>.
+                            You can accept the full amount or enter the amount you are able to cover.
+                        </Typography>
+                        <TextField
+                            fullWidth
+                            type="number"
+                            label="Amount you agree to guarantee"
+                            value={guarantorAcceptAmount}
+                            onChange={(event) => setGuarantorAcceptAmount(event.target.value)}
+                            helperText={`Maximum ${formatCurrency(guarantorAcceptTarget?.guaranteed_amount || 0)}. This amount stays locked in your savings until the loan is repaid.`}
+                        />
+                    </Stack>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setGuarantorAcceptTarget(null)}>Cancel</Button>
+                    <Button
+                        variant="contained"
+                        disabled={
+                            !guarantorAcceptTarget
+                            || processingGuarantorRequestId === guarantorAcceptTarget.id
+                            || !(Number(guarantorAcceptAmount) > 0)
+                            || Number(guarantorAcceptAmount) > Number(guarantorAcceptTarget.guaranteed_amount || 0)
+                        }
+                        onClick={() => {
+                            if (guarantorAcceptTarget) {
+                                void respondGuarantorRequest(guarantorAcceptTarget, "accepted", Number(guarantorAcceptAmount));
+                            }
+                        }}
+                    >
+                        Accept Guarantee
+                    </Button>
+                </DialogActions>
+            </Dialog>
 
             <MemberLoanWorkspaceCard
                 selectedLoan={selectedLoan}
@@ -10621,6 +10869,112 @@ export function MemberPortalPage() {
                                             <Typography variant="caption" color="text.secondary">
                                                 Disbursement is processed manually by the teller — these details tell them how to pay you.
                                             </Typography>
+                                        </Stack>
+                                    </Paper>
+                                    <Paper variant="outlined" sx={{ p: 1.75, borderRadius: 1.1 }}>
+                                        <Stack spacing={1.5}>
+                                            <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                                                Guarantors
+                                            </Typography>
+                                            {requiredGuaranteeAmount > 0 ? (
+                                                <Alert severity="info" variant="outlined">
+                                                    Your savings ({formatCurrency(totalSavings)}) cover part of this loan. Guarantors must cover the remaining {formatCurrency(requiredGuaranteeAmount)}. Each guarantor will approve their amount in their own portal before the loan is processed.
+                                                </Alert>
+                                            ) : (
+                                                <Alert severity="success" variant="outlined">
+                                                    This loan is fully covered by your own savings. Add at least one guarantor as a witness — no amounts are needed from them.
+                                                </Alert>
+                                            )}
+                                            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+                                                <TextField
+                                                    fullWidth
+                                                    size="small"
+                                                    label="Guarantor member number"
+                                                    placeholder="e.g. ILS24-F00002"
+                                                    value={guarantorLookupNo}
+                                                    onChange={(event) => setGuarantorLookupNo(event.target.value)}
+                                                    onKeyDown={(event) => {
+                                                        if (event.key === "Enter") {
+                                                            event.preventDefault();
+                                                            void lookupGuarantorByMemberNo();
+                                                        }
+                                                    }}
+                                                />
+                                                <Button
+                                                    variant="outlined"
+                                                    onClick={() => void lookupGuarantorByMemberNo()}
+                                                    disabled={guarantorLookupBusy || !guarantorLookupNo.trim() || guarantorDrafts.length >= guarantorMaxCount}
+                                                    sx={{ whiteSpace: "nowrap" }}
+                                                >
+                                                    {guarantorLookupBusy ? "Checking..." : "Add Guarantor"}
+                                                </Button>
+                                            </Stack>
+                                            {guarantorDrafts.length ? (
+                                                <Stack spacing={1}>
+                                                    {guarantorDrafts.map((row, index) => (
+                                                        <Paper key={row.member_id} variant="outlined" sx={{ p: 1.25, borderRadius: 1 }}>
+                                                            <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ sm: "center" }} justifyContent="space-between">
+                                                                <Box sx={{ minWidth: 0 }}>
+                                                                    <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                                                                        {row.full_name}
+                                                                    </Typography>
+                                                                    <Typography variant="caption" color="text.secondary">
+                                                                        {row.member_no}{row.available_amount !== null && requiredGuaranteeAmount > 0
+                                                                            ? ` · can guarantee up to ${formatCurrency(row.available_amount)}`
+                                                                            : ""}
+                                                                    </Typography>
+                                                                </Box>
+                                                                <Stack direction="row" spacing={1} alignItems="center">
+                                                                    {requiredGuaranteeAmount > 0 ? (
+                                                                        <TextField
+                                                                            size="small"
+                                                                            type="number"
+                                                                            label="Amount"
+                                                                            value={row.guaranteed_amount || ""}
+                                                                            onChange={(event) => {
+                                                                                const nextValue = Number(event.target.value) || 0;
+                                                                                setGuarantorDrafts((prev) => prev.map((item, itemIndex) =>
+                                                                                    itemIndex === index ? { ...item, guaranteed_amount: nextValue } : item));
+                                                                            }}
+                                                                            error={row.available_amount !== null && row.guaranteed_amount > row.available_amount}
+                                                                            helperText={row.available_amount !== null && row.guaranteed_amount > row.available_amount
+                                                                                ? "Exceeds their capacity"
+                                                                                : undefined}
+                                                                            sx={{ width: 160 }}
+                                                                        />
+                                                                    ) : (
+                                                                        <Chip size="small" variant="outlined" label="Witness" />
+                                                                    )}
+                                                                    <IconButton
+                                                                        size="small"
+                                                                        onClick={() => setGuarantorDrafts((prev) => prev.filter((item) => item.member_id !== row.member_id))}
+                                                                        aria-label="Remove guarantor"
+                                                                    >
+                                                                        <CloseRoundedIcon fontSize="small" />
+                                                                    </IconButton>
+                                                                </Stack>
+                                                            </Stack>
+                                                        </Paper>
+                                                    ))}
+                                                    {requiredGuaranteeAmount > 0 ? (
+                                                        <Stack spacing={0.5}>
+                                                            <LinearProgress
+                                                                variant="determinate"
+                                                                value={Math.min(100, (allocatedGuaranteeAmount / requiredGuaranteeAmount) * 100)}
+                                                                sx={{ height: 8, borderRadius: 4 }}
+                                                            />
+                                                            <Typography variant="caption" color={remainingGuaranteeAmount > 0 ? "warning.main" : "success.main"}>
+                                                                {formatCurrency(allocatedGuaranteeAmount)} / {formatCurrency(requiredGuaranteeAmount)} allocated
+                                                                {remainingGuaranteeAmount > 0 ? ` — ${formatCurrency(remainingGuaranteeAmount)} remaining` : " — fully covered"}
+                                                            </Typography>
+                                                        </Stack>
+                                                    ) : null}
+                                                </Stack>
+                                            ) : (
+                                                <Typography variant="caption" color="text.secondary">
+                                                    No guarantors added yet. You can add up to {guarantorMaxCount}.
+                                                </Typography>
+                                            )}
                                         </Stack>
                                     </Paper>
                                     <Paper variant="outlined" sx={{ p: 1.75, borderRadius: 1.1 }}>

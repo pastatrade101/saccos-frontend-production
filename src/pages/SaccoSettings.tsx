@@ -1,4 +1,5 @@
 import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
+import Diversity3RoundedIcon from "@mui/icons-material/Diversity3Rounded";
 import TrackChangesRoundedIcon from "@mui/icons-material/TrackChangesRounded";
 import LockRoundedIcon from "@mui/icons-material/LockRounded";
 import UploadFileRoundedIcon from "@mui/icons-material/UploadFileRounded";
@@ -30,7 +31,10 @@ import {
     type SaccoManualImportsSettingsResponse,
     type UpdateSaccoFinancialYearSettingsRequest,
     type UpdateSaccoPerformanceTargetSettingsRequest,
-    type UpdateSaccoManualImportsSettingsRequest
+    type UpdateSaccoManualImportsSettingsRequest,
+    type GuarantorPolicySettings,
+    type GuarantorPolicySettingsResponse,
+    type UpdateGuarantorPolicyRequest
 } from "../lib/endpoints";
 import type { SaccoFinancialYearSettings, SaccoManualImportsSettings, SaccoPerformanceTargetSettings } from "../types/api";
 import { MotionCard } from "../ui/motion";
@@ -79,6 +83,16 @@ export function SaccoSettingsPage() {
     const [manualImports, setManualImports] = useState<SaccoManualImportsSettings | null>(null);
     const [manualImportsDraft, setManualImportsDraft] = useState(true);
     const [savingManualImports, setSavingManualImports] = useState(false);
+    const [guarantorPolicy, setGuarantorPolicy] = useState<GuarantorPolicySettings | null>(null);
+    const [guarantorDraft, setGuarantorDraft] = useState({
+        guarantor_exposure_enforced: true,
+        guarantor_max_commitment_percent: 40,
+        guarantor_capacity_base: "savings" as "savings" | "savings_shares",
+        max_guarantors_per_application: 5,
+        guarantor_release_mode: "on_close" as "on_close" | "proportional",
+        guarantor_block_encumbered_withdrawals: true
+    });
+    const [savingGuarantorPolicy, setSavingGuarantorPolicy] = useState(false);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [savingPerformance, setSavingPerformance] = useState(false);
@@ -114,7 +128,7 @@ export function SaccoSettingsPage() {
             setError(null);
 
             try {
-                const [financialYearResult, performanceTargetResult, manualImportsResult] = await Promise.all([
+                const [financialYearResult, performanceTargetResult, manualImportsResult, guarantorPolicyResult] = await Promise.all([
                     api.get<SaccoFinancialYearSettingsResponse>(endpoints.saccoSettings.financialYear(), {
                         params: { tenant_id: selectedTenantId }
                     }),
@@ -122,6 +136,9 @@ export function SaccoSettingsPage() {
                         params: { tenant_id: selectedTenantId }
                     }),
                     api.get<SaccoManualImportsSettingsResponse>(endpoints.saccoSettings.manualImports(), {
+                        params: { tenant_id: selectedTenantId }
+                    }).catch(() => null),
+                    api.get<GuarantorPolicySettingsResponse>(endpoints.saccoSettings.guarantorPolicy(), {
                         params: { tenant_id: selectedTenantId }
                     }).catch(() => null)
                 ]);
@@ -137,6 +154,18 @@ export function SaccoSettingsPage() {
                 if (manualImportsResult?.data?.data) {
                     setManualImports(manualImportsResult.data.data);
                     setManualImportsDraft(manualImportsResult.data.data.manual_imports_enabled);
+                }
+                if (guarantorPolicyResult?.data?.data) {
+                    const policyData = guarantorPolicyResult.data.data;
+                    setGuarantorPolicy(policyData);
+                    setGuarantorDraft({
+                        guarantor_exposure_enforced: policyData.guarantor_exposure_enforced,
+                        guarantor_max_commitment_percent: Math.round(policyData.guarantor_max_commitment_ratio * 100),
+                        guarantor_capacity_base: policyData.guarantor_capacity_base,
+                        max_guarantors_per_application: policyData.max_guarantors_per_application,
+                        guarantor_release_mode: policyData.guarantor_release_mode,
+                        guarantor_block_encumbered_withdrawals: policyData.guarantor_block_encumbered_withdrawals
+                    });
                 }
                 setDraft({
                     financial_year_start_month: normalized.financial_year_start_month,
@@ -270,6 +299,39 @@ export function SaccoSettingsPage() {
             setError(getApiErrorMessage(saveError));
         } finally {
             setSavingManualImports(false);
+        }
+    };
+
+    const saveGuarantorPolicy = async () => {
+        if (!selectedTenantId) {
+            setError("Select a tenant before saving SACCO settings.");
+            return;
+        }
+
+        setSavingGuarantorPolicy(true);
+        setError(null);
+
+        try {
+            const payload: UpdateGuarantorPolicyRequest = {
+                tenant_id: selectedTenantId,
+                guarantor_exposure_enforced: guarantorDraft.guarantor_exposure_enforced,
+                guarantor_max_commitment_ratio: Math.min(1, Math.max(0.01, guarantorDraft.guarantor_max_commitment_percent / 100)),
+                guarantor_capacity_base: guarantorDraft.guarantor_capacity_base,
+                max_guarantors_per_application: guarantorDraft.max_guarantors_per_application,
+                guarantor_release_mode: guarantorDraft.guarantor_release_mode,
+                guarantor_block_encumbered_withdrawals: guarantorDraft.guarantor_block_encumbered_withdrawals
+            };
+            const { data } = await api.patch<GuarantorPolicySettingsResponse>(endpoints.saccoSettings.guarantorPolicy(), payload);
+            setGuarantorPolicy(data.data);
+            pushToast({
+                type: "success",
+                title: "Guarantor policy saved",
+                message: `Guarantors can now commit up to ${Math.round(data.data.guarantor_max_commitment_ratio * 100)}% of ${data.data.guarantor_capacity_base === "savings" ? "their savings" : "savings + shares"}.`
+            });
+        } catch (saveError) {
+            setError(getApiErrorMessage(saveError));
+        } finally {
+            setSavingGuarantorPolicy(false);
         }
     };
 
@@ -748,6 +810,123 @@ export function SaccoSettingsPage() {
                                 </Alert>
                             ) : null}
                         </Stack>
+                    </Stack>
+                </CardContent>
+            </MotionCard>
+
+            <MotionCard variant="outlined" inView>
+                <CardContent>
+                    <Stack spacing={2}>
+                        <Stack spacing={0.75}>
+                            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                                <Diversity3RoundedIcon color="primary" />
+                                <Typography variant="h5">Guarantor Policy</Typography>
+                                <Chip
+                                    label={guarantorDraft.guarantor_exposure_enforced ? "Enforced" : "Not enforced"}
+                                    color={guarantorDraft.guarantor_exposure_enforced ? "success" : "warning"}
+                                    variant="outlined"
+                                />
+                            </Stack>
+                            <Typography variant="body2" color="text.secondary">
+                                Loan applicants tag guarantors who must accept in their portal before verification. A guarantor's capacity is limited to the percentage below of their {guarantorDraft.guarantor_capacity_base === "savings" ? "savings" : "savings + shares"}, minus what they already guarantee for others.
+                            </Typography>
+                        </Stack>
+
+                        <Grid container spacing={1.5}>
+                            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                                <TextField
+                                    fullWidth
+                                    type="number"
+                                    label="Capacity percentage (%)"
+                                    value={guarantorDraft.guarantor_max_commitment_percent}
+                                    onChange={(event) => setGuarantorDraft((prev) => ({
+                                        ...prev,
+                                        guarantor_max_commitment_percent: Number(event.target.value) || 0
+                                    }))}
+                                    helperText="e.g. 40 = a guarantor may commit up to 40%"
+                                />
+                            </Grid>
+                            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                                <TextField
+                                    select
+                                    fullWidth
+                                    label="Capacity base"
+                                    value={guarantorDraft.guarantor_capacity_base}
+                                    onChange={(event) => setGuarantorDraft((prev) => ({
+                                        ...prev,
+                                        guarantor_capacity_base: event.target.value as "savings" | "savings_shares"
+                                    }))}
+                                >
+                                    <MenuItem value="savings">Savings only</MenuItem>
+                                    <MenuItem value="savings_shares">Savings + shares</MenuItem>
+                                </TextField>
+                            </Grid>
+                            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                                <TextField
+                                    fullWidth
+                                    type="number"
+                                    label="Max guarantors per loan"
+                                    value={guarantorDraft.max_guarantors_per_application}
+                                    onChange={(event) => setGuarantorDraft((prev) => ({
+                                        ...prev,
+                                        max_guarantors_per_application: Math.min(10, Math.max(1, Number(event.target.value) || 1))
+                                    }))}
+                                />
+                            </Grid>
+                            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                                <TextField
+                                    select
+                                    fullWidth
+                                    label="Commitment released"
+                                    value={guarantorDraft.guarantor_release_mode}
+                                    onChange={(event) => setGuarantorDraft((prev) => ({
+                                        ...prev,
+                                        guarantor_release_mode: event.target.value as "on_close" | "proportional"
+                                    }))}
+                                >
+                                    <MenuItem value="on_close">When the loan is fully repaid</MenuItem>
+                                    <MenuItem value="proportional">Gradually as the loan reduces</MenuItem>
+                                </TextField>
+                            </Grid>
+                        </Grid>
+
+                        <Box sx={{ p: 1.5, border: "1px solid", borderColor: "divider", borderRadius: 1.5 }}>
+                            <FormControlLabel
+                                control={
+                                    <Switch
+                                        checked={guarantorDraft.guarantor_block_encumbered_withdrawals}
+                                        onChange={(event) => setGuarantorDraft((prev) => ({
+                                            ...prev,
+                                            guarantor_block_encumbered_withdrawals: event.target.checked
+                                        }))}
+                                        disabled={savingGuarantorPolicy}
+                                    />
+                                }
+                                label="Block withdrawals that would drop savings below guaranteed amounts"
+                            />
+                            <FormControlLabel
+                                control={
+                                    <Switch
+                                        checked={guarantorDraft.guarantor_exposure_enforced}
+                                        onChange={(event) => setGuarantorDraft((prev) => ({
+                                            ...prev,
+                                            guarantor_exposure_enforced: event.target.checked
+                                        }))}
+                                        disabled={savingGuarantorPolicy}
+                                    />
+                                }
+                                label="Enforce guarantor capacity limits"
+                            />
+                        </Box>
+
+                        <Button
+                            variant="contained"
+                            onClick={saveGuarantorPolicy}
+                            disabled={!canSetPerformanceTarget || savingGuarantorPolicy || !guarantorPolicy}
+                            sx={{ width: { xs: "100%", sm: "fit-content" } }}
+                        >
+                            {savingGuarantorPolicy ? "Saving..." : "Save Guarantor Policy"}
+                        </Button>
                     </Stack>
                 </CardContent>
             </MotionCard>

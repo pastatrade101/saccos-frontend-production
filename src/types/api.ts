@@ -674,9 +674,21 @@ export interface LoanGuarantor {
     tenant_id?: string;
     member_id: string;
     guaranteed_amount: number;
+    accepted_amount?: number | null;
     consent_status?: "pending" | "accepted" | "rejected";
     consented_at?: string | null;
     notes?: string | null;
+    guarantor_name?: string | null;
+    members?: Pick<Member, "id" | "full_name" | "member_no"> | null;
+}
+
+export interface GuarantorReadiness {
+    required_amount: number | null;
+    allocated_amount: number;
+    accepted_amount: number;
+    pending_count: number;
+    rejected_count: number;
+    complete: boolean;
 }
 
 export interface CollateralItem {
@@ -1097,6 +1109,9 @@ export interface LoanApplication {
     loan_products?: Pick<LoanProduct, "id" | "code" | "name">;
     loan_approvals?: LoanApproval[];
     loan_guarantors?: LoanGuarantor[];
+    required_guarantee_amount?: number | null;
+    guarantor_readiness?: GuarantorReadiness;
+    guarantor_consent_summary?: string;
     collateral_items?: CollateralItem[];
     latest_mobile_disbursement?: LoanDisbursementOrder | null;
     latest_disbursement_approval_request?: LoanDisbursementApprovalRequest | null;

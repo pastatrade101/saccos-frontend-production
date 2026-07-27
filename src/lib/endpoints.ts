@@ -200,6 +200,7 @@ const routeMap = {
         attachments: (applicationId: string) => `/loan-applications/${applicationId}/attachments`,
         disbursementStatus: (orderId: string) => `/loan-applications/disbursements/${orderId}/status`,
         guarantorRequests: "/loan-applications/guarantor-requests",
+        guarantorCapacity: "/loan-applications/guarantor-capacity",
         guarantorConsent: (applicationId: string) => `/loan-applications/${applicationId}/guarantor-consent`
     },
     loanCapacity: {
@@ -328,7 +329,8 @@ const routeMap = {
         financialYear: "/sacco-settings/financial-year",
         performanceTarget: "/sacco-settings/performance-target",
         manualImports: "/sacco-settings/manual-imports",
-        leagues: "/sacco-settings/leagues"
+        leagues: "/sacco-settings/leagues",
+        guarantorPolicy: "/sacco-settings/guarantor-policy"
     },
     leagues: {
         standings: "/leagues/standings",
@@ -507,6 +509,7 @@ export const endpoints = {
         attachments: (applicationId: string) => routeMap.loanApplications.attachments(applicationId),
         disbursementStatus: (orderId: string) => routeMap.loanApplications.disbursementStatus(orderId),
         guarantorRequests: () => routeMap.loanApplications.guarantorRequests,
+        guarantorCapacity: () => routeMap.loanApplications.guarantorCapacity,
         guarantorConsent: (applicationId: string) => routeMap.loanApplications.guarantorConsent(applicationId)
     },
     loanCapacity: {
@@ -637,7 +640,8 @@ export const endpoints = {
         financialYear: () => routeMap.saccoSettings.financialYear,
         performanceTarget: () => routeMap.saccoSettings.performanceTarget,
         manualImports: () => routeMap.saccoSettings.manualImports,
-        leagues: () => routeMap.saccoSettings.leagues
+        leagues: () => routeMap.saccoSettings.leagues,
+        guarantorPolicy: () => routeMap.saccoSettings.guarantorPolicy
     },
     leagues: {
         standings: () => routeMap.leagues.standings,
@@ -1327,7 +1331,47 @@ export type LoanDisbursementOrderStatusResponse = ApiEnvelope<{ order: LoanDisbu
 export interface GuarantorConsentRequest {
     tenant_id?: string;
     decision: "accepted" | "rejected";
+    accepted_amount?: number | null;
     notes?: string | null;
+}
+
+export interface GuarantorCapacityLookup {
+    member_id: string;
+    full_name: string;
+    member_no: string;
+    is_active: boolean;
+    available_amount: number;
+    committed_amount: number;
+    eligible: boolean;
+    policy: {
+        max_commitment_ratio: number;
+        capacity_base: "savings" | "savings_shares";
+        max_guarantors_per_application: number;
+    };
+}
+
+export type GuarantorCapacityResponse = ApiEnvelope<GuarantorCapacityLookup>;
+
+export interface GuarantorPolicySettings {
+    tenant_id: string;
+    guarantor_exposure_enforced: boolean;
+    guarantor_max_commitment_ratio: number;
+    guarantor_capacity_base: "savings" | "savings_shares";
+    max_guarantors_per_application: number;
+    guarantor_release_mode: "on_close" | "proportional";
+    guarantor_block_encumbered_withdrawals: boolean;
+}
+
+export type GuarantorPolicySettingsResponse = ApiEnvelope<GuarantorPolicySettings>;
+
+export interface UpdateGuarantorPolicyRequest {
+    tenant_id?: string;
+    guarantor_exposure_enforced?: boolean;
+    guarantor_max_commitment_ratio?: number;
+    guarantor_capacity_base?: "savings" | "savings_shares";
+    max_guarantors_per_application?: number;
+    guarantor_release_mode?: "on_close" | "proportional";
+    guarantor_block_encumbered_withdrawals?: boolean;
 }
 
 export interface GuarantorRequestItem {
@@ -1336,6 +1380,7 @@ export interface GuarantorRequestItem {
     tenant_id: string;
     member_id: string;
     guaranteed_amount: number;
+    accepted_amount?: number | null;
     consent_status: "pending" | "accepted" | "rejected";
     consented_at?: string | null;
     notes?: string | null;

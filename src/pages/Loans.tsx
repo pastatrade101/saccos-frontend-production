@@ -1685,6 +1685,15 @@ export function LoansPage() {
     }, [activeTab, workspaceTabs]);
 
     const openAppraisalDialog = (application: LoanApplication) => {
+        const readiness = application.guarantor_readiness;
+        if (application.status === "submitted" && (application.loan_guarantors || []).length && readiness && !readiness.complete) {
+            pushToast({
+                type: "error",
+                title: "Awaiting guarantor consent",
+                message: "Verification starts after every guarantor has accepted and the required amount is fully guaranteed."
+            });
+            return;
+        }
         setAppraisalTarget(application);
         void loadReferenceData({ silent: true, force: true });
         setAppraisalGuarantors(
@@ -2443,7 +2452,23 @@ export function LoansPage() {
 
                 const accepted = guarantors.filter((item) => item.consent_status === "accepted").length;
                 const pending = guarantors.filter((item) => item.consent_status !== "accepted").length;
-                return pending ? `${accepted}/${guarantors.length} accepted` : "All accepted";
+                const readiness = row.guarantor_readiness;
+                const requiredAmount = Number(readiness?.required_amount ?? row.required_guarantee_amount ?? 0);
+                return (
+                    <Stack spacing={0.35}>
+                        {row.status === "submitted" && readiness && !readiness.complete ? (
+                            <Chip size="small" color="warning" variant="outlined" label="Awaiting guarantor consent" />
+                        ) : null}
+                        <Typography variant="body2">
+                            {pending ? `${accepted}/${guarantors.length} accepted` : "All accepted"}
+                        </Typography>
+                        {requiredAmount > 0 && readiness ? (
+                            <Typography variant="caption" color={readiness.complete ? "success.main" : "text.secondary"}>
+                                {formatCurrency(readiness.accepted_amount)} / {formatCurrency(requiredAmount)} guaranteed
+                            </Typography>
+                        ) : null}
+                    </Stack>
+                );
             }
         },
         {
