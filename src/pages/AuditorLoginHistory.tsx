@@ -9,12 +9,14 @@ import {
     DialogContent,
     DialogTitle,
     Divider,
+    FormControlLabel,
     Grid,
     IconButton,
     MenuItem,
     Menu,
     Pagination,
     Stack,
+    Switch,
     Table,
     TableBody,
     TableCell,
@@ -46,6 +48,7 @@ type RiskLevel = "low" | "medium" | "high";
 interface LoginAccount {
     user_id: string;
     full_name: string;
+    phone: string | null;
     role: string;
     account_type: "member" | "staff";
     privileged: boolean;
@@ -116,13 +119,13 @@ function csvEscape(value: unknown): string {
 
 function downloadCsv(filename: string, accounts: LoginAccount[]) {
     const headers = [
-        "Name", "Role", "Type", "Branch", "Member No", "Status", "Risk", "Risk Reasons",
+        "Name", "Role", "Type", "Branch", "Member No", "Phone", "Status", "Risk", "Risk Reasons",
         "Days Since Last Login", "Last Login", "Created", "Active"
     ];
     const lines = [headers.join(",")];
     for (const a of accounts) {
         lines.push([
-            a.full_name, formatRole(a.role), a.account_type, a.branch_name || "", a.member_no || "",
+            a.full_name, formatRole(a.role), a.account_type, a.branch_name || "", a.member_no || "", a.phone || "",
             STATUS_META[a.status].label, RISK_META[a.risk_level].label, a.risk_reasons.join("; "),
             a.never_logged_in ? "never" : a.days_since_last_login,
             a.last_login_at || "", a.created_at, a.is_active ? "Active" : "Disabled"
@@ -158,6 +161,7 @@ export function AuditorLoginHistoryPage() {
     const [privilegedOnly, setPrivilegedOnly] = useState(false);
 
     // table
+    const [showIdentity, setShowIdentity] = useState(false);
     const [sortKey, setSortKey] = useState<SortKey>("last_login");
     const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
     const [page, setPage] = useState(1);
@@ -330,6 +334,10 @@ export function AuditorLoginHistoryPage() {
                             <MenuItem value="low">Low</MenuItem>
                         </TextField>
                         <Box sx={{ flexGrow: 1 }} />
+                        <FormControlLabel
+                            control={<Switch size="small" checked={showIdentity} onChange={(e) => setShowIdentity(e.target.checked)} />}
+                            label={<Typography variant="body2">Show names &amp; phone</Typography>}
+                        />
                         <Button size="small" variant="outlined" startIcon={<DownloadRoundedIcon />} onClick={(e) => setExportAnchor(e.currentTarget)}>Export</Button>
                     </Stack>
                     <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: "block" }}>
@@ -367,10 +375,15 @@ export function AuditorLoginHistoryPage() {
                                     <TableCell>
                                         <Stack spacing={0.25}>
                                             <Stack direction="row" spacing={0.75} alignItems="center">
-                                                <Typography variant="body2" fontWeight={a.privileged ? 800 : 600}>{a.member_no || a.full_name}</Typography>
+                                                <Typography variant="body2" fontWeight={a.privileged ? 800 : 600}>{showIdentity ? a.full_name : (a.member_no || a.full_name)}</Typography>
                                                 {!a.is_active && <Chip size="small" label="Disabled" color="default" variant="outlined" />}
                                             </Stack>
                                             <Chip size="small" label={formatRole(a.role)} variant={a.privileged ? "filled" : "outlined"} color={a.privileged ? "secondary" : "default"} sx={{ width: "fit-content", height: 20 }} />
+                                            {showIdentity && (a.member_no || a.phone) && (
+                                                <Typography variant="caption" color="text.secondary">
+                                                    {[a.member_no, a.phone].filter(Boolean).join(" · ")}
+                                                </Typography>
+                                            )}
                                         </Stack>
                                     </TableCell>
                                     <TableCell><Typography variant="body2">{formatDate(a.created_at)}</Typography></TableCell>
@@ -432,6 +445,7 @@ export function AuditorLoginHistoryPage() {
                                 <Row label="Type" value={detail.account_type === "member" ? "Member" : "Staff"} />
                                 <Row label="Branch" value={detail.branch_name || "—"} />
                                 {detail.member_no && <Row label="Member No." value={detail.member_no} />}
+                                {detail.phone && <Row label="Phone" value={detail.phone} />}
                                 <Row label="Active" value={detail.is_active ? "Active" : "Disabled"} />
                                 <Row label="Created" value={formatDate(detail.created_at)} />
                                 <Row label="Last login" value={detail.last_login_at ? `${formatDate(detail.last_login_at)} (${ageLabel(detail.days_since_last_login, detail.never_logged_in)})` : "never"} />
