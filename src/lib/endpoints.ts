@@ -201,6 +201,7 @@ const routeMap = {
         disbursementStatus: (orderId: string) => `/loan-applications/disbursements/${orderId}/status`,
         guarantorRequests: "/loan-applications/guarantor-requests",
         guarantorCapacity: "/loan-applications/guarantor-capacity",
+        guarantorSearch: "/loan-applications/guarantor-search",
         guarantorConsent: (applicationId: string) => `/loan-applications/${applicationId}/guarantor-consent`
     },
     loanCapacity: {
@@ -510,6 +511,7 @@ export const endpoints = {
         disbursementStatus: (orderId: string) => routeMap.loanApplications.disbursementStatus(orderId),
         guarantorRequests: () => routeMap.loanApplications.guarantorRequests,
         guarantorCapacity: () => routeMap.loanApplications.guarantorCapacity,
+        guarantorSearch: () => routeMap.loanApplications.guarantorSearch,
         guarantorConsent: (applicationId: string) => routeMap.loanApplications.guarantorConsent(applicationId)
     },
     loanCapacity: {
@@ -1351,6 +1353,14 @@ export interface GuarantorCapacityLookup {
 }
 
 export type GuarantorCapacityResponse = ApiEnvelope<GuarantorCapacityLookup>;
+
+export interface GuarantorSearchHit {
+    member_id: string;
+    full_name: string;
+    member_no: string;
+}
+
+export type GuarantorSearchResponse = ApiEnvelope<GuarantorSearchHit[]>;
 
 export interface GuarantorPolicySettings {
     tenant_id: string;

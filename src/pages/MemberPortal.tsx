@@ -140,6 +140,8 @@ import {
     type StatementsResponse,
     type GuarantorCapacityLookup,
     type GuarantorCapacityResponse,
+    type GuarantorSearchHit,
+    type GuarantorSearchResponse,
     type GuarantorConsentRequest,
     type GuarantorRequestItem,
     type GuarantorRequestsResponse,
@@ -1203,6 +1205,7 @@ export function MemberPortalPage() {
     const [guarantorLookupNo, setGuarantorLookupNo] = useState("");
     const [guarantorLookupBusy, setGuarantorLookupBusy] = useState(false);
     const [guarantorMaxCount, setGuarantorMaxCount] = useState(5);
+    const [guarantorSuggestions, setGuarantorSuggestions] = useState<GuarantorSearchHit[]>([]);
     const [manageGuarantorsTarget, setManageGuarantorsTarget] = useState<LoanApplication | null>(null);
     const [savingGuarantorPlan, setSavingGuarantorPlan] = useState(false);
     const [statements, setStatements] = useState<StatementRow[]>([]);
@@ -5136,9 +5139,43 @@ export function MemberPortalPage() {
         }
     };
 
-    const lookupGuarantorByMemberNo = async () => {
+    // Type-ahead: search active members by name or member number as the
+    // applicant types, so nobody needs to know member numbers by heart.
+    useEffect(() => {
+        const query = guarantorLookupNo.trim();
+        if (query.length < 2 || !profile) {
+            setGuarantorSuggestions([]);
+            return;
+        }
+
+        let cancelled = false;
+        const timer = window.setTimeout(async () => {
+            try {
+                const { data } = await api.get<GuarantorSearchResponse>(endpoints.loanApplications.guarantorSearch(), {
+                    params: { tenant_id: profile.tenant_id, q: query }
+                });
+                if (!cancelled) {
+                    const chosen = new Set(guarantorDrafts.map((row) => row.member_id));
+                    setGuarantorSuggestions((data.data || []).filter((hit) => !chosen.has(hit.member_id)));
+                }
+            } catch {
+                if (!cancelled) {
+                    setGuarantorSuggestions([]);
+                }
+            }
+        }, 350);
+
+        return () => {
+            cancelled = true;
+            window.clearTimeout(timer);
+        };
+        // guarantorDrafts intentionally read fresh inside the timer via closure;
+        // re-running on draft changes just re-filters the list.
+    }, [guarantorLookupNo, profile, guarantorDrafts]);
+
+    const lookupGuarantorByMemberNo = async (hit?: GuarantorSearchHit) => {
         const memberNo = guarantorLookupNo.trim();
-        if (!memberNo || !profile) {
+        if ((!memberNo && !hit) || !profile) {
             return;
         }
         if (guarantorDrafts.length >= guarantorMaxCount) {
@@ -5153,7 +5190,9 @@ export function MemberPortalPage() {
         setGuarantorLookupBusy(true);
         try {
             const { data } = await api.get<GuarantorCapacityResponse>(endpoints.loanApplications.guarantorCapacity(), {
-                params: { tenant_id: profile.tenant_id, member_no: memberNo }
+                params: hit
+                    ? { tenant_id: profile.tenant_id, member_id: hit.member_id }
+                    : { tenant_id: profile.tenant_id, member_no: memberNo }
             });
             const lookup: GuarantorCapacityLookup = data.data;
             setGuarantorMaxCount(lookup.policy.max_guarantors_per_application || 5);
@@ -5186,6 +5225,7 @@ export function MemberPortalPage() {
                 guaranteed_amount: Math.max(0, Math.round(suggested * 100) / 100)
             }]);
             setGuarantorLookupNo("");
+            setGuarantorSuggestions([]);
         } catch (error) {
             pushToast({
                 type: "error",
@@ -7154,25 +7194,41 @@ export function MemberPortalPage() {
                             <TextField
                                 fullWidth
                                 size="small"
-                                label="Guarantor member number"
+                                label="Search guarantor by name or member number"
                                 value={guarantorLookupNo}
                                 onChange={(event) => setGuarantorLookupNo(event.target.value)}
                                 onKeyDown={(event) => {
                                     if (event.key === "Enter") {
                                         event.preventDefault();
-                                        void lookupGuarantorByMemberNo();
+                                        void lookupGuarantorByMemberNo(guarantorSuggestions[0]);
                                     }
                                 }}
                             />
                             <Button
                                 variant="outlined"
-                                onClick={() => void lookupGuarantorByMemberNo()}
+                                onClick={() => void lookupGuarantorByMemberNo(guarantorSuggestions[0])}
                                 disabled={guarantorLookupBusy || !guarantorLookupNo.trim() || guarantorDrafts.length >= guarantorMaxCount}
                                 sx={{ whiteSpace: "nowrap" }}
                             >
                                 {guarantorLookupBusy ? "Checking..." : "Add"}
                             </Button>
                         </Stack>
+                        {guarantorSuggestions.length ? (
+                            <Paper variant="outlined" sx={{ borderRadius: 1 }}>
+                                {guarantorSuggestions.map((hit) => (
+                                    <Button
+                                        key={hit.member_id}
+                                        fullWidth
+                                        onClick={() => void lookupGuarantorByMemberNo(hit)}
+                                        disabled={guarantorLookupBusy}
+                                        sx={{ justifyContent: "space-between", textTransform: "none", px: 1.5 }}
+                                    >
+                                        <Typography variant="body2" sx={{ fontWeight: 600 }}>{hit.full_name}</Typography>
+                                        <Typography variant="caption" color="text.secondary">{hit.member_no}</Typography>
+                                    </Button>
+                                ))}
+                            </Paper>
+                        ) : null}
                         {guarantorDrafts.map((row, index) => (
                             <Paper key={row.member_id} variant="outlined" sx={{ p: 1.25, borderRadius: 1 }}>
                                 <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ sm: "center" }} justifyContent="space-between">
@@ -11080,26 +11136,42 @@ export function MemberPortalPage() {
                                                 <TextField
                                                     fullWidth
                                                     size="small"
-                                                    label="Guarantor member number"
-                                                    placeholder="e.g. ILS24-F00002"
+                                                    label="Search guarantor by name or member number"
+                                                    placeholder="e.g. Erick or ILS24-F00002"
                                                     value={guarantorLookupNo}
                                                     onChange={(event) => setGuarantorLookupNo(event.target.value)}
                                                     onKeyDown={(event) => {
                                                         if (event.key === "Enter") {
                                                             event.preventDefault();
-                                                            void lookupGuarantorByMemberNo();
+                                                            void lookupGuarantorByMemberNo(guarantorSuggestions[0]);
                                                         }
                                                     }}
                                                 />
                                                 <Button
                                                     variant="outlined"
-                                                    onClick={() => void lookupGuarantorByMemberNo()}
+                                                    onClick={() => void lookupGuarantorByMemberNo(guarantorSuggestions[0])}
                                                     disabled={guarantorLookupBusy || !guarantorLookupNo.trim() || guarantorDrafts.length >= guarantorMaxCount}
                                                     sx={{ whiteSpace: "nowrap" }}
                                                 >
                                                     {guarantorLookupBusy ? "Checking..." : "Add Guarantor"}
                                                 </Button>
                                             </Stack>
+                                            {guarantorSuggestions.length ? (
+                                                <Paper variant="outlined" sx={{ borderRadius: 1 }}>
+                                                    {guarantorSuggestions.map((hit) => (
+                                                        <Button
+                                                            key={hit.member_id}
+                                                            fullWidth
+                                                            onClick={() => void lookupGuarantorByMemberNo(hit)}
+                                                            disabled={guarantorLookupBusy}
+                                                            sx={{ justifyContent: "space-between", textTransform: "none", px: 1.5 }}
+                                                        >
+                                                            <Typography variant="body2" sx={{ fontWeight: 600 }}>{hit.full_name}</Typography>
+                                                            <Typography variant="caption" color="text.secondary">{hit.member_no}</Typography>
+                                                        </Button>
+                                                    ))}
+                                                </Paper>
+                                            ) : null}
                                             {guarantorDrafts.length ? (
                                                 <Stack spacing={1}>
                                                     {guarantorDrafts.map((row, index) => (
