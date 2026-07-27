@@ -1203,6 +1203,8 @@ export function MemberPortalPage() {
     const [guarantorLookupNo, setGuarantorLookupNo] = useState("");
     const [guarantorLookupBusy, setGuarantorLookupBusy] = useState(false);
     const [guarantorMaxCount, setGuarantorMaxCount] = useState(5);
+    const [manageGuarantorsTarget, setManageGuarantorsTarget] = useState<LoanApplication | null>(null);
+    const [savingGuarantorPlan, setSavingGuarantorPlan] = useState(false);
     const [statements, setStatements] = useState<StatementRow[]>([]);
     // Authoritative monthly-commitment status from the backend (same SQL the
     // loan-submit guard enforces with). "error" is a distinct state so a failed
@@ -3440,6 +3442,15 @@ export function MemberPortalPage() {
         [guarantorDrafts]
     );
     const remainingGuaranteeAmount = Math.max(0, Math.round((requiredGuaranteeAmount - allocatedGuaranteeAmount) * 100) / 100);
+    // When the "Manage Guarantors" dialog is open, coverage is measured against
+    // THAT application's required amount instead of the apply-form draft.
+    const activeRequiredGuarantee = manageGuarantorsTarget
+        ? Math.max(0, Math.round(Number(
+            manageGuarantorsTarget.required_guarantee_amount
+            ?? (manageGuarantorsTarget.requested_amount - totalSavings)
+        ) * 100) / 100)
+        : requiredGuaranteeAmount;
+    const activeRemainingGuarantee = Math.max(0, Math.round((activeRequiredGuarantee - allocatedGuaranteeAmount) * 100) / 100);
     const totalShareCapital = 0;
     const performanceTargetPosition = useMemo(
         () => calculateMemberPerformanceTarget(memberRecord, accounts, performanceTargetSettings),
@@ -4508,7 +4519,21 @@ export function MemberPortalPage() {
                         </Button>
                     </Stack>
                 ) : (
-                    <Chip size="small" variant="outlined" label={row.status === "submitted" ? "In review" : row.status.replace(/_/g, " ")} />
+                    row.status === "submitted" && (row.loan_guarantors || []).length ? (
+                        <Stack spacing={0.5} alignItems="flex-start">
+                            <Chip
+                                size="small"
+                                variant="outlined"
+                                label={row.guarantor_readiness?.complete ? "In review" : "Awaiting guarantors"}
+                                color={row.guarantor_readiness?.complete ? "default" : "warning"}
+                            />
+                            <Button size="small" variant="text" onClick={() => openManageGuarantorsDialog(row)}>
+                                Manage Guarantors
+                            </Button>
+                        </Stack>
+                    ) : (
+                        <Chip size="small" variant="outlined" label={row.status === "submitted" ? "In review" : row.status.replace(/_/g, " ")} />
+                    )
                 )
         }
     ];
@@ -5141,7 +5166,7 @@ export function MemberPortalPage() {
                 pushToast({ type: "error", title: "Member not eligible", message: `${lookup.full_name} is not an active member.` });
                 return;
             }
-            if (requiredGuaranteeAmount > 0 && lookup.available_amount <= 0) {
+            if (activeRequiredGuarantee > 0 && lookup.available_amount <= 0) {
                 pushToast({
                     type: "error",
                     title: "No guarantee capacity",
@@ -5150,8 +5175,8 @@ export function MemberPortalPage() {
                 return;
             }
 
-            const suggested = requiredGuaranteeAmount > 0
-                ? Math.min(lookup.available_amount, remainingGuaranteeAmount)
+            const suggested = activeRequiredGuarantee > 0
+                ? Math.min(lookup.available_amount, activeRemainingGuarantee)
                 : 0;
             setGuarantorDrafts((prev) => [...prev, {
                 member_id: lookup.member_id,
@@ -5169,6 +5194,73 @@ export function MemberPortalPage() {
             });
         } finally {
             setGuarantorLookupBusy(false);
+        }
+    };
+
+    const openManageGuarantorsDialog = (application: LoanApplication) => {
+        setManageGuarantorsTarget(application);
+        setGuarantorLookupNo("");
+        setGuarantorDrafts((application.loan_guarantors || [])
+            .filter((row) => row.consent_status !== "rejected")
+            .map((row) => ({
+                member_id: row.member_id,
+                member_no: row.members?.member_no || "",
+                full_name: row.members?.full_name || row.guarantor_name || "Member",
+                available_amount: null,
+                guaranteed_amount: Number(row.guaranteed_amount || 0)
+            })));
+    };
+
+    const closeManageGuarantorsDialog = () => {
+        setManageGuarantorsTarget(null);
+        setGuarantorDrafts([]);
+        setGuarantorLookupNo("");
+    };
+
+    const saveGuarantorPlan = async () => {
+        if (!profile || !manageGuarantorsTarget) {
+            return;
+        }
+        if (activeRequiredGuarantee > 0 && Math.abs(allocatedGuaranteeAmount - activeRequiredGuarantee) > 0.01) {
+            pushToast({
+                type: "error",
+                title: allocatedGuaranteeAmount < activeRequiredGuarantee ? "Guarantee not fully covered" : "Guarantee amounts too high",
+                message: `Your guarantors must cover exactly ${formatCurrency(activeRequiredGuarantee)} in total.`
+            });
+            return;
+        }
+        if (!guarantorDrafts.length) {
+            pushToast({ type: "error", title: "Guarantor required", message: "Keep at least one guarantor on the application." });
+            return;
+        }
+
+        setSavingGuarantorPlan(true);
+        try {
+            await api.patch<LoanApplicationResponse>(
+                endpoints.loanApplications.update(manageGuarantorsTarget.id),
+                {
+                    tenant_id: profile.tenant_id,
+                    guarantors: guarantorDrafts.map((row) => ({
+                        member_id: row.member_id,
+                        guaranteed_amount: activeRequiredGuarantee > 0 ? row.guaranteed_amount : 0
+                    }))
+                } as UpdateLoanApplicationRequest
+            );
+            pushToast({
+                type: "success",
+                title: "Guarantors updated",
+                message: "New or changed guarantors will receive a fresh request to accept."
+            });
+            closeManageGuarantorsDialog();
+            await reloadLoanApplications(profile.tenant_id);
+        } catch (error) {
+            pushToast({
+                type: "error",
+                title: "Unable to update guarantors",
+                message: getApiErrorMessage(error)
+            });
+        } finally {
+            setSavingGuarantorPlan(false);
         }
     };
 
@@ -7040,6 +7132,105 @@ export function MemberPortalPage() {
                         }}
                     >
                         Accept Guarantee
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            <Dialog
+                open={Boolean(manageGuarantorsTarget)}
+                onClose={savingGuarantorPlan ? undefined : closeManageGuarantorsDialog}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle>Manage Guarantors</DialogTitle>
+                <DialogContent dividers>
+                    <Stack spacing={1.5} sx={{ pt: 0.5 }}>
+                        <Alert severity="info" variant="outlined">
+                            {activeRequiredGuarantee > 0
+                                ? `Your guarantors must cover ${formatCurrency(activeRequiredGuarantee)} in total. Guarantors who declined have been removed — replace them or adjust amounts, and changed guarantors will be asked to accept again.`
+                                : "This loan is fully covered by your savings — guarantors are witnesses only."}
+                        </Alert>
+                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+                            <TextField
+                                fullWidth
+                                size="small"
+                                label="Guarantor member number"
+                                value={guarantorLookupNo}
+                                onChange={(event) => setGuarantorLookupNo(event.target.value)}
+                                onKeyDown={(event) => {
+                                    if (event.key === "Enter") {
+                                        event.preventDefault();
+                                        void lookupGuarantorByMemberNo();
+                                    }
+                                }}
+                            />
+                            <Button
+                                variant="outlined"
+                                onClick={() => void lookupGuarantorByMemberNo()}
+                                disabled={guarantorLookupBusy || !guarantorLookupNo.trim() || guarantorDrafts.length >= guarantorMaxCount}
+                                sx={{ whiteSpace: "nowrap" }}
+                            >
+                                {guarantorLookupBusy ? "Checking..." : "Add"}
+                            </Button>
+                        </Stack>
+                        {guarantorDrafts.map((row, index) => (
+                            <Paper key={row.member_id} variant="outlined" sx={{ p: 1.25, borderRadius: 1 }}>
+                                <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ sm: "center" }} justifyContent="space-between">
+                                    <Box sx={{ minWidth: 0 }}>
+                                        <Typography variant="body2" sx={{ fontWeight: 700 }}>{row.full_name}</Typography>
+                                        <Typography variant="caption" color="text.secondary">
+                                            {row.member_no}{row.available_amount !== null && activeRequiredGuarantee > 0
+                                                ? ` · can guarantee up to ${formatCurrency(row.available_amount)}`
+                                                : ""}
+                                        </Typography>
+                                    </Box>
+                                    <Stack direction="row" spacing={1} alignItems="center">
+                                        {activeRequiredGuarantee > 0 ? (
+                                            <TextField
+                                                size="small"
+                                                type="number"
+                                                label="Amount"
+                                                value={row.guaranteed_amount || ""}
+                                                onChange={(event) => {
+                                                    const nextValue = Number(event.target.value) || 0;
+                                                    setGuarantorDrafts((prev) => prev.map((item, itemIndex) =>
+                                                        itemIndex === index ? { ...item, guaranteed_amount: nextValue } : item));
+                                                }}
+                                                sx={{ width: 150 }}
+                                            />
+                                        ) : (
+                                            <Chip size="small" variant="outlined" label="Witness" />
+                                        )}
+                                        <IconButton
+                                            size="small"
+                                            onClick={() => setGuarantorDrafts((prev) => prev.filter((item) => item.member_id !== row.member_id))}
+                                            aria-label="Remove guarantor"
+                                        >
+                                            <CloseRoundedIcon fontSize="small" />
+                                        </IconButton>
+                                    </Stack>
+                                </Stack>
+                            </Paper>
+                        ))}
+                        {activeRequiredGuarantee > 0 ? (
+                            <Stack spacing={0.5}>
+                                <LinearProgress
+                                    variant="determinate"
+                                    value={Math.min(100, activeRequiredGuarantee ? (allocatedGuaranteeAmount / activeRequiredGuarantee) * 100 : 0)}
+                                    sx={{ height: 8, borderRadius: 4 }}
+                                />
+                                <Typography variant="caption" color={activeRemainingGuarantee > 0 ? "warning.main" : "success.main"}>
+                                    {formatCurrency(allocatedGuaranteeAmount)} / {formatCurrency(activeRequiredGuarantee)} allocated
+                                    {activeRemainingGuarantee > 0 ? ` — ${formatCurrency(activeRemainingGuarantee)} remaining` : " — fully covered"}
+                                </Typography>
+                            </Stack>
+                        ) : null}
+                    </Stack>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={closeManageGuarantorsDialog} disabled={savingGuarantorPlan}>Cancel</Button>
+                    <Button variant="contained" onClick={() => void saveGuarantorPlan()} disabled={savingGuarantorPlan}>
+                        {savingGuarantorPlan ? "Saving..." : "Save Guarantors"}
                     </Button>
                 </DialogActions>
             </Dialog>
