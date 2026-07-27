@@ -4923,6 +4923,14 @@ export function MemberPortalPage() {
         // Guarantor plan checks (board process): at least one guarantor on
         // submission; the excess above savings must be exactly covered.
         if (options.submitAfterSave) {
+            if (loanCapacity?.has_problem_loans) {
+                pushToast({
+                    type: "error",
+                    title: "Overdue loan",
+                    message: "Clear your overdue loan first — new applications are not accepted while a loan is overdue."
+                });
+                return;
+            }
             if (!guarantorDrafts.length) {
                 pushToast({
                     type: "error",
@@ -10760,6 +10768,16 @@ export function MemberPortalPage() {
 
                                     {isLoanDetailsStep ? (
                                         <Stack spacing={2}>
+                                    {loanCapacity?.has_problem_loans ? (
+                                        <Alert severity="error" variant="outlined">
+                                            You have an overdue loan. New applications are not accepted until the overdue amount is cleared.
+                                        </Alert>
+                                    ) : null}
+                                    {selectedLoanBorrowLimit > 0 && Number(requestedLoanAmount || 0) > selectedLoanBorrowLimit ? (
+                                        <Alert severity="warning" variant="outlined">
+                                            {formatCurrency(Number(requestedLoanAmount || 0))} is above your current limit of {formatCurrency(selectedLoanBorrowLimit)} — you are {formatCurrency(Number(requestedLoanAmount || 0) - selectedLoanBorrowLimit)} over it. Lower the amount or choose a product that allows more.
+                                        </Alert>
+                                    ) : null}
                                     <TextField
                                         label="Loan Purpose *"
                                         placeholder="Explain how the loan will be used (e.g., farming inputs, business expansion, school fees)"

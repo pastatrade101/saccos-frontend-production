@@ -1166,6 +1166,8 @@ export interface LoanCapacitySummary {
     current_loan_exposure: number;
     guarantor_exposure: number;
     contribution_limit: number;
+    contribution_headroom?: number;
+    has_problem_loans?: boolean;
     product_limit: number;
     liquidity_limit: number;
     borrow_limit: number;

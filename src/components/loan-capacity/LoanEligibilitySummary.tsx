@@ -103,13 +103,43 @@ export function LoanEligibilitySummary({
                                 SACCO loan pool temporarily exhausted. Please try again later.
                             </Alert>
                         ) : null}
+                        {summary.has_problem_loans ? (
+                            <Alert severity="error" variant="outlined">
+                                You have an overdue loan. New loan applications are not accepted until the overdue amount is cleared.
+                            </Alert>
+                        ) : null}
                         <Grid container spacing={1.5}>
                             <Grid size={{ xs: 12, md: 6 }}>
                                 <MetricCard label="Member Savings Balance" value={formatCurrency(summary.total_contributions)} compact={compact} />
                             </Grid>
                             <Grid size={{ xs: 12, md: 6 }}>
-                                <MetricCard label="Savings Borrow Limit" value={formatCurrency(summary.contribution_limit)} compact={compact} />
+                                <MetricCard
+                                    label={summary.guarantor_exposure > 0
+                                        ? "Savings Borrow Limit ((savings − guarantees given) × multiplier)"
+                                        : "Savings Borrow Limit (savings × multiplier)"}
+                                    value={formatCurrency(summary.contribution_limit)}
+                                    compact={compact}
+                                />
                             </Grid>
+                            {summary.current_loan_exposure > 0 ? (
+                                <>
+                                    <Grid size={{ xs: 12, md: 6 }}>
+                                        <MetricCard
+                                            label="Existing Loan Balance (deducted)"
+                                            value={`− ${formatCurrency(summary.current_loan_exposure)}`}
+                                            compact={compact}
+                                        />
+                                    </Grid>
+                                    <Grid size={{ xs: 12, md: 6 }}>
+                                        <MetricCard
+                                            label="Savings Rule Headroom"
+                                            value={formatCurrency(summary.contribution_headroom
+                                                ?? Math.max(0, summary.contribution_limit - summary.current_loan_exposure))}
+                                            compact={compact}
+                                        />
+                                    </Grid>
+                                </>
+                            ) : null}
                             <Grid size={{ xs: 12, md: 6 }}>
                                 <MetricCard label="Loan Product Limit" value={formatCurrency(summary.product_limit)} compact={compact} />
                             </Grid>
@@ -143,7 +173,10 @@ export function LoanEligibilitySummary({
                                         {formatCurrency(summary.borrow_limit)}
                                     </Typography>
                                     <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                                        Based on your savings balance, product rules, and current SACCO liquidity.
+                                        The lowest of the three ceilings above
+                                        {summary.current_loan_exposure > 0
+                                            ? ", after deducting what you still owe on existing loans."
+                                            : ", based on your savings, product rules, and SACCO liquidity."}
                                     </Typography>
                                 </Box>
                             </Grid>
