@@ -179,7 +179,7 @@ export function TreasuryPage() {
     };
 
     const loadTreasury = async (mode: "initial" | "refresh" = "refresh") => {
-        if (!tenantId || twoFactorSetupRequired || profile?.role === "branch_manager") {
+        if (!tenantId || twoFactorSetupRequired) {
             return;
         }
 
@@ -236,7 +236,7 @@ export function TreasuryPage() {
     };
 
     useEffect(() => {
-        if (twoFactorSetupRequired || profile?.role === "branch_manager") {
+        if (twoFactorSetupRequired) {
             return;
         }
 
@@ -903,10 +903,6 @@ export function TreasuryPage() {
 
     if (twoFactorSetupRequired) {
         return <Navigate to="/security" replace />;
-    }
-
-    if (profile?.role === "branch_manager") {
-        return <Navigate to="/treasury/policy-settings" replace />;
     }
 
     if (twoFactorGateActive) {
