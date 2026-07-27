@@ -142,6 +142,8 @@ import {
     type GuarantorCapacityResponse,
     type GuarantorSearchHit,
     type GuarantorSearchResponse,
+    type TopUpQuote,
+    type TopUpQuoteResponse,
     type GuarantorConsentRequest,
     type GuarantorRequestItem,
     type GuarantorRequestsResponse,
@@ -1238,6 +1240,8 @@ export function MemberPortalPage() {
     const [loanCapacity, setLoanCapacity] = useState<LoanCapacitySummary | null>(null);
     const [loanCapacityLoading, setLoanCapacityLoading] = useState(false);
     const [loanCapacityError, setLoanCapacityError] = useState<string | null>(null);
+    const [topUpQuote, setTopUpQuote] = useState<TopUpQuote | null>(null);
+    const [topUpNewCashInput, setTopUpNewCashInput] = useState("");
     const [dashboardLoanCapacity, setDashboardLoanCapacity] = useState<LoanCapacitySummary | null>(null);
     const [dashboardLoanCapacityLoading, setDashboardLoanCapacityLoading] = useState(false);
     const [dashboardLoanCapacityError, setDashboardLoanCapacityError] = useState<string | null>(null);
@@ -2029,6 +2033,37 @@ export function MemberPortalPage() {
 
         return fallback;
     };
+
+    // What the member owes today — a member with any open loan may only apply
+    // as a top-up, and the new facility has to settle that balance first.
+    useEffect(() => {
+        let cancelled = false;
+
+        if (!showApplyDialog || !profile?.tenant_id) {
+            setTopUpQuote(null);
+            return () => {
+                cancelled = true;
+            };
+        }
+
+        void api.get<TopUpQuoteResponse>(endpoints.loanApplications.topUpQuote(), {
+            params: { tenant_id: profile.tenant_id }
+        })
+            .then(({ data }) => {
+                if (!cancelled) {
+                    setTopUpQuote(data.data || null);
+                }
+            })
+            .catch(() => {
+                if (!cancelled) {
+                    setTopUpQuote(null);
+                }
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [showApplyDialog, profile?.tenant_id]);
 
     useEffect(() => {
         let cancelled = false;
@@ -3434,6 +3469,22 @@ export function MemberPortalPage() {
         () => savingsAccounts.reduce((sum, account) => sum + account.locked_balance, 0),
         [savingsAccounts]
     );
+    // One loan at a time: a member who already carries a loan applies for a
+    // top-up, whose total is what they owe today plus the cash they want.
+    const isTopUpApplication = Boolean(topUpQuote?.top_up_required);
+    const topUpSettlement = Number(topUpQuote?.settlement_amount || 0);
+    const topUpNewCash = Number(topUpNewCashInput.replace(/[^\d]/g, "")) || 0;
+
+    useEffect(() => {
+        if (!isTopUpApplication) {
+            return;
+        }
+
+        const total = topUpSettlement + topUpNewCash;
+        setRequestedAmountInput(formatWholeNumber(String(total)));
+        loanApplicationForm.setValue("requested_amount", total, { shouldValidate: true, shouldDirty: true });
+    }, [isTopUpApplication, topUpSettlement, topUpNewCash, loanApplicationForm]);
+
     // Board process: only the portion of the loan above the member's own savings
     // needs guaranteed amounts; a fully self-covered loan takes nominal guarantors.
     const requiredGuaranteeAmount = useMemo(
@@ -4764,6 +4815,7 @@ export function MemberPortalPage() {
         setLoanFormStep(0);
         setGuarantorDrafts([]);
         setGuarantorLookupNo("");
+        setTopUpNewCashInput("");
         loanApplicationForm.reset();
     };
 
@@ -4969,8 +5021,12 @@ export function MemberPortalPage() {
                 payout_account_number: values.payout_account_number || undefined,
                 declaration_accepted: values.declaration_accepted,
                 repayment_mode: values.repayment_mode,
-                loan_category: values.loan_category,
-                top_up_of_loan_id: values.loan_category === "top_up" ? (values.top_up_of_loan_id || null) : null,
+                // One loan at a time: when the member already carries a loan the
+                // backend only accepts a top-up, whatever the form defaulted to.
+                loan_category: isTopUpApplication ? "top_up" : values.loan_category,
+                top_up_of_loan_id: isTopUpApplication
+                    ? (topUpQuote?.loans?.[0]?.loan_id || null)
+                    : (values.loan_category === "top_up" ? (values.top_up_of_loan_id || null) : null),
                 deposit_purchase_amount: values.deposit_purchase_amount || 0,
                 application_fee_paid: values.application_fee_paid,
                 guarantors: guarantorDrafts.map((row) => ({
@@ -5049,6 +5105,12 @@ export function MemberPortalPage() {
                 errorMessage = `Requested amount must be at least ${formatCurrency(minimumAmount)}.`;
             } else if (errorCode === "LOAN_POOL_TEMPORARILY_EXHAUSTED") {
                 errorMessage = "SACCO loan pool temporarily exhausted. Please try again later.";
+            } else if (errorCode === "LOAN_TOPUP_REQUIRED") {
+                const settlement = getNumericDetail(errorDetails, "settlement_amount");
+                errorMessage = `You already have a loan${settlement !== null ? ` with a balance of ${formatCurrency(settlement)}` : ""}. Reopen this form to apply as a top-up — your balance is settled out of the new loan.`;
+            } else if (errorCode === "TOPUP_AMOUNT_TOO_LOW") {
+                const settlement = getNumericDetail(errorDetails, "settlement_amount");
+                errorMessage = `A top-up must be more than the ${settlement !== null ? formatCurrency(settlement) : "amount"} you currently owe — enter the extra cash you want on top of it.`;
             } else if (errorCode === "GUARANTOR_CAPACITY_INSUFFICIENT") {
                 errorMessage = "One of your guarantors no longer has enough guarantee capacity. Review the amounts or choose another guarantor.";
             } else if (errorCode === "GUARANTOR_COVERAGE_SHORT") {
@@ -10768,10 +10830,58 @@ export function MemberPortalPage() {
 
                                     {isLoanDetailsStep ? (
                                         <Stack spacing={2}>
-                                    {loanCapacity?.has_problem_loans ? (
+                                    {isTopUpApplication ? (
+                                        <Alert severity="info" variant="outlined">
+                                            <Typography variant="body2" sx={{ fontWeight: 700, mb: 0.5 }}>
+                                                This is a top-up — you already have a loan
+                                            </Typography>
+                                            <Typography variant="body2">
+                                                Your current balance of {formatCurrency(topUpSettlement)} is settled out of the new loan, so you keep only one loan. Enter the extra cash you want below; you will receive that amount, and the new loan will be {formatCurrency(topUpSettlement + topUpNewCash)}.
+                                            </Typography>
+                                            <Stack spacing={0.25} sx={{ mt: 1 }}>
+                                                {(topUpQuote?.loans || []).map((loan) => (
+                                                    <Typography key={loan.loan_id} variant="caption" color="text.secondary">
+                                                        {loan.loan_number} — {formatCurrency(loan.settle_amount)}{loan.status === "in_arrears" ? " (overdue)" : ""}
+                                                    </Typography>
+                                                ))}
+                                            </Stack>
+                                        </Alert>
+                                    ) : loanCapacity?.has_problem_loans ? (
                                         <Alert severity="error" variant="outlined">
                                             You have an overdue loan. New applications are not accepted until the overdue amount is cleared.
                                         </Alert>
+                                    ) : null}
+                                    {isTopUpApplication ? (
+                                        <Grid container spacing={2}>
+                                            <Grid size={{ xs: 12, md: 4 }}>
+                                                <TextField
+                                                    label="Extra cash you want (TZS) *"
+                                                    fullWidth
+                                                    value={topUpNewCashInput}
+                                                    onChange={(event) => setTopUpNewCashInput(formatWholeNumber(event.target.value.replace(/[^\d]/g, "")))}
+                                                    helperText="What you actually receive at the counter."
+                                                    inputProps={{ inputMode: "numeric" }}
+                                                />
+                                            </Grid>
+                                            <Grid size={{ xs: 12, md: 4 }}>
+                                                <TextField
+                                                    label="Settling your current loan(s)"
+                                                    fullWidth
+                                                    value={formatWholeNumber(String(topUpSettlement))}
+                                                    InputProps={{ readOnly: true }}
+                                                    helperText="Cleared out of the new loan — no cash needed from you."
+                                                />
+                                            </Grid>
+                                            <Grid size={{ xs: 12, md: 4 }}>
+                                                <TextField
+                                                    label="New loan total"
+                                                    fullWidth
+                                                    value={formatWholeNumber(String(topUpSettlement + topUpNewCash))}
+                                                    InputProps={{ readOnly: true }}
+                                                    helperText="This is the amount the branch appraises and your guarantors cover."
+                                                />
+                                            </Grid>
+                                        </Grid>
                                     ) : null}
                                     {selectedLoanBorrowLimit > 0 && Number(requestedLoanAmount || 0) > selectedLoanBorrowLimit ? (
                                         <Alert severity="warning" variant="outlined">
@@ -10792,10 +10902,14 @@ export function MemberPortalPage() {
                                     <Grid container spacing={2}>
                                         <Grid size={{ xs: 12, md: 4 }}>
                                             <TextField
-                                                label="Requested Amount (TZS) *"
+                                                label={isTopUpApplication ? "Requested Amount (settlement + extra cash)" : "Requested Amount (TZS) *"}
                                                 fullWidth
                                                 value={requestedAmountInput}
+                                                InputProps={{ readOnly: isTopUpApplication }}
                                                 onChange={(event) => {
+                                                    if (isTopUpApplication) {
+                                                        return;
+                                                    }
                                                     const digits = event.target.value.replace(/[^\d]/g, "");
                                                     setRequestedAmountInput(formatWholeNumber(digits));
                                                     loanApplicationForm.setValue("requested_amount", digits ? Number(digits) : 0, { shouldValidate: true, shouldDirty: true });

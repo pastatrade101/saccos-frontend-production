@@ -202,6 +202,8 @@ const routeMap = {
         guarantorRequests: "/loan-applications/guarantor-requests",
         guarantorCapacity: "/loan-applications/guarantor-capacity",
         guarantorSearch: "/loan-applications/guarantor-search",
+        topUpQuote: "/loan-applications/top-up-quote",
+        mergeLoans: "/loan-applications/merge",
         guarantorConsent: (applicationId: string) => `/loan-applications/${applicationId}/guarantor-consent`
     },
     loanCapacity: {
@@ -512,6 +514,8 @@ export const endpoints = {
         guarantorRequests: () => routeMap.loanApplications.guarantorRequests,
         guarantorCapacity: () => routeMap.loanApplications.guarantorCapacity,
         guarantorSearch: () => routeMap.loanApplications.guarantorSearch,
+        topUpQuote: () => routeMap.loanApplications.topUpQuote,
+        mergeLoans: () => routeMap.loanApplications.mergeLoans,
         guarantorConsent: (applicationId: string) => routeMap.loanApplications.guarantorConsent(applicationId)
     },
     loanCapacity: {
@@ -1361,6 +1365,50 @@ export interface GuarantorSearchHit {
 }
 
 export type GuarantorSearchResponse = ApiEnvelope<GuarantorSearchHit[]>;
+
+export interface TopUpQuoteLoan {
+    loan_id: string;
+    loan_number: string;
+    status: string;
+    outstanding_principal: number;
+    accrued_interest: number;
+    settle_amount: number;
+}
+
+export interface TopUpQuote {
+    member_id: string;
+    /** True once the member carries any open loan — a new loan is refused. */
+    top_up_required: boolean;
+    settlement_amount: number;
+    loans: TopUpQuoteLoan[];
+}
+
+export type TopUpQuoteResponse = ApiEnvelope<TopUpQuote>;
+
+export interface MergeLoansRequest {
+    tenant_id?: string;
+    member_id: string;
+    product_id: string;
+    term_count: number;
+    repayment_frequency?: "daily" | "weekly" | "monthly";
+    reference?: string | null;
+    description?: string | null;
+    two_factor_code?: string | null;
+    recovery_code?: string | null;
+}
+
+export interface MergeLoansResult {
+    new_loan_id: string;
+    merged_principal: number;
+    term_count: number;
+    annual_interest_rate: number;
+    product_name: string;
+    settled: Array<{ loan_id: string; loan_number: string; settled_amount: number; journal_id: string | null }>;
+    total_settled: number;
+    net_cash_movement: number;
+}
+
+export type MergeLoansResponse = ApiEnvelope<MergeLoansResult>;
 
 export interface GuarantorPolicySettings {
     tenant_id: string;

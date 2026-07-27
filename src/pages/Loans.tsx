@@ -64,7 +64,12 @@ import {
     type LoanTransactionsResponse,
     type MembersResponse,
     type ApproveLoanApplicationRequest,
-    type RejectLoanApplicationRequest
+    type RejectLoanApplicationRequest,
+    type TopUpQuote,
+    type TopUpQuoteResponse,
+    type MergeLoansRequest,
+    type MergeLoansResponse,
+    type MergeLoansResult
 } from "../lib/endpoints";
 import type { ApiEnvelope, FinanceResult, Loan, LoanApplication, LoanCapacitySummary, LoanDisbursementOrder, LoanGuarantor, LoanProduct, LoanSchedule, LoanTransaction, Member } from "../types/api";
 import { MotionCard, MotionModal } from "../ui/motion";
@@ -630,6 +635,13 @@ export function LoansPage() {
     const [trackedLoanDisbursementOrder, setTrackedLoanDisbursementOrder] = useState<LoanDisbursementOrder | null>(null);
     const [checkingLoanDisbursementStatus, setCheckingLoanDisbursementStatus] = useState(false);
     const [showRepayModal, setShowRepayModal] = useState(false);
+    const [showMergeModal, setShowMergeModal] = useState(false);
+    const [mergeMemberId, setMergeMemberId] = useState("");
+    const [mergeProductId, setMergeProductId] = useState("");
+    const [mergeTermCount, setMergeTermCount] = useState("6");
+    const [mergeQuote, setMergeQuote] = useState<TopUpQuote | null>(null);
+    const [mergeQuoteLoading, setMergeQuoteLoading] = useState(false);
+    const [mergeResult, setMergeResult] = useState<MergeLoansResult | null>(null);
     const [pendingMoneyAction, setPendingMoneyAction] = useState<PendingMoneyAction>(null);
     const [pendingApprovalNotice, setPendingApprovalNotice] = useState<PendingDisbursementNotice | null>(null);
     const [applicationPage, setApplicationPage] = useState(1);
@@ -658,6 +670,9 @@ export function LoansPage() {
 
     const role = profile?.role || "loan_officer";
     const canCreateApplications = ["loan_officer", "teller"].includes(role);
+    // Consolidating a member who already carries more than one loan — the
+    // legacy state the one-loan-at-a-time rule cannot fix by itself.
+    const canMergeLoans = ["loan_officer", "branch_manager", "super_admin"].includes(role);
     const canAppraise = role === "loan_officer";
     const canApprove = role === "branch_manager";
     const canReject = role === "branch_manager" || role === "loan_officer";
@@ -1204,6 +1219,34 @@ export function LoansPage() {
             }),
         [loans, members]
     );
+
+    // Only members who actually carry more than one loan can be merged, so the
+    // picker offers exactly those rather than the whole register.
+    const mergeCandidateOptions = useMemo(() => {
+        const byMember = new Map<string, Loan[]>();
+        for (const loan of allLoans) {
+            if (!["active", "in_arrears"].includes(loan.status)) {
+                continue;
+            }
+            byMember.set(loan.member_id, [...(byMember.get(loan.member_id) || []), loan]);
+        }
+
+        return Array.from(byMember.entries())
+            .filter(([, memberLoans]) => memberLoans.length > 1)
+            .map(([memberId, memberLoans]) => {
+                const member = members.find((entry) => entry.id === memberId);
+                const total = memberLoans.reduce(
+                    (sum, loan) => sum + Number(loan.outstanding_principal || 0) + Number(loan.accrued_interest || 0),
+                    0
+                );
+                return {
+                    value: memberId,
+                    label: member?.full_name || "Unknown member",
+                    secondary: `${memberLoans.length} loans · ${formatCurrency(total)} outstanding`
+                };
+            })
+            .sort((left, right) => left.label.localeCompare(right.label));
+    }, [allLoans, members]);
 
     useEffect(() => {
         let cancelled = false;
@@ -2854,6 +2897,83 @@ export function LoansPage() {
         void loadReferenceData({ silent: true });
     };
 
+    const openMergeModal = () => {
+        setShowMergeModal(true);
+        setMergeMemberId("");
+        setMergeProductId("");
+        setMergeTermCount("6");
+        setMergeQuote(null);
+        setMergeResult(null);
+        void loadReferenceData({ silent: true });
+    };
+
+    // The member's live position: which loans would be merged and what the
+    // combined balance is today. Read-only — nothing is posted until confirm.
+    const loadMergeQuote = async (memberId: string) => {
+        setMergeMemberId(memberId);
+        setMergeQuote(null);
+        if (!memberId) {
+            return;
+        }
+
+        setMergeQuoteLoading(true);
+        try {
+            const { data } = await api.get<TopUpQuoteResponse>(endpoints.loanApplications.topUpQuote(), {
+                params: { tenant_id: selectedTenantId || undefined, member_id: memberId }
+            });
+            setMergeQuote(data.data);
+        } catch (error) {
+            pushToast({
+                type: "error",
+                title: "Unable to load loans",
+                message: getApiErrorMessage(error)
+            });
+        } finally {
+            setMergeQuoteLoading(false);
+        }
+    };
+
+    const mergeSettlementTotal = Number(mergeQuote?.settlement_amount || 0);
+    const mergeProductOption = loanProducts.find((product) => product.id === mergeProductId) || null;
+    const mergeProductFits = !mergeProductOption
+        || (mergeSettlementTotal >= Number(mergeProductOption.min_amount || 0)
+            && (mergeProductOption.max_amount === null
+                || typeof mergeProductOption.max_amount === "undefined"
+                || mergeSettlementTotal <= Number(mergeProductOption.max_amount)));
+
+    const submitMerge = async () => {
+        if (!mergeQuote || !mergeProductId) {
+            return;
+        }
+
+        setProcessing(true);
+        try {
+            const payload: MergeLoansRequest = {
+                tenant_id: selectedTenantId || undefined,
+                member_id: mergeQuote.member_id,
+                product_id: mergeProductId,
+                term_count: Number(mergeTermCount) || 6,
+                repayment_frequency: "monthly"
+            };
+            const { data } = await api.post<MergeLoansResponse>(endpoints.loanApplications.mergeLoans(), payload);
+            setMergeResult(data.data);
+            pushToast({
+                type: "success",
+                title: "Loans merged",
+                message: `${data.data.settled.length} loans were closed into one facility of ${formatCurrency(data.data.merged_principal)}.`
+            });
+            await loadWorkspace();
+        } catch (error) {
+            pushToast({
+                type: "error",
+                title: "Unable to merge loans",
+                message: getApiErrorMessage(error)
+            });
+        } finally {
+            setProcessing(false);
+        }
+    };
+
     return (
         <Stack spacing={3}>
             {role === "loan_officer" ? (
@@ -2913,6 +3033,16 @@ export function LoansPage() {
                                         sx={darkAccentOutlinedSx}
                                     >
                                         Post Repayment
+                                    </Button>
+                                ) : null}
+                                {canMergeLoans ? (
+                                    <Button
+                                        variant="outlined"
+                                        startIcon={<PlaylistAddCheckRoundedIcon />}
+                                        onClick={openMergeModal}
+                                        sx={darkAccentOutlinedSx}
+                                    >
+                                        Merge Loans
                                     </Button>
                                 ) : null}
                                 <Button
@@ -4786,6 +4916,125 @@ export function LoansPage() {
                     >
                         Review Repayment
                     </Button>
+                </DialogActions>
+            </MotionModal>
+
+            <MotionModal open={showMergeModal} onClose={processing ? undefined : () => setShowMergeModal(false)} maxWidth="sm" fullWidth>
+                <DialogTitle>Merge Loans</DialogTitle>
+                <DialogContent dividers>
+                    {mergeResult ? (
+                        <Stack spacing={2} sx={{ pt: 0.5 }}>
+                            <Alert severity="success" variant="outlined">
+                                {mergeResult.settled.length} loans were closed into one facility.
+                            </Alert>
+                            <Stack spacing={1}>
+                                <Stack direction="row" justifyContent="space-between">
+                                    <Typography variant="body2" color="text.secondary">New loan</Typography>
+                                    <Typography variant="body2" sx={{ fontWeight: 700 }}>{formatCurrency(mergeResult.merged_principal)}</Typography>
+                                </Stack>
+                                <Stack direction="row" justifyContent="space-between">
+                                    <Typography variant="body2" color="text.secondary">Product</Typography>
+                                    <Typography variant="body2">{mergeResult.product_name} · {mergeResult.term_count} months</Typography>
+                                </Stack>
+                                <Stack direction="row" justifyContent="space-between">
+                                    <Typography variant="body2" color="text.secondary">Cash movement</Typography>
+                                    <Typography variant="body2">{formatCurrency(mergeResult.net_cash_movement)} — no money changed hands</Typography>
+                                </Stack>
+                                <Divider flexItem />
+                                {mergeResult.settled.map((row) => (
+                                    <Stack key={row.loan_id} direction="row" justifyContent="space-between">
+                                        <Typography variant="caption" color="text.secondary">{row.loan_number} closed</Typography>
+                                        <Typography variant="caption">{formatCurrency(row.settled_amount)}</Typography>
+                                    </Stack>
+                                ))}
+                            </Stack>
+                        </Stack>
+                    ) : (
+                        <Stack spacing={2} sx={{ pt: 0.5 }}>
+                            <Alert severity="info" variant="outlined">
+                                Merging closes every loan this member carries and opens one facility for the combined balance as at today. No cash moves, and the new rate follows the product you pick for that balance.
+                            </Alert>
+
+                            <Box>
+                                <Typography variant="body2" fontWeight={600} sx={{ mb: 0.75 }}>
+                                    Member with more than one loan
+                                </Typography>
+                                <SearchableSelect
+                                    value={mergeMemberId}
+                                    options={mergeCandidateOptions}
+                                    onChange={(value) => void loadMergeQuote(value)}
+                                    placeholder={mergeCandidateOptions.length ? "Search member..." : "No member has more than one loan"}
+                                />
+                            </Box>
+
+                            {mergeQuoteLoading ? (
+                                <Typography variant="body2" color="text.secondary">Loading the member's loans...</Typography>
+                            ) : null}
+
+                            {mergeQuote ? (
+                                <Box sx={{ borderRadius: 2, border: `1px solid ${alpha(theme.palette.divider, 0.8)}`, p: 2 }}>
+                                    <Stack spacing={1}>
+                                        <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                                            Loans to be closed
+                                        </Typography>
+                                        {mergeQuote.loans.map((loan) => (
+                                            <Stack key={loan.loan_id} direction="row" justifyContent="space-between">
+                                                <Typography variant="body2" color="text.secondary">
+                                                    {loan.loan_number}{loan.status === "in_arrears" ? " (overdue)" : ""}
+                                                </Typography>
+                                                <Typography variant="body2">{formatCurrency(loan.settle_amount)}</Typography>
+                                            </Stack>
+                                        ))}
+                                        <Divider flexItem />
+                                        <Stack direction="row" justifyContent="space-between">
+                                            <Typography variant="body2" sx={{ fontWeight: 700 }}>New loan principal</Typography>
+                                            <Typography variant="body2" sx={{ fontWeight: 700 }}>{formatCurrency(mergeSettlementTotal)}</Typography>
+                                        </Stack>
+                                    </Stack>
+                                </Box>
+                            ) : null}
+
+                            <TextField
+                                select
+                                label="Loan product for the merged balance"
+                                fullWidth
+                                value={mergeProductId}
+                                onChange={(event) => setMergeProductId(event.target.value)}
+                                error={Boolean(mergeProductId) && !mergeProductFits}
+                                helperText={mergeProductId && !mergeProductFits
+                                    ? `${formatCurrency(mergeSettlementTotal)} is outside this product's range — pick the band it falls in.`
+                                    : "The rate the member pays from now on."}
+                            >
+                                {loanProducts.map((product) => (
+                                    <MenuItem key={product.id} value={product.id}>
+                                        {product.name}
+                                    </MenuItem>
+                                ))}
+                            </TextField>
+
+                            <TextField
+                                label="Repayment period (months)"
+                                type="number"
+                                fullWidth
+                                value={mergeTermCount}
+                                onChange={(event) => setMergeTermCount(event.target.value)}
+                                inputProps={{ min: 1, step: 1 }}
+                            />
+                        </Stack>
+                    )}
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setShowMergeModal(false)}>{mergeResult ? "Close" : "Cancel"}</Button>
+                    {mergeResult ? null : (
+                        <Button
+                            variant="contained"
+                            onClick={() => void submitMerge()}
+                            disabled={processing || !mergeQuote || (mergeQuote?.loans.length || 0) < 2 || !mergeProductId || !mergeProductFits || !(Number(mergeTermCount) > 0)}
+                            sx={darkAccentContainedSx}
+                        >
+                            {processing ? "Merging..." : "Merge Loans"}
+                        </Button>
+                    )}
                 </DialogActions>
             </MotionModal>
 
