@@ -68,6 +68,7 @@ import {
 } from "../lib/endpoints";
 import type { ApiEnvelope, FinanceResult, Loan, LoanApplication, LoanCapacitySummary, LoanDisbursementOrder, LoanGuarantor, LoanProduct, LoanSchedule, LoanTransaction, Member } from "../types/api";
 import { MotionCard, MotionModal } from "../ui/motion";
+import { crestGold } from "../theme/colors";
 import { formatCurrency, formatDate } from "../utils/format";
 import { annualToMonthlyRate, formatMonthlyLoanRate, monthlyToAnnualRate } from "../utils/loanInterest";
 
@@ -444,24 +445,39 @@ function MetricCard({
     icon: React.ReactNode;
 }) {
     return (
-        <MotionCard variant="outlined" sx={{ height: "100%" }}>
-            <CardContent>
+        <MotionCard variant="outlined" sx={{ height: "100%", borderRadius: 2.5 }}>
+            <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
                 <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
-                    <Box>
-                        <Typography variant="overline" color="text.secondary">
+                    <Box sx={{ minWidth: 0 }}>
+                        <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            sx={{ textTransform: "uppercase", letterSpacing: "0.12em", fontWeight: 700 }}
+                        >
                             {title}
                         </Typography>
-                        <Typography variant="h5" sx={{ mt: 0.5 }}>
+                        <Typography
+                            component="p"
+                            sx={{
+                                mt: 1,
+                                fontWeight: 800,
+                                fontVariantNumeric: "tabular-nums",
+                                letterSpacing: "-0.01em",
+                                lineHeight: 1.1,
+                                fontSize: "clamp(1.45rem, 1.8vw, 1.85rem)"
+                            }}
+                        >
                             {value}
                         </Typography>
-                        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+                        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
                             {helper}
                         </Typography>
                     </Box>
                     <Box
                         sx={{
-                            width: 42,
-                            height: 42,
+                            width: 50,
+                            height: 50,
+                            flexShrink: 0,
                             borderRadius: 2,
                             display: "grid",
                             placeItems: "center",
@@ -527,10 +543,25 @@ function ProfessionalStatCard({
                 <Stack spacing={1.75} sx={{ height: "100%" }}>
                     <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1.5}>
                         <Stack spacing={0.5}>
-                            <Typography variant="overline" color="text.secondary">
+                            <Typography
+                                variant="caption"
+                                color="text.secondary"
+                                sx={{ textTransform: "uppercase", letterSpacing: "0.12em", fontWeight: 700 }}
+                            >
                                 {label}
                             </Typography>
-                            <Typography variant={featured ? "h4" : "h5"} sx={{ lineHeight: 1 }}>
+                            <Typography
+                                component="p"
+                                sx={{
+                                    lineHeight: 1.05,
+                                    fontWeight: 800,
+                                    fontVariantNumeric: "tabular-nums",
+                                    letterSpacing: "-0.01em",
+                                    fontSize: featured
+                                        ? "clamp(1.9rem, 2.4vw, 2.4rem)"
+                                        : "clamp(1.6rem, 2vw, 2rem)"
+                                }}
+                            >
                                 {value}
                             </Typography>
                         </Stack>
@@ -2972,6 +3003,85 @@ export function LoansPage() {
 
             {role === "loan_officer" ? (
                 <Stack spacing={2}>
+                    <MotionCard
+                        variant="outlined"
+                        sx={{ borderTop: `4px solid ${crestGold.main}`, borderRadius: 2.5 }}
+                    >
+                        <CardContent sx={{ p: { xs: 3, md: 4 } }}>
+                            <Stack
+                                direction={{ xs: "column", md: "row" }}
+                                justifyContent="space-between"
+                                alignItems={{ xs: "flex-start", md: "center" }}
+                                spacing={2}
+                            >
+                                <Box>
+                                    <Typography
+                                        variant="caption"
+                                        color="text.secondary"
+                                        sx={{ textTransform: "uppercase", letterSpacing: "0.16em", fontWeight: 700 }}
+                                    >
+                                        Outstanding Principal
+                                    </Typography>
+                                    <Typography
+                                        component="p"
+                                        sx={{
+                                            mt: 1,
+                                            fontWeight: 800,
+                                            fontVariantNumeric: "tabular-nums",
+                                            letterSpacing: "-0.02em",
+                                            lineHeight: 1.05,
+                                            fontSize: "clamp(2.2rem, 4.5vw, 3.4rem)"
+                                        }}
+                                    >
+                                        {formatCurrency(metrics.outstandingPrincipal)}
+                                    </Typography>
+                                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+                                        {metrics.activeLoans} active loans under your current supervision.
+                                    </Typography>
+                                </Box>
+                                <Chip
+                                    label={metrics.arrearsLoans > 0 ? `${metrics.arrearsLoans} in arrears` : "Portfolio current"}
+                                    color={metrics.arrearsLoans > 0 ? "error" : "success"}
+                                    variant="outlined"
+                                    sx={{ fontWeight: 700 }}
+                                />
+                            </Stack>
+                            <Stack
+                                direction="row"
+                                spacing={{ xs: 3, md: 5 }}
+                                useFlexGap
+                                flexWrap="wrap"
+                                sx={{ mt: 2.5, pt: 2, borderTop: "1px solid", borderColor: "divider" }}
+                            >
+                                {[
+                                    { label: "Arrears ratio", value: `${arrearsRate.toFixed(1)}%`, alert: arrearsRate >= 8 },
+                                    { label: "Loans in arrears", value: String(metrics.arrearsLoans), alert: metrics.arrearsLoans > 0 },
+                                    { label: "Overdue exposure", value: formatCurrency(overdueExposure), alert: overdueExposure > 0 },
+                                    { label: "Overdue schedules", value: String(overdueScheduleCount), alert: overdueScheduleCount > 0 }
+                                ].map((stat) => (
+                                    <Box key={stat.label}>
+                                        <Typography
+                                            variant="caption"
+                                            color="text.secondary"
+                                            sx={{ textTransform: "uppercase", letterSpacing: "0.12em", display: "block" }}
+                                        >
+                                            {stat.label}
+                                        </Typography>
+                                        <Typography
+                                            sx={{
+                                                fontWeight: 800,
+                                                fontVariantNumeric: "tabular-nums",
+                                                fontSize: "1.15rem",
+                                                color: stat.alert ? "error.main" : "text.primary"
+                                            }}
+                                        >
+                                            {stat.value}
+                                        </Typography>
+                                    </Box>
+                                ))}
+                            </Stack>
+                        </CardContent>
+                    </MotionCard>
                     <Grid container spacing={2}>
                         <Grid size={{ xs: 12, sm: 6, xl: 3 }}>
                             <ProfessionalStatCard
@@ -3006,46 +3116,12 @@ export function LoansPage() {
                         </Grid>
                         <Grid size={{ xs: 12, sm: 6, xl: 3 }}>
                             <ProfessionalStatCard
-                                label="Outstanding Principal"
-                                value={formatCurrency(metrics.outstandingPrincipal)}
-                                helper={`${metrics.activeLoans} active loans under your current supervision.`}
-                                status={`${metrics.arrearsLoans} in arrears`}
-                                tone={metrics.arrearsLoans > 0 ? "negative" : "positive"}
-                                icon={<AccountBalanceRoundedIcon fontSize="small" />}
-                            />
-                        </Grid>
-                    </Grid>
-                    <Grid container spacing={2}>
-                        <Grid size={{ xs: 12, sm: 6, xl: 3 }}>
-                            <MetricCard
-                                title="Arrears Ratio"
-                                value={`${arrearsRate.toFixed(1)}%`}
-                                helper="Share of the current portfolio already in arrears."
-                                icon={<CreditScoreRoundedIcon fontSize="small" />}
-                            />
-                        </Grid>
-                        <Grid size={{ xs: 12, sm: 6, xl: 3 }}>
-                            <MetricCard
-                                title="Overdue Exposure"
-                                value={formatCurrency(overdueExposure)}
-                                helper={`${overdueScheduleCount} overdue schedule(s) requiring collection follow-up.`}
-                                icon={<PendingActionsRoundedIcon fontSize="small" />}
-                            />
-                        </Grid>
-                        <Grid size={{ xs: 12, sm: 6, xl: 3 }}>
-                            <MetricCard
-                                title="Due in 7 Days"
+                                label="Due in 7 Days"
                                 value={String(dueWithin7DaysCount)}
                                 helper="Installments due this week that should be pre-emptively engaged."
+                                status={dueWithin7DaysCount > 0 ? "Engage borrowers early" : "Nothing due this week"}
+                                tone={dueWithin7DaysCount > 0 ? "neutral" : "positive"}
                                 icon={<AssignmentTurnedInRoundedIcon fontSize="small" />}
-                            />
-                        </Grid>
-                        <Grid size={{ xs: 12, sm: 6, xl: 3 }}>
-                            <MetricCard
-                                title="Loans in Arrears"
-                                value={String(metrics.arrearsLoans)}
-                                helper="Accounts already in arrears and requiring close monitoring."
-                                icon={<AccountBalanceRoundedIcon fontSize="small" />}
                             />
                         </Grid>
                     </Grid>
