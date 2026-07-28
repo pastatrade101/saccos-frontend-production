@@ -94,6 +94,9 @@ const routeMap = {
         twoFactorRecovery: "/auth/2fa/recovery",
         twoFactorDisable: "/auth/2fa/disable",
         twoFactorBackupCodesRegenerate: "/auth/2fa/backup-codes/regenerate",
+        // Sends a step-up code to the signed-in account's own email or phone,
+        // for staff without an enrolled authenticator.
+        requestStepUpOtp: "/auth/2fa/step-up/request",
         passwordSetupLinkSend: "/auth/password-setup/link/send",
         passwordResetEmailSend: "/auth/password-reset/email/send"
     },
@@ -400,6 +403,7 @@ export const endpoints = {
     auth: {
         backendSignIn: () => routeMap.auth.backendSignIn,
         twoFactorSetup: () => routeMap.auth.twoFactorSetup,
+        requestStepUpOtp: () => routeMap.auth.requestStepUpOtp,
         twoFactorVerify: () => routeMap.auth.twoFactorVerify,
         twoFactorValidate: () => routeMap.auth.twoFactorValidate,
         twoFactorRecovery: () => routeMap.auth.twoFactorRecovery,
