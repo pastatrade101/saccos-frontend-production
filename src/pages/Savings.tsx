@@ -30,7 +30,7 @@ import { ChartPanel } from "../components/ChartPanel";
 import { api, getApiErrorMessage } from "../lib/api";
 import { endpoints } from "../lib/endpoints";
 import type { Member, MemberAccount, StatementRow } from "../types/api";
-import { formatCurrency, formatDate } from "../utils/format";
+import { formatCurrency, formatCurrencyCompact, formatDate } from "../utils/format";
 
 const PAGE_LOAD_LIMIT = 100;
 const MAX_PAGE_LOADS = 100;
@@ -95,6 +95,77 @@ async function loadAllPages<T>(url: string, params: Record<string, string | numb
     }
 
     return rows;
+}
+
+/**
+ * One headline figure.
+ *
+ * Savings totals here run past a billion shillings, and `formatCurrency` at
+ * `h4` inside a quarter-width card was overflowing and clipping mid-digit —
+ * "TSh 1,545,221,81". A truncated money figure is not a cosmetic problem, it is
+ * a wrong number on screen. So the headline is compact and can never wrap, with
+ * the exact figure under it for anyone reconciling against a statement.
+ *
+ * Every card is the same four lines — label, headline, exact figure, one short
+ * note — so the row reads as a row. The long explanation each of these used to
+ * carry wrapped to three lines and made the cards taller than the figures they
+ * exist to show; it lives on the tooltip now, where it costs no height.
+ */
+function SavingsStat({
+    label,
+    amount,
+    count,
+    unit,
+    accent,
+    note,
+    detail
+}: {
+    label: string;
+    amount?: number;
+    count?: number;
+    unit?: string;
+    accent: string;
+    note: string;
+    detail: string;
+}) {
+    const isCount = typeof count === "number";
+
+    return (
+        <MotionCard
+            variant="outlined"
+            title={detail}
+            sx={{ height: "100%", borderLeft: `3px solid ${accent}` }}
+        >
+            <CardContent sx={{ py: 2, "&:last-child": { pb: 2 } }}>
+                <Typography variant="overline" color="text.secondary" noWrap>
+                    {label}
+                </Typography>
+                <Typography
+                    variant="h4"
+                    noWrap
+                    sx={{ mt: 0.25, fontWeight: 700, letterSpacing: "-0.02em" }}
+                >
+                    {isCount ? count : formatCurrencyCompact(amount)}
+                </Typography>
+                <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    noWrap
+                    sx={{ fontVariantNumeric: "tabular-nums" }}
+                >
+                    {isCount ? unit : formatCurrency(amount)}
+                </Typography>
+                <Typography
+                    variant="caption"
+                    color="text.disabled"
+                    noWrap
+                    sx={{ display: "block", mt: 0.75 }}
+                >
+                    {note}
+                </Typography>
+            </CardContent>
+        </MotionCard>
+    );
 }
 
 export function SavingsPage() {
@@ -338,50 +409,43 @@ export function SavingsPage() {
 
     return (
         <Stack spacing={3}>
-            <Grid container spacing={2}>
-                <Grid size={{ xs: 12, md: 3 }}>
-                    <MotionCard variant="outlined" sx={{ height: "100%" }}>
-                        <CardContent>
-                            <Typography variant="overline" color="text.secondary">Savings Balance</Typography>
-                            <Typography variant="h4" sx={{ mt: 1 }}>{formatCurrency(metrics.totalSavingsBalance)}</Typography>
-                            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                                Available plus locked balances across savings accounts visible to {profile?.role === "branch_manager" ? "this branch" : "this workspace"}.
-                            </Typography>
-                        </CardContent>
-                    </MotionCard>
+            <Grid container spacing={2} alignItems="stretch">
+                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                    <SavingsStat
+                        label="Savings Balance"
+                        amount={metrics.totalSavingsBalance}
+                        accent={theme.palette.primary.main}
+                        note="Available + locked"
+                        detail={`Available plus locked balances across savings accounts visible to ${profile?.role === "branch_manager" ? "this branch" : "this workspace"}.`}
+                    />
                 </Grid>
-                <Grid size={{ xs: 12, md: 3 }}>
-                    <MotionCard variant="outlined" sx={{ height: "100%" }}>
-                        <CardContent>
-                            <Typography variant="overline" color="text.secondary">Deposits Posted</Typography>
-                            <Typography variant="h4" sx={{ mt: 1 }}>{formatCurrency(metrics.totalDeposits)}</Typography>
-                            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                                Member cash deposited into savings accounts in the loaded ledger history.
-                            </Typography>
-                        </CardContent>
-                    </MotionCard>
+                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                    <SavingsStat
+                        label="Deposits Posted"
+                        amount={metrics.totalDeposits}
+                        accent={theme.palette.success.main}
+                        note="In loaded history"
+                        detail="Member cash deposited into savings accounts in the loaded ledger history."
+                    />
                 </Grid>
-                <Grid size={{ xs: 12, md: 3 }}>
-                    <MotionCard variant="outlined" sx={{ height: "100%" }}>
-                        <CardContent>
-                            <Typography variant="overline" color="text.secondary">Withdrawals Paid</Typography>
-                            <Typography variant="h4" sx={{ mt: 1 }}>{formatCurrency(metrics.totalWithdrawals)}</Typography>
-                            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                                Cash released from savings accounts in the loaded ledger history.
-                            </Typography>
-                        </CardContent>
-                    </MotionCard>
+                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                    <SavingsStat
+                        label="Withdrawals Paid"
+                        amount={metrics.totalWithdrawals}
+                        accent={theme.palette.error.main}
+                        note="In loaded history"
+                        detail="Cash released from savings accounts in the loaded ledger history."
+                    />
                 </Grid>
-                <Grid size={{ xs: 12, md: 3 }}>
-                    <MotionCard variant="outlined" sx={{ height: "100%" }}>
-                        <CardContent>
-                            <Typography variant="overline" color="text.secondary">Active Savers</Typography>
-                            <Typography variant="h4" sx={{ mt: 1 }}>{metrics.activeSavers}</Typography>
-                            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                                Members with savings deposits in the visible history.
-                            </Typography>
-                        </CardContent>
-                    </MotionCard>
+                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                    <SavingsStat
+                        label="Active Savers"
+                        count={metrics.activeSavers}
+                        unit="members"
+                        accent={theme.palette.info.main}
+                        note="With deposits posted"
+                        detail="Members with savings deposits in the visible history."
+                    />
                 </Grid>
             </Grid>
 
