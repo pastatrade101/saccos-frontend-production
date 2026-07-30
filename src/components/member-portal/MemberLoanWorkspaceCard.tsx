@@ -16,7 +16,14 @@ import {
     Grid,
     LinearProgress,
     MenuItem,
+    Paper,
     Stack,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
     TextField,
     Typography
 } from "@mui/material";
@@ -58,6 +65,35 @@ function getDaysUntil(dateString?: string | null) {
     const now = new Date();
     const ms = target.getTime() - now.getTime();
     return Math.ceil(ms / (1000 * 60 * 60 * 24));
+}
+
+/**
+ * Amount without the repeated "TSh " prefix. In a six-column schedule table the
+ * prefix on every cell costs more width than it adds meaning, so the unit is
+ * stated once in the column header instead.
+ */
+function formatAmountBare(value: number | null | undefined) {
+    return formatCurrency(Number(value || 0)).replace(/^TSh\s*/, "");
+}
+
+/**
+ * Status chip for one schedule line. Mirrors the mobile loan detail screen so a
+ * member reading the phone and the portal sees the same four words.
+ */
+function getScheduleStatusChip(schedule: LoanSchedule) {
+    if (!hasMeaningfulOutstanding(schedule)) {
+        return { label: "Paid", color: brandColors.success };
+    }
+
+    if (schedule.due_date < new Date().toISOString().slice(0, 10)) {
+        return { label: "Overdue", color: brandColors.danger };
+    }
+
+    if (Number(schedule.principal_paid || 0) + Number(schedule.interest_paid || 0) > 0) {
+        return { label: "Part paid", color: brandColors.warning };
+    }
+
+    return { label: "Pending", color: null };
 }
 
 function getRepaymentFrequencyLabel(frequency: Loan["repayment_frequency"]) {
@@ -199,6 +235,14 @@ export function MemberLoanWorkspaceCard({
                     .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())
                 : [],
         [loanTransactions, selectedLoan]
+    );
+
+    // Newest first: a history is scanned from the top for "did my payment land",
+    // not read forwards like a ledger. Repayments only — disbursement and
+    // interest accrual rows are not payments the member made.
+    const repaymentHistory = useMemo(
+        () => selectedLoanTransactions.filter((transaction) => transaction.transaction_type === "loan_repayment"),
+        [selectedLoanTransactions]
     );
 
     const actionableSchedules = selectedLoanSchedules.filter(hasMeaningfulOutstanding);
@@ -531,6 +575,138 @@ export function MemberLoanWorkspaceCard({
                         </Stack>
                     </Grid>
                 </Grid>
+
+                {/* The per-installment schedule and the repayment trail. Both arrays
+                    were already being fetched and then collapsed into counters —
+                    `selectedLoanSchedules` into "N open / M settled" and
+                    `selectedLoanTransactions` into a single "last paid" chip — so the
+                    detail a member actually reconciles against a paper receipt never
+                    reached the page. Matches the mobile loan detail screen. */}
+                {selectedLoan ? (
+                    <>
+                        <Divider sx={{ my: 2.5 }} />
+                        <Grid container spacing={2.25}>
+                            <Grid size={{ xs: 12, lg: 7 }}>
+                                <Stack spacing={1.1}>
+                                    <Stack direction="row" justifyContent="space-between" alignItems="baseline" spacing={1}>
+                                        <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                                            Repayment schedule
+                                        </Typography>
+                                        <Typography variant="caption" color="text.secondary">
+                                            {paidInstallments}/{selectedLoanSchedules.length || selectedLoan.term_count} settled
+                                        </Typography>
+                                    </Stack>
+                                    {selectedLoanSchedules.length ? (
+                                        <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2, maxHeight: 360 }}>
+                                            <Table size="small" stickyHeader>
+                                                <TableHead>
+                                                    <TableRow>
+                                                        <TableCell sx={{ fontWeight: 700 }}>#</TableCell>
+                                                        <TableCell sx={{ fontWeight: 700 }}>Due</TableCell>
+                                                        <TableCell align="right" sx={{ fontWeight: 700 }}>Principal (TSh)</TableCell>
+                                                        <TableCell align="right" sx={{ fontWeight: 700 }}>Interest (TSh)</TableCell>
+                                                        <TableCell align="right" sx={{ fontWeight: 700 }}>Total (TSh)</TableCell>
+                                                        <TableCell align="right" sx={{ fontWeight: 700 }}>Status</TableCell>
+                                                    </TableRow>
+                                                </TableHead>
+                                                <TableBody>
+                                                    {selectedLoanSchedules.map((schedule) => {
+                                                        const chip = getScheduleStatusChip(schedule);
+
+                                                        return (
+                                                            <TableRow key={schedule.id} hover>
+                                                                <TableCell>{schedule.installment_number}</TableCell>
+                                                                <TableCell sx={{ whiteSpace: "nowrap" }}>{formatDate(schedule.due_date)}</TableCell>
+                                                                <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
+                                                                    {formatAmountBare(schedule.principal_due)}
+                                                                </TableCell>
+                                                                <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
+                                                                    {formatAmountBare(schedule.interest_due)}
+                                                                </TableCell>
+                                                                <TableCell align="right" sx={{ whiteSpace: "nowrap", fontWeight: 700 }}>
+                                                                    {formatAmountBare(Number(schedule.principal_due || 0) + Number(schedule.interest_due || 0))}
+                                                                </TableCell>
+                                                                <TableCell align="right">
+                                                                    <Chip
+                                                                        size="small"
+                                                                        label={chip.label}
+                                                                        variant="outlined"
+                                                                        sx={chip.color
+                                                                            ? { color: chip.color, borderColor: alpha(chip.color, 0.5), fontWeight: 700 }
+                                                                            : { fontWeight: 700 }}
+                                                                    />
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        );
+                                                    })}
+                                                </TableBody>
+                                            </Table>
+                                        </TableContainer>
+                                    ) : (
+                                        <Alert severity="info" variant="outlined" sx={{ borderRadius: 2 }}>
+                                            No schedule lines have been generated for this loan yet.
+                                        </Alert>
+                                    )}
+                                    <Typography variant="caption" color="text.secondary">
+                                        The principal and interest split is why an early payment can barely move what you owe.
+                                    </Typography>
+                                </Stack>
+                            </Grid>
+                            <Grid size={{ xs: 12, lg: 5 }}>
+                                <Stack spacing={1.1}>
+                                    <Stack direction="row" justifyContent="space-between" alignItems="baseline" spacing={1}>
+                                        <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                                            Repayment history
+                                        </Typography>
+                                        <Typography variant="caption" color="text.secondary">
+                                            {repaymentHistory.length} posted
+                                        </Typography>
+                                    </Stack>
+                                    {repaymentHistory.length ? (
+                                        <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2, maxHeight: 360 }}>
+                                            <Table size="small" stickyHeader>
+                                                <TableHead>
+                                                    <TableRow>
+                                                        <TableCell sx={{ fontWeight: 700 }}>Date</TableCell>
+                                                        <TableCell align="right" sx={{ fontWeight: 700 }}>Paid (TSh)</TableCell>
+                                                        <TableCell align="right" sx={{ fontWeight: 700 }}>Left (TSh)</TableCell>
+                                                    </TableRow>
+                                                </TableHead>
+                                                <TableBody>
+                                                    {repaymentHistory.map((transaction) => (
+                                                        <TableRow key={transaction.id} hover>
+                                                            <TableCell sx={{ whiteSpace: "nowrap" }}>
+                                                                {formatDate(transaction.created_at)}
+                                                                <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                                                                    {formatCurrency(transaction.principal_component)} principal · {formatCurrency(transaction.interest_component)} interest
+                                                                </Typography>
+                                                            </TableCell>
+                                                            <TableCell align="right" sx={{ whiteSpace: "nowrap", fontWeight: 700, color: brandColors.success }}>
+                                                                {formatAmountBare(transaction.amount)}
+                                                            </TableCell>
+                                                            {/* The balance the SACCOS recorded after this payment, not one
+                                                                the page re-derives — it is what reconciles to a receipt. */}
+                                                            <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
+                                                                {formatAmountBare(
+                                                                    Number(transaction.running_principal_balance || 0)
+                                                                    + Number(transaction.running_interest_balance || 0)
+                                                                )}
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    ))}
+                                                </TableBody>
+                                            </Table>
+                                        </TableContainer>
+                                    ) : (
+                                        <Alert severity="info" variant="outlined" sx={{ borderRadius: 2 }}>
+                                            No repayment has been posted against this loan yet.
+                                        </Alert>
+                                    )}
+                                </Stack>
+                            </Grid>
+                        </Grid>
+                    </>
+                ) : null}
 
                 {latestLoanRepaymentPaymentOrder ? (
                     <Alert

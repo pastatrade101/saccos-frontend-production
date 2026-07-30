@@ -181,7 +181,6 @@ import {
 type LoanRepaymentFrequency = "daily" | "weekly" | "monthly";
 
 const SUPPORTED_LOAN_REPAYMENT_FREQUENCIES: LoanRepaymentFrequency[] = ["daily", "weekly", "monthly"];
-const loanPurposePattern = /^[A-Za-z0-9\s,.]+$/;
 const loanReferencePattern = /^[A-Za-z0-9_-]+$/;
 
 function stripHtml(value: string) {
@@ -387,11 +386,14 @@ function estimateInstallment(amount: number, annualRate: number, termCount: numb
 
 const loanApplicationSchema = z.object({
     product_id: z.string().uuid("Select a loan product."),
+    // Free text. Members write in Swahili and English, with hyphens, brackets
+    // and apostrophes, so the only rules are "say something" and an upper bound
+    // that keeps a runaway paste out of the column. sanitizeLoanPurpose still
+    // strips HTML and collapses whitespace.
     purpose: z.string()
         .transform((value) => sanitizeLoanPurpose(value))
-        .refine((value) => value.length >= 20, "Loan purpose must be at least 20 characters")
-        .refine((value) => value.length <= 500, "Loan purpose cannot exceed 500 characters")
-        .refine((value) => loanPurposePattern.test(value), "Loan purpose may contain only letters, numbers, spaces, commas, and periods"),
+        .refine((value) => value.length >= 1, "Say what the loan is for.")
+        .refine((value) => value.length <= 2000, "Loan purpose cannot exceed 2000 characters"),
     requested_amount: z.coerce.number().min(10000, "Requested amount must be at least TZS 10,000"),
     requested_term_count: z.coerce.number().int("Loan term must be a whole number").min(1, "Loan term must be at least 1 month"),
     requested_repayment_frequency: z.enum(["daily", "weekly", "monthly"]).default("monthly"),
@@ -1208,6 +1210,11 @@ export function MemberPortalPage() {
     const [guarantorLookupBusy, setGuarantorLookupBusy] = useState(false);
     const [guarantorMaxCount, setGuarantorMaxCount] = useState(5);
     const [guarantorSuggestions, setGuarantorSuggestions] = useState<GuarantorSearchHit[]>([]);
+    // An empty result and a failed request used to look identical here — both
+    // rendered nothing at all, so a member typing a name that plainly exists
+    // had no way to tell "not found" from "the lookup broke".
+    const [guarantorSearchState, setGuarantorSearchState] = useState<"idle" | "searching" | "done" | "error">("idle");
+    const [guarantorSearchError, setGuarantorSearchError] = useState("");
     const [manageGuarantorsTarget, setManageGuarantorsTarget] = useState<LoanApplication | null>(null);
     const [savingGuarantorPlan, setSavingGuarantorPlan] = useState(false);
     const [statements, setStatements] = useState<StatementRow[]>([]);
@@ -1884,11 +1891,23 @@ export function MemberPortalPage() {
         };
     }, [monthlyCommitmentState, monthlyCommitmentStatus]);
 
+    // A capacity failure caused by the product itself is not an advisory. The
+    // capacity check and the submission both resolve the product the same way and
+    // both 404 with LOAN_PRODUCT_NOT_FOUND, so telling the member "you can still
+    // submit" would be a promise the next request breaks.
+    const selectedLoanProductUnavailable = Boolean(
+        selectedLoanProduct && loanCapacityError && /product was not found/i.test(loanCapacityError)
+    );
+
     const loanSubmissionLocks = useMemo(() => {
         const locks: string[] = [];
 
         if (!selectedLoanProduct) {
             locks.push("Select a loan product to continue.");
+        }
+
+        if (selectedLoanProductUnavailable) {
+            locks.push("The selected loan product is no longer available for new applications.");
         }
 
         if (memberRecord?.status !== "active") {
@@ -1913,7 +1932,8 @@ export function MemberPortalPage() {
         memberRecord?.status,
         monthlyCommitment,
         selectedLoanConflict,
-        selectedLoanProduct
+        selectedLoanProduct,
+        selectedLoanProductUnavailable
     ]);
     const loanCapacityLimitingFactor = useMemo(() => {
         if (!loanCapacity) {
@@ -1935,8 +1955,10 @@ export function MemberPortalPage() {
     const loanCapacityWarnings = useMemo(() => {
         const warnings: string[] = [];
 
-        if (selectedLoanProduct && loanCapacityError) {
-            warnings.push("Current borrowing capacity could not be refreshed. You can still submit, but the branch will re-check the live limit during review.");
+        if (selectedLoanProductUnavailable) {
+            warnings.push("This loan product is no longer available. Pick another product to continue.");
+        } else if (selectedLoanProduct && loanCapacityError) {
+            warnings.push("Your live borrowing limit could not be loaded. You can still submit — the branch re-checks it during review.");
         }
 
         if (selectedLoanPoolFrozen) {
@@ -1958,7 +1980,8 @@ export function MemberPortalPage() {
         selectedLoanBorrowLimit,
         selectedLoanMinimumAmount,
         selectedLoanPoolFrozen,
-        selectedLoanProduct
+        selectedLoanProduct,
+        selectedLoanProductUnavailable
     ]);
     const requestedAmountExceedsBorrowLimit = useMemo(
         () => Boolean(selectedLoanProduct && loanCapacity && requestedLoanAmount > selectedLoanBorrowLimit),
@@ -1986,23 +2009,15 @@ export function MemberPortalPage() {
 
         return "Loan pool liquidity is currently limited. Loan approvals may take longer.";
     }, [liquidityApproachingFreeze]);
+    // Labels only. Each step used to carry a description that restated its own
+    // name — "Product" / "Choose the loan product and review its configured
+    // terms." — which cost a line of the dialog on every step and told nobody
+    // anything. The fields themselves say what to enter.
     const loanApplicationSteps = [
-        {
-            label: "Product",
-            description: "Choose the loan product and review its configured terms."
-        },
-        {
-            label: "Eligibility",
-            description: "Review your live borrowing capacity and SACCO liquidity guidance."
-        },
-        {
-            label: "Details",
-            description: "Enter the amount, purpose, term, and repayment structure."
-        },
-        {
-            label: "Review",
-            description: "Confirm the application summary before sending it for appraisal."
-        }
+        { label: "Product" },
+        { label: "Eligibility" },
+        { label: "Details" },
+        { label: "Review" }
     ] as const;
     const loanStepProgressPercent = ((loanFormStep + 1) / loanApplicationSteps.length) * 100;
     const isLoanProductStep = loanFormStep === 0;
@@ -3364,7 +3379,14 @@ export function MemberPortalPage() {
                 }
 
                 if (productsResult.status === "fulfilled") {
-                    setLoanProducts(productsResult.value.data.data || []);
+                    // Active products only. GET /products/loans filters on
+                    // deleted_at but not on status, so inactive products came
+                    // through and the picker offered them. Every downstream
+                    // lookup requires status = 'active' — loan capacity 404s with
+                    // LOAN_PRODUCT_NOT_FOUND and so does submission — so offering
+                    // one is setting the member up to fail. Mobile already filters
+                    // here for the same reason.
+                    setLoanProducts((productsResult.value.data.data || []).filter((product) => product.status === "active"));
                 } else {
                     setLoanProducts([]);
                     issues.push(getApiErrorMessage(productsResult.reason, "Loan products unavailable."));
@@ -4848,6 +4870,45 @@ export function MemberPortalPage() {
         }
     };
 
+    /**
+     * Product-fit rules: minimum amount, term inside the product's own range, and
+     * a repayment frequency the product actually offers. These used to run only
+     * inside persistLoanApplication, so a member could pass the Details step with
+     * a 3-month term on a 6-month-minimum product, fill in payout details and
+     * guarantors on Review, press Submit, and only then be told about the term.
+     * Both the Details step and the submit call this, so the error lands on the
+     * field that caused it. Returns true when something is wrong.
+     */
+    const applyLoanProductFitErrors = (values: z.infer<typeof loanApplicationSchema>) => {
+        const allowedFrequencies = resolveLoanAllowedFrequencies(
+            loanProducts.find((product) => product.id === values.product_id) || null
+        );
+        let hasProductFitError = false;
+
+        if (values.requested_amount < selectedLoanMinimumAmount) {
+            loanApplicationForm.setError("requested_amount", {
+                message: `Requested amount must be at least ${formatCurrency(selectedLoanMinimumAmount)}`
+            });
+            hasProductFitError = true;
+        }
+
+        if (values.requested_term_count < selectedLoanMinimumTerm || (selectedLoanMaximumTerm && values.requested_term_count > selectedLoanMaximumTerm)) {
+            loanApplicationForm.setError("requested_term_count", {
+                message: `Loan term must be between ${selectedLoanMinimumTerm} and ${selectedLoanMaximumTerm || selectedLoanMinimumTerm} months`
+            });
+            hasProductFitError = true;
+        }
+
+        if (!allowedFrequencies.includes(values.requested_repayment_frequency)) {
+            loanApplicationForm.setError("requested_repayment_frequency", {
+                message: "Selected repayment frequency is not available for this loan product."
+            });
+            hasProductFitError = true;
+        }
+
+        return hasProductFitError;
+    };
+
     const handleAdvanceLoanFormStep = async () => {
         if (isLoanProductStep) {
             if (!loanApplicationForm.watch("product_id")) {
@@ -4872,7 +4933,10 @@ export function MemberPortalPage() {
                 "requested_repayment_frequency"
             ]);
 
-            if (detailsValid) {
+            // The zod schema only knows the generic floor (TZS 10,000, term >= 1).
+            // The product's own limits are checked here so they surface on this
+            // step rather than after Review is filled in.
+            if (detailsValid && !applyLoanProductFitErrors(loanApplicationForm.getValues())) {
                 setLoanFormStep(3);
             }
         }
@@ -4892,7 +4956,6 @@ export function MemberPortalPage() {
 
         const sanitizedPurpose = sanitizeLoanPurpose(values.purpose);
         const selectedProduct = loanProducts.find((product) => product.id === values.product_id) || null;
-        const selectedFrequencies = resolveLoanAllowedFrequencies(selectedProduct);
         let hasClientValidationError = false;
 
         loanApplicationForm.clearErrors();
@@ -4929,35 +4992,15 @@ export function MemberPortalPage() {
             return;
         }
 
-        if (sanitizedPurpose.length < 20) {
-            loanApplicationForm.setError("purpose", { message: "Loan purpose must be at least 20 characters" });
+        if (!sanitizedPurpose.length) {
+            loanApplicationForm.setError("purpose", { message: "Say what the loan is for." });
             hasClientValidationError = true;
-        } else if (sanitizedPurpose.length > 500) {
-            loanApplicationForm.setError("purpose", { message: "Loan purpose cannot exceed 500 characters" });
-            hasClientValidationError = true;
-        } else if (!loanPurposePattern.test(sanitizedPurpose)) {
-            loanApplicationForm.setError("purpose", { message: "Loan purpose may contain only letters, numbers, spaces, commas, and periods" });
+        } else if (sanitizedPurpose.length > 2000) {
+            loanApplicationForm.setError("purpose", { message: "Loan purpose cannot exceed 2000 characters" });
             hasClientValidationError = true;
         }
 
-        if (values.requested_amount < selectedLoanMinimumAmount) {
-            loanApplicationForm.setError("requested_amount", {
-                message: `Requested amount must be at least ${formatCurrency(selectedLoanMinimumAmount)}`
-            });
-            hasClientValidationError = true;
-        }
-
-        if (values.requested_term_count < selectedLoanMinimumTerm || (selectedLoanMaximumTerm && values.requested_term_count > selectedLoanMaximumTerm)) {
-            loanApplicationForm.setError("requested_term_count", {
-                message: `Loan term must be between ${selectedLoanMinimumTerm} and ${selectedLoanMaximumTerm || selectedLoanMinimumTerm} months`
-            });
-            hasClientValidationError = true;
-        }
-
-        if (!selectedFrequencies.includes(values.requested_repayment_frequency)) {
-            loanApplicationForm.setError("requested_repayment_frequency", {
-                message: "Selected repayment frequency is not available for this loan product."
-            });
+        if (applyLoanProductFitErrors(values)) {
             hasClientValidationError = true;
         }
 
@@ -5215,10 +5258,13 @@ export function MemberPortalPage() {
         const query = guarantorLookupNo.trim();
         if (query.length < 2 || !profile) {
             setGuarantorSuggestions([]);
+            setGuarantorSearchState("idle");
+            setGuarantorSearchError("");
             return;
         }
 
         let cancelled = false;
+        setGuarantorSearchState("searching");
         const timer = window.setTimeout(async () => {
             try {
                 const { data } = await api.get<GuarantorSearchResponse>(endpoints.loanApplications.guarantorSearch(), {
@@ -5227,10 +5273,14 @@ export function MemberPortalPage() {
                 if (!cancelled) {
                     const chosen = new Set(guarantorDrafts.map((row) => row.member_id));
                     setGuarantorSuggestions((data.data || []).filter((hit) => !chosen.has(hit.member_id)));
+                    setGuarantorSearchState("done");
+                    setGuarantorSearchError("");
                 }
-            } catch {
+            } catch (searchError) {
                 if (!cancelled) {
                     setGuarantorSuggestions([]);
+                    setGuarantorSearchState("error");
+                    setGuarantorSearchError(getApiErrorMessage(searchError, "Member lookup failed."));
                 }
             }
         }, 350);
@@ -7298,6 +7348,18 @@ export function MemberPortalPage() {
                                     </Button>
                                 ))}
                             </Paper>
+                        ) : guarantorSearchState === "searching" ? (
+                            <Typography variant="caption" color="text.secondary">
+                                Searching members...
+                            </Typography>
+                        ) : guarantorSearchState === "error" ? (
+                            <Alert severity="error" variant="outlined" sx={{ py: 0.35 }}>
+                                {guarantorSearchError}
+                            </Alert>
+                        ) : guarantorSearchState === "done" ? (
+                            <Typography variant="caption" color="text.secondary">
+                                No other active member matches "{guarantorLookupNo.trim()}". Try a surname or the full member number — you cannot guarantee your own loan, so your own name will not appear.
+                            </Typography>
                         ) : null}
                         {guarantorDrafts.map((row, index) => (
                             <Paper key={row.member_id} variant="outlined" sx={{ p: 1.25, borderRadius: 1 }}>
@@ -10510,26 +10572,18 @@ export function MemberPortalPage() {
                     }}
                 >
                     <Stack spacing={1.25} sx={{ pt: 0.25, minHeight: 0, flex: 1 }}>
-                        <Alert severity="info" variant="outlined" sx={{ py: 0.35 }}>
-                            {isEditingDraftLoanApplication
-                                ? "Continue updating your saved draft. You can save draft changes now and submit later once any submission lock is cleared."
-                                : isEditingRejectedLoanApplication
-                                    ? "Update the rejected application details, then resubmit it back into appraisal workflow."
-                                    : "This submits a loan application into appraisal and approval workflow. No money movement happens until a teller or loan officer disburses an approved application."}
-                        </Alert>
-                        {memberRecord?.status !== "active" ? (
-                            <Alert severity="warning" variant="outlined" sx={{ py: 0.35 }}>
-                                Your member profile is not active. Only active members can submit a loan application.
-                            </Alert>
-                        ) : null}
-                        {memberHasProblemLoan ? (
-                            <Alert severity="warning" variant="outlined" sx={{ py: 0.35 }}>
-                                You currently have in-arrears or written-off loans. Clear them first before applying again.
-                            </Alert>
-                        ) : null}
-                        {selectedLoanConflict ? (
-                            <Alert severity="warning" variant="outlined" sx={{ py: 0.35 }}>
-                                Another loan application is already in progress. Complete or resolve it before submitting a new one.
+                        {/* Only on the first step. It explains what the whole dialog does,
+                            which is not news by the time you are entering an amount. The
+                            inactive-profile, problem-loan and in-progress-application
+                            warnings that used to sit here are all already listed under
+                            "Submission is currently locked" below. */}
+                        {isLoanProductStep ? (
+                            <Alert severity="info" variant="outlined" sx={{ py: 0.35 }}>
+                                {isEditingDraftLoanApplication
+                                    ? "Continue your saved draft — you can save changes now and submit later."
+                                    : isEditingRejectedLoanApplication
+                                        ? "Update the rejected details, then resubmit for appraisal."
+                                        : "No money moves until a teller disburses an approved application."}
                             </Alert>
                         ) : null}
                         {loanSubmissionLocks.length ? (
@@ -10556,18 +10610,20 @@ export function MemberPortalPage() {
                                 ) : null}
                             </Alert>
                         ) : null}
+                        {/* A single warning reads as a sentence, not as a headed bullet list. */}
                         {loanCapacityWarnings.length ? (
                             <Alert severity="warning" variant="outlined" sx={{ py: 0.35 }}>
-                                <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>
-                                    Borrowing capacity advisory
-                                </Typography>
-                                <Stack spacing={0.35}>
-                                    {loanCapacityWarnings.map((reason) => (
-                                        <Typography key={reason} variant="body2">
-                                            • {reason}
-                                        </Typography>
-                                    ))}
-                                </Stack>
+                                {loanCapacityWarnings.length === 1 ? (
+                                    <Typography variant="body2">{loanCapacityWarnings[0]}</Typography>
+                                ) : (
+                                    <Stack spacing={0.35}>
+                                        {loanCapacityWarnings.map((reason) => (
+                                            <Typography key={reason} variant="body2">
+                                                • {reason}
+                                            </Typography>
+                                        ))}
+                                    </Stack>
+                                )}
                             </Alert>
                         ) : null}
                         {loanLiquidityNotice ? (
@@ -10592,22 +10648,10 @@ export function MemberPortalPage() {
                             >
                                 <Stack spacing={0.9}>
                                     {isMobile ? (
+                                        // The chips are numbered, so a "Step 3 of 4" chip and a
+                                        // percentage read-out alongside them said the same thing
+                                        // three ways. The chips and the progress bar are enough.
                                         <Stack spacing={0.85}>
-                                            <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
-                                                <Chip
-                                                    size="small"
-                                                    label={`Step ${loanFormStep + 1} of ${loanApplicationSteps.length}`}
-                                                    sx={{
-                                                        borderRadius: 1.15,
-                                                        fontWeight: 700,
-                                                        bgcolor: alpha(memberAccent, 0.12),
-                                                        color: memberAccent
-                                                    }}
-                                                />
-                                                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
-                                                    {Math.round(loanStepProgressPercent)}%
-                                                </Typography>
-                                            </Stack>
                                             <Stack direction="row" spacing={0.75} sx={{ overflowX: "auto", pb: 0.25, "&::-webkit-scrollbar": { display: "none" }, scrollbarWidth: "none" }}>
                                                 {loanApplicationSteps.map((step, index) => {
                                                     const isActive = index === loanFormStep;
@@ -10673,14 +10717,6 @@ export function MemberPortalPage() {
                                             ))}
                                         </Stepper>
                                     )}
-                                    <Box>
-                                        <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                                            {loanApplicationSteps[loanFormStep].label}
-                                        </Typography>
-                                        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.25 }}>
-                                            {loanApplicationSteps[loanFormStep].description}
-                                        </Typography>
-                                    </Box>
                                     <Box
                                         sx={{
                                             height: 4,
@@ -10746,52 +10782,37 @@ export function MemberPortalPage() {
                                                 bgcolor: alpha(memberAccent, isDarkMode ? 0.14 : 0.05)
                                             }}
                                         >
+                                            {/* Facts only, three across. The product name used to be
+                                                repeated as an h6 directly under the dropdown that already
+                                                shows it, followed by the author-entered description — which
+                                                on the live products reads "stored as 36% annual for the
+                                                existing loan engine". None of that helps a member choose. */}
                                             <CardContent sx={{ display: "grid", gap: 1.5, minWidth: 0 }}>
-                                                <Stack
-                                                    direction={{ xs: "column", md: "row" }}
-                                                    spacing={1.5}
-                                                    justifyContent="space-between"
-                                                    alignItems={{ xs: "flex-start", md: "center" }}
-                                                    sx={{ minWidth: 0 }}
-                                                >
-                                                    <Box sx={{ minWidth: 0 }}>
-                                                        <Typography variant="h6" sx={{ fontWeight: 800, overflowWrap: "anywhere" }}>
-                                                            {selectedLoanProduct.name}
-                                                        </Typography>
-                                                        <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: "anywhere" }}>
-                                                            {selectedLoanProduct.description || "Configured limits and eligibility rules apply automatically to this application."}
-                                                        </Typography>
-                                                    </Box>
-                                                    <Chip
-                                                        label={formatMonthlyLoanRate(selectedLoanProduct.annual_interest_rate)}
-                                                        color="primary"
-                                                        variant={isDarkMode ? "filled" : "outlined"}
-                                                        sx={{
-                                                            maxWidth: "100%",
-                                                            fontWeight: 700,
-                                                            alignSelf: { xs: "flex-start", md: "auto" },
-                                                            "& .MuiChip-label": {
-                                                                display: "block",
-                                                                whiteSpace: "normal"
-                                                            }
-                                                        }}
-                                                    />
-                                                </Stack>
                                                 <Grid container spacing={1.5} sx={{ minWidth: 0 }}>
-                                                    <Grid size={{ xs: 12, md: 6 }}>
-                                                        <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 1, width: "100%", minWidth: 0, boxSizing: "border-box" }}>
+                                                    <Grid size={{ xs: 12, sm: 4 }}>
+                                                        <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 1, width: "100%", minWidth: 0, boxSizing: "border-box", height: "100%" }}>
                                                             <Typography variant="caption" color="text.secondary">
-                                                                Product range
+                                                                Interest
+                                                            </Typography>
+                                                            <Typography variant="body1" sx={{ fontWeight: 700, overflowWrap: "anywhere" }}>
+                                                                {formatMonthlyLoanRate(selectedLoanProduct.annual_interest_rate)}
+                                                            </Typography>
+                                                        </Paper>
+                                                    </Grid>
+                                                    <Grid size={{ xs: 12, sm: 4 }}>
+                                                        <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 1, width: "100%", minWidth: 0, boxSizing: "border-box", height: "100%" }}>
+                                                            <Typography variant="caption" color="text.secondary">
+                                                                You can borrow
                                                             </Typography>
                                                             <Typography variant="body1" sx={{ fontWeight: 700, overflowWrap: "anywhere" }}>
                                                                 {formatCurrency(selectedLoanMinimumAmount)} to {selectedLoanProduct.max_amount ? formatCurrency(selectedLoanProduct.max_amount) : "No capped max"}
                                                             </Typography>
                                                         </Paper>
                                                     </Grid>
-                                                    <Grid size={{ xs: 12, md: 6 }}>
-                                                        <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 1, width: "100%", minWidth: 0, boxSizing: "border-box" }}>
+                                                    <Grid size={{ xs: 12, sm: 4 }}>
+                                                        <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 1, width: "100%", minWidth: 0, boxSizing: "border-box", height: "100%" }}>
                                                             <Typography variant="caption" color="text.secondary">
-                                                                Allowed frequency
+                                                                Repay
                                                             </Typography>
                                                             <Typography variant="body1" sx={{ fontWeight: 700, overflowWrap: "anywhere" }}>
                                                                 {selectedLoanPolicy.allowedRepaymentFrequencies.map((frequency) => getRepaymentFrequencyLabel(frequency)).join(", ")}
@@ -10890,14 +10911,16 @@ export function MemberPortalPage() {
                                     ) : null}
                                     <TextField
                                         label="Loan Purpose *"
-                                        placeholder="Explain how the loan will be used (e.g., farming inputs, business expansion, school fees)"
+                                        placeholder="e.g. farming inputs, business expansion, school fees"
                                         fullWidth
                                         multiline
-                                        minRows={2}
-                                        maxRows={4}
+                                        // Fixed rows, not minRows/maxRows: the autosize textarea
+                                        // mis-measures inside this dialog's flex + overflow content
+                                        // area and blows up to full height.
+                                        rows={3}
                                         {...loanApplicationForm.register("purpose")}
                                         error={Boolean(loanApplicationForm.formState.errors.purpose)}
-                                        helperText={loanApplicationForm.formState.errors.purpose?.message || "20 to 500 characters. Letters, numbers, commas, and periods only."}
+                                        helperText={loanApplicationForm.formState.errors.purpose?.message || "Write it however you like, in English or Swahili."}
                                     />
                                     <Grid container spacing={2}>
                                         <Grid size={{ xs: 12, md: 4 }}>
@@ -11303,6 +11326,18 @@ export function MemberPortalPage() {
                                                         </Button>
                                                     ))}
                                                 </Paper>
+                                            ) : guarantorSearchState === "searching" ? (
+                                                <Typography variant="caption" color="text.secondary">
+                                                    Searching members...
+                                                </Typography>
+                                            ) : guarantorSearchState === "error" ? (
+                                                <Alert severity="error" variant="outlined" sx={{ py: 0.35 }}>
+                                                    {guarantorSearchError}
+                                                </Alert>
+                                            ) : guarantorSearchState === "done" ? (
+                                                <Typography variant="caption" color="text.secondary">
+                                                    No other active member matches "{guarantorLookupNo.trim()}". Try a surname or the full member number — you cannot guarantee your own loan, so your own name will not appear.
+                                                </Typography>
                                             ) : null}
                                             {guarantorDrafts.length ? (
                                                 <Stack spacing={1}>

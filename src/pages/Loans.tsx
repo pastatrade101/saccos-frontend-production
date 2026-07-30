@@ -924,7 +924,11 @@ export function LoansPage() {
             const { data: productsResponse } = await productsPromise;
             const uniqueMembers = Array.from(new Map(memberRows.map((member) => [member.id, member])).values());
             setMembers(uniqueMembers);
-            setLoanProducts(productsResponse.data || []);
+            // Active only: these products feed the create-application and
+            // merge-loans pickers, and both the capacity check and submission
+            // reject a non-active product with LOAN_PRODUCT_NOT_FOUND. The
+            // endpoint filters deleted_at but not status.
+            setLoanProducts((productsResponse.data || []).filter((product) => product.status === "active"));
             setReferencesLoaded(true);
         } catch (error) {
             if (!options?.silent) {
