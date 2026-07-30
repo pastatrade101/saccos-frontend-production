@@ -81,7 +81,8 @@ const createApplicationSchema = z.object({
     member_id: z.string().uuid("Select a member."),
     product_id: z.string().uuid("Select a loan product."),
     external_reference: z.string().max(80).optional().or(z.literal("")),
-    purpose: z.string().trim().min(3, "Purpose is required.").max(500),
+    // Matches the backend and the member portal: free text, 2000-char ceiling.
+    purpose: z.string().trim().min(1, "Say what the loan is for.").max(2000),
     requested_amount: z.coerce.number().positive("Requested amount is required."),
     requested_term_count: z.coerce.number().int().positive("Requested term is required."),
     requested_repayment_frequency: z.enum(["daily", "weekly", "monthly"]).default("monthly"),
