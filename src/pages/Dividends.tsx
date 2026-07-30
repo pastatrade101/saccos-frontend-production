@@ -1839,7 +1839,7 @@ export function DividendsPage() {
                                                     </Grid>
                                                     {form.watch(`components.${index}.distribution_mode`) === "rate" ? (
                                                         <Grid size={{ xs: 12, md: 4 }}>
-                                                            <TextField label="Rate %" type="number" fullWidth {...form.register(`components.${index}.rate_percent`)} />
+                                                            <TextField label="Rate %" type="number" fullWidth inputProps={{ min: 0, step: 0.01 }} {...form.register(`components.${index}.rate_percent`)} />
                                                         </Grid>
                                                     ) : (
                                                         <Grid size={{ xs: 12, md: 4 }}>

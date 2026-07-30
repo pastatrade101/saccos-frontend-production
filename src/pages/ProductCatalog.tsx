@@ -1572,7 +1572,7 @@ export function ProductCatalogPage() {
                                 <Grid size={{ xs: 12, md: 4 }}><TextField select fullWidth label="Calculation" defaultValue={form.getValues("calculation_method") || "flat"} {...form.register("calculation_method")}><MenuItem value="flat">Flat</MenuItem><MenuItem value="percentage">Percentage</MenuItem><MenuItem value="percentage_per_period">Per period</MenuItem></TextField></Grid>
                                 <Grid size={{ xs: 12, md: 4 }}>{accountSelect("income_account_id", "Income account")}</Grid>
                                 <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth type="number" label="Flat amount" {...form.register("flat_amount", { valueAsNumber: true })} /></Grid>
-                                <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth type="number" label="Percentage value" {...form.register("percentage_value", { valueAsNumber: true })} /></Grid>
+                                <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth type="number" label="Percentage value" inputProps={{ min: 0, max: 100, step: 0.01 }} {...form.register("percentage_value", { valueAsNumber: true })} /></Grid>
                             </>
                         ) : null}
                         {kind === "penalties" ? (

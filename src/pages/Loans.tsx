@@ -3952,6 +3952,7 @@ export function LoansPage() {
                                         label="Requested Interest % per month"
                                         type="number"
                                         fullWidth
+                                        inputProps={{ min: 0, max: 100, step: 0.01 }}
                                         {...createForm.register("requested_interest_rate")}
                                         error={Boolean(createForm.formState.errors.requested_interest_rate)}
                                         helperText={createForm.formState.errors.requested_interest_rate?.message}
@@ -4374,6 +4375,7 @@ export function LoansPage() {
                                     label="Recommended Amount"
                                     type="number"
                                     fullWidth
+                                    inputProps={{ min: 0, step: 0.01 }}
                                     {...appraiseForm.register("recommended_amount")}
                                     error={Boolean(appraiseForm.formState.errors.recommended_amount)}
                                     helperText={appraiseForm.formState.errors.recommended_amount?.message}
@@ -4384,16 +4386,21 @@ export function LoansPage() {
                                     label="Recommended Term"
                                     type="number"
                                     fullWidth
+                                    inputProps={{ min: 1, step: 1 }}
                                     {...appraiseForm.register("recommended_term_count")}
                                     error={Boolean(appraiseForm.formState.errors.recommended_term_count)}
                                     helperText={appraiseForm.formState.errors.recommended_term_count?.message}
                                 />
                             </Grid>
                             <Grid size={{ xs: 12, md: 4 }}>
+                                {/* Without an explicit step a number input defaults to
+                                    step=1, so the browser refused 1.5 — which is the
+                                    ILBORU Tier 3 rate, not a typo. */}
                                 <TextField
                                     label="Recommended Interest Rate (% per month)"
                                     type="number"
                                     fullWidth
+                                    inputProps={{ min: 0, max: 100, step: 0.01 }}
                                     {...appraiseForm.register("recommended_interest_rate")}
                                     error={Boolean(appraiseForm.formState.errors.recommended_interest_rate)}
                                     helperText={appraiseForm.formState.errors.recommended_interest_rate?.message}
