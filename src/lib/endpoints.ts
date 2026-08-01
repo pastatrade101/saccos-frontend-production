@@ -557,8 +557,11 @@ export const endpoints = {
         expensePayment: () => routeMap.finance.expensePayment,
         operationalBatch: () => routeMap.finance.operationalBatch,
         statements: () => routeMap.finance.statements,
-        updateBankMeta: (transactionId: string) => `/finance/transactions/${transactionId}/bank-meta`,
-        reverseTransaction: (transactionId: string) => `/finance/transactions/${transactionId}/reverse`,
+        // No "/finance" segment: routes/index.js mounts financeRoutes at "/", so
+        // these live at /api/transactions/... alongside /api/statements and
+        // /api/deposit. The extra prefix made every call 404 with ROUTE_NOT_FOUND.
+        updateBankMeta: (transactionId: string) => `/transactions/${transactionId}/bank-meta`,
+        reverseTransaction: (transactionId: string) => `/transactions/${transactionId}/reverse`,
         nplReclassStatus: () => routeMap.finance.nplReclassStatus,
         nplReclassRun: () => routeMap.finance.nplReclassRun
     },
