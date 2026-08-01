@@ -593,17 +593,40 @@ export function MembersPage() {
         setAccountsLoading(true);
 
         try {
-            const { data } = await api.get<MemberAccountsResponse>(endpoints.members.accounts(), {
-                params: {
-                    tenant_id: selectedTenantId,
-                    member_ids: scopedMemberIds.join(","),
-                    page: 1,
-                    limit: Math.min(Math.max(scopedMemberIds.length * 6, 50), 100),
-                    include_total: false
-                }
-            });
+            // Fetched in chunks, each paginated to exhaustion. This was a single
+            // request with limit capped at Math.min(..., 100), which held for a
+            // 25-row page (~50-75 accounts) but not for "View all": 150 members
+            // carry several hundred accounts, the first 100 came back, and every
+            // member the response did not reach rendered as "Not provisioned"
+            // with a TSh 0 balance. member_ids is also chunked because it travels
+            // as a comma-joined query string that grows with the membership.
+            const MEMBER_IDS_PER_REQUEST = 80;
+            const ACCOUNTS_PAGE_SIZE = 500;
+            const MAX_ACCOUNT_PAGES = 20;
+            const nextBatchAccounts: MemberAccount[] = [];
 
-            const nextBatchAccounts = data.data || [];
+            for (let start = 0; start < scopedMemberIds.length; start += MEMBER_IDS_PER_REQUEST) {
+                const idChunk = scopedMemberIds.slice(start, start + MEMBER_IDS_PER_REQUEST);
+
+                for (let page = 1; page <= MAX_ACCOUNT_PAGES; page += 1) {
+                    const { data } = await api.get<MemberAccountsResponse>(endpoints.members.accounts(), {
+                        params: {
+                            tenant_id: selectedTenantId,
+                            member_ids: idChunk.join(","),
+                            page,
+                            limit: ACCOUNTS_PAGE_SIZE,
+                            include_total: false
+                        }
+                    });
+
+                    const batch = (data.data || []) as MemberAccount[];
+                    nextBatchAccounts.push(...batch);
+
+                    if (batch.length < ACCOUNTS_PAGE_SIZE) {
+                        break;
+                    }
+                }
+            }
 
             const accountsByMember = new Map<string, MemberAccount[]>();
             nextBatchAccounts.forEach((account) => {
