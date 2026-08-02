@@ -1,3 +1,4 @@
+import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 import {
     Alert,
     Box,
@@ -44,6 +45,7 @@ import {
     type PerformanceTargetStatusId
 } from "../utils/performanceTarget";
 import { formatCurrency } from "../utils/format";
+import { downloadPerformanceTargetPdf } from "../utils/performanceTargetExport";
 
 const PAGE_LOAD_LIMIT = 100;
 const MAX_PAGE_LOADS = 100;
@@ -470,6 +472,28 @@ export function PerformanceTargetsPage() {
         setSortKey("reach_asc");
     };
 
+    // Exports what is on screen, so the filter chips double as the report's
+    // scope: pick "Target met" and you share that category alone.
+    const handleSharePdf = () => {
+        const statusLabel = statusFilterOptions.find((option) => option.value === statusFilter)?.label || "All members";
+
+        downloadPerformanceTargetPdf({
+            tenantName: selectedTenantName || "SACCO",
+            scopeLabel: `${statusLabel} — ${filteredRows.length} of ${rows.length} members`,
+            requiredNowAmount: calculateRequiredToDate(settings) ?? settings.performance_target_required_amount,
+            onTrackPercent: settings.performance_target_on_track_percent,
+            rows: filteredRows.map((row) => ({
+                memberNo: row.memberNo,
+                level: row.level,
+                actualAmount: row.actualFormAmount,
+                annualTargetAmount: row.annualTargetAmount,
+                remainingToTargetAmount: row.remainingToTargetAmount,
+                nextRequiredAmount: row.nextRequiredAmount,
+                reachPercent: row.reachPercent
+            }))
+        });
+    };
+
     // Distinct from clearFilters, which returns to the "Needs action" worklist
     // the page opens on. This one really does show everyone.
     const showAllRows = () => {
@@ -642,9 +666,21 @@ export function PerformanceTargetsPage() {
                                 </Select>
                             </FormControl>
                         </Grid>
-                        <Grid size={{ xs: 12, sm: 6, md: 2 }}>
+                        <Grid size={{ xs: 12, sm: 6, md: 1 }}>
                             <Button variant="outlined" fullWidth onClick={clearFilters}>
-                                Clear filters
+                                Clear
+                            </Button>
+                        </Grid>
+                        <Grid size={{ xs: 12, sm: 6, md: 1 }}>
+                            <Button
+                                variant="contained"
+                                fullWidth
+                                startIcon={<DownloadRoundedIcon />}
+                                onClick={handleSharePdf}
+                                disabled={!filteredRows.length}
+                                sx={{ whiteSpace: "nowrap" }}
+                            >
+                                Share PDF
                             </Button>
                         </Grid>
                     </Grid>
