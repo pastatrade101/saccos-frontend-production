@@ -563,6 +563,7 @@ export const endpoints = {
         // /api/deposit. The extra prefix made every call 404 with ROUTE_NOT_FOUND.
         updateBankMeta: (transactionId: string) => `/transactions/${transactionId}/bank-meta`,
         reverseTransaction: (transactionId: string) => `/transactions/${transactionId}/reverse`,
+        correctLoanInterest: (transactionId: string) => `/loan/transactions/${transactionId}/correct-interest`,
         nplReclassStatus: () => routeMap.finance.nplReclassStatus,
         nplReclassRun: () => routeMap.finance.nplReclassRun
     },

@@ -34,6 +34,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { FlatDateRangePicker } from "../components/FlatDateRangePicker";
 import { api, getApiErrorMessage } from "../lib/api";
+import { useToast } from "../components/Toast";
 import { endpoints, type MembersResponse } from "../lib/endpoints";
 import type { Member } from "../types/api";
 import { downloadFile } from "../utils/downloadFile";
@@ -139,6 +140,8 @@ interface LoanIncomeData {
             principal_balance_after: number;
             reference: string | null;
             is_top_up_settlement: boolean;
+            is_correction: boolean;
+            corrects_transaction_id: string | null;
             posted_by: string | null;
         }[];
     }[];
@@ -276,6 +279,7 @@ export function AllReportsPage() {
 
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const { pushToast } = useToast();
     const [startDate, setStartDate] = useState("");
     const [endDate, setEndDate] = useState("");
     // Payload is tagged with the report it belongs to: on navigation the
@@ -479,6 +483,43 @@ export function AllReportsPage() {
             .then((response) => setMembers(response.data.data || []))
             .catch(() => setMembers([]));
     }, [activeKey, members.length]);
+
+    // Restating a posted interest figure. The dialog carries the recorded value
+    // and what the register rule would give, so the officer is choosing between
+    // two known numbers rather than typing one from memory.
+    const [correctRow, setCorrectRow] = useState<{ id: string; member: string; amount: number; interest: number } | null>(null);
+    const [correctInterest, setCorrectInterest] = useState("");
+    const [correctReason, setCorrectReason] = useState("");
+    const [correctSaving, setCorrectSaving] = useState(false);
+
+    const submitCorrection = async () => {
+        if (!correctRow) return;
+        const value = Number(correctInterest);
+        if (!Number.isFinite(value) || value < 0) {
+            pushToast({ type: "error", title: "Invalid amount", message: "Enter the corrected interest." });
+            return;
+        }
+        if (correctReason.trim().length < 3) {
+            pushToast({ type: "error", title: "Reason required", message: "Say why the figure is being corrected." });
+            return;
+        }
+        setCorrectSaving(true);
+        try {
+            await api.post(endpoints.finance.correctLoanInterest(correctRow.id), {
+                corrected_interest: value,
+                reason: correctReason.trim()
+            });
+            pushToast({ type: "success", title: "Interest corrected", message: "The split was restated and the loan balance rebuilt." });
+            setCorrectRow(null);
+            setCorrectInterest("");
+            setCorrectReason("");
+            await load();
+        } catch (correctError) {
+            pushToast({ type: "error", title: "Could not correct", message: getApiErrorMessage(correctError) });
+        } finally {
+            setCorrectSaving(false);
+        }
+    };
 
     const showDateFilters = activeKey === "contributions" || activeKey === "monthly" || activeKey === "loan-income";
 
@@ -1162,6 +1203,7 @@ export function AllReportsPage() {
                         <Table size="small" stickyHeader>
                             <TableHead>
                                 <TableRow>
+                                    <TableCell sx={{ width: 90 }}>Fix</TableCell>
                                     <TableCell>Posted</TableCell>
                                     <TableCell>Member</TableCell>
                                     <TableCell align="right">Cash paid</TableCell>
@@ -1175,6 +1217,28 @@ export function AllReportsPage() {
                             <TableBody>
                                 {filtered.flatMap((row) => row.payments.map((payment) => (
                                     <TableRow key={payment.transaction_id} hover>
+                                        <TableCell sx={{ width: 90 }}>
+                                            {payment.is_correction ? (
+                                                <Chip size="small" label="Fixed" color="warning" variant="outlined" />
+                                            ) : (
+                                                <Button
+                                                    size="small"
+                                                    variant="outlined"
+                                                    onClick={() => {
+                                                        setCorrectRow({
+                                                            id: payment.transaction_id,
+                                                            member: row.member_name || row.member_no || "—",
+                                                            amount: payment.amount,
+                                                            interest: payment.interest_component
+                                                        });
+                                                        setCorrectInterest(String(payment.interest_component));
+                                                        setCorrectReason("");
+                                                    }}
+                                                >
+                                                    Fix
+                                                </Button>
+                                            )}
+                                        </TableCell>
                                         <TableCell sx={{ whiteSpace: "nowrap" }}>{formatDate(payment.posted_at)}</TableCell>
                                         <TableCell>
                                             <Typography variant="caption">{row.member_name || row.member_no || "—"}</Typography>
@@ -1804,6 +1868,64 @@ export function AllReportsPage() {
                     </Button>
                 </DialogActions>
             </Dialog>
+
+            <Dialog open={Boolean(correctRow)} onClose={() => !correctSaving && setCorrectRow(null)} maxWidth="xs" fullWidth>
+                <DialogTitle sx={{ fontWeight: 800 }}>Correct Interest Split</DialogTitle>
+                <DialogContent dividers>
+                    <Stack spacing={2} sx={{ mt: 0.5 }}>
+                        <Alert severity="info" variant="outlined">
+                            The cash received does not change — only how it was divided between interest and
+                            principal. The original posting stays on the statement and this is recorded beside it
+                            as a correction.
+                        </Alert>
+                        {correctRow ? (
+                            <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
+                                <Stack spacing={0.5}>
+                                    <Typography variant="body2" sx={{ fontWeight: 700 }}>{correctRow.member}</Typography>
+                                    <Stack direction="row" justifyContent="space-between">
+                                        <Typography variant="caption" color="text.secondary">Cash paid</Typography>
+                                        <Typography variant="caption">{formatCurrency(correctRow.amount)}</Typography>
+                                    </Stack>
+                                    <Stack direction="row" justifyContent="space-between">
+                                        <Typography variant="caption" color="text.secondary">Recorded as interest</Typography>
+                                        <Typography variant="caption" sx={{ fontWeight: 700 }}>{formatCurrency(correctRow.interest)}</Typography>
+                                    </Stack>
+                                    <Stack direction="row" justifyContent="space-between">
+                                        <Typography variant="caption" color="text.secondary">Would go to principal</Typography>
+                                        <Typography variant="caption">
+                                            {formatCurrency(Math.max(correctRow.amount - (Number(correctInterest) || 0), 0))}
+                                        </Typography>
+                                    </Stack>
+                                </Stack>
+                            </Paper>
+                        ) : null}
+                        <TextField
+                            label="Corrected interest"
+                            value={correctInterest}
+                            onChange={(event) => setCorrectInterest(event.target.value.replace(/[^\d.]/g, ""))}
+                            inputProps={{ inputMode: "decimal" }}
+                            helperText="What the register says this payment's interest should have been."
+                            fullWidth
+                        />
+                        <TextField
+                            label="Reason"
+                            value={correctReason}
+                            onChange={(event) => setCorrectReason(event.target.value)}
+                            placeholder="e.g. posted under the old accrual rule; register says 450,000"
+                            multiline
+                            rows={2}
+                            fullWidth
+                        />
+                    </Stack>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setCorrectRow(null)} disabled={correctSaving}>Cancel</Button>
+                    <Button variant="contained" onClick={() => void submitCorrection()} disabled={correctSaving}>
+                        {correctSaving ? "Correcting..." : "Post correction"}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
         </Stack>
     );
 }
