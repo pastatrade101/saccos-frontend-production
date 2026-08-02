@@ -480,7 +480,7 @@ export function AllReportsPage() {
             .catch(() => setMembers([]));
     }, [activeKey, members.length]);
 
-    const showDateFilters = activeKey === "contributions" || activeKey === "monthly";
+    const showDateFilters = activeKey === "contributions" || activeKey === "monthly" || activeKey === "loan-income";
 
     const getExportData = (): { name: string; title: string; headers: string[]; rows: (string | number | null)[][] } | null => {
         if (!data) return null;
@@ -1632,14 +1632,14 @@ export function AllReportsPage() {
             <Card variant="outlined" sx={{ borderRadius: 2.5 }}>
                 <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
                     <Stack spacing={2}>
-                        {showDateFilters || ["member-statement", "positions", "performance-targets", "commitments", "summary-sorted", "loans", "operations"].includes(activeKey) ? (
+                        {showDateFilters || ["member-statement", "positions", "performance-targets", "commitments", "summary-sorted", "loans", "loan-income", "operations"].includes(activeKey) ? (
                             <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }} flexWrap="wrap" useFlexGap>
                                 {activeKey === "operations" && canManageOperations ? (
                                     <Button variant="contained" size="small" onClick={() => setEntryOpen(true)}>
                                         Add entry
                                     </Button>
                                 ) : null}
-                                {["contributions", "monthly", "positions", "performance-targets", "commitments", "summary-sorted", "loans", "operations"].includes(activeKey) ? (
+                                {["contributions", "monthly", "positions", "performance-targets", "commitments", "summary-sorted", "loans", "loan-income", "operations"].includes(activeKey) ? (
                                     <TextField
                                         label="Search member"
                                         size="small"

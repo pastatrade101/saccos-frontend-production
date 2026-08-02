@@ -129,6 +129,7 @@ const navItems: NavItem[] = [
     { to: "/all-reports/commitments", label: "Monthly Commitments", roles: ["super_admin", "branch_manager"], section: "finance", icon: EventRepeatRoundedIcon },
     { to: "/all-reports/summary-sorted", label: "Sorted Summary", roles: ["super_admin", "branch_manager"], section: "finance", icon: SummarizeRoundedIcon },
     { to: "/all-reports/loans", label: "Loans (MIKOPO)", roles: ["super_admin", "branch_manager"], section: "finance", icon: CreditScoreRoundedIcon },
+    { to: "/all-reports/loan-income", label: "Loan Income", roles: ["super_admin", "branch_manager"], section: "finance", icon: AccountBalanceRoundedIcon },
     { to: "/all-reports/operations", label: "Operations Fund", roles: ["super_admin", "branch_manager"], section: "finance", icon: PaidRoundedIcon }
 ];
 
