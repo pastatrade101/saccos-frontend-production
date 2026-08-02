@@ -19,6 +19,7 @@ import {
     Table,
     TableBody,
     TableCell,
+    Paper,
     TableContainer,
     TableHead,
     TablePagination,
@@ -38,7 +39,7 @@ import type { Member } from "../types/api";
 import { downloadFile } from "../utils/downloadFile";
 import { formatCurrency, formatDate } from "../utils/format";
 
-type ReportKey = "contributions" | "monthly" | "dividends" | "positions" | "member-statement" | "utt" | "performance-targets" | "commitments" | "summary-sorted" | "loans" | "operations";
+type ReportKey = "contributions" | "monthly" | "dividends" | "positions" | "member-statement" | "utt" | "performance-targets" | "commitments" | "summary-sorted" | "loans" | "loan-income" | "operations";
 
 const REPORTS: { key: ReportKey; label: string; description: string }[] = [
     { key: "contributions", label: "Contributions Summary", description: "Per member: savings, shares and social contributions with withdrawals netted." },
@@ -51,6 +52,7 @@ const REPORTS: { key: ReportKey; label: string; description: string }[] = [
     { key: "commitments", label: "Monthly Commitments", description: "Shares and monthly savings commitment compliance per member: expected vs paid, arrears and status." },
     { key: "summary-sorted", label: "Sorted Summary", description: "The full member schedule: entry fee, shares, monthly plan, needed to date, surplus/deficit and UTT flag — ranked by actual." },
     { key: "loans", label: "Loans (MIKOPO)", description: "Every loan: amount, interest, total due, repayment trail with running balance, guarantors, collateral and status." },
+    { key: "loan-income", label: "Loan Income Reconciliation", description: "Interest the SACCO earned in a period, traced to the repayment that produced it — for checking against the monthly GAWIO sheet." },
     { key: "operations", label: "Operations Fund", description: "Running-cost ledger: member operations fees by month, other income, expenses and the fund's net." }
 ];
 
@@ -112,6 +114,43 @@ interface CommitmentComplianceData {
         status: string;
     }[];
     totals: { actual: number; shares: number; expected: number; paid: number; needed: number; behind_count: number };
+}
+
+interface LoanIncomeData {
+    start_date: string | null;
+    end_date: string | null;
+    loans: {
+        loan_id: string;
+        loan_number: string | null;
+        member_no: string | null;
+        member_name: string | null;
+        monthly_rate_percent: number | null;
+        interest_total: number;
+        principal_total: number;
+        paid_total: number;
+        payment_count: number;
+        last_payment_at: string;
+        payments: {
+            transaction_id: string;
+            posted_at: string;
+            amount: number;
+            interest_component: number;
+            principal_component: number;
+            principal_balance_after: number;
+            reference: string | null;
+            is_top_up_settlement: boolean;
+            posted_by: string | null;
+        }[];
+    }[];
+    investment_income: { id: string; income_type: string; amount: number; received_date: string; description: string | null }[];
+    totals: {
+        loan_interest: number;
+        investment_income: number;
+        grand_total: number;
+        payment_count: number;
+        loan_count: number;
+        top_up_settlement_interest: number;
+    };
 }
 
 interface LoansReportData {
@@ -411,6 +450,8 @@ export function AllReportsPage() {
                 response = await api.get<{ data: LoansReportData }>(endpoints.allReports.loans(), {
                     params: { include_repayments: "true" }
                 });
+            } else if (activeKey === "loan-income") {
+                response = await api.get<{ data: LoanIncomeData }>(endpoints.allReports.loanIncome(), { params });
             } else if (activeKey === "operations") {
                 response = await api.get<{ data: OperationsFundData }>(endpoints.allReports.operationsFund());
             } else {
@@ -1049,6 +1090,143 @@ export function AllReportsPage() {
                             </TableBody>
                         </Table>
                     </TableContainer>
+                </Stack>
+            );
+        }
+
+        if (activeKey === "loan-income") {
+            const typed = data as LoanIncomeData;
+            const filtered = typed.loans.filter((row) => matchesSearch(row.member_no, row.member_name || ""));
+
+            return (
+                <Stack spacing={2}>
+                    <StatTiles
+                        items={[
+                            { label: "Loan interest", value: formatCurrency(typed.totals.loan_interest), helper: `${typed.totals.payment_count} payment(s) on ${typed.totals.loan_count} loan(s)` },
+                            { label: "Investment income", value: formatCurrency(typed.totals.investment_income), helper: `${typed.investment_income.length} entry(ies)` },
+                            { label: "Total income", value: formatCurrency(typed.totals.grand_total), helper: "Loan interest + investments" },
+                            { label: "From top-up settlements", value: formatCurrency(typed.totals.top_up_settlement_interest), helper: "Interest realised without cash crossing the counter" }
+                        ]}
+                    />
+
+                    {typed.totals.top_up_settlement_interest > 0 ? (
+                        <Alert severity="info" variant="outlined">
+                            {formatCurrency(typed.totals.top_up_settlement_interest)} of this interest came from top-up settlements — the old loan was cleared out of the new facility, so no cash was received at the counter. A hand-kept sheet usually misses these, and it is the first place to look when the two totals disagree.
+                        </Alert>
+                    ) : null}
+
+                    <TableContainer component={Paper} variant="outlined">
+                        <Table size="small">
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell>Member</TableCell>
+                                    <TableCell>Loan</TableCell>
+                                    <TableCell align="right">Interest earned</TableCell>
+                                    <TableCell align="right">Principal repaid</TableCell>
+                                    <TableCell align="right">Total paid</TableCell>
+                                    <TableCell align="right">Payments</TableCell>
+                                    <TableCell>Last payment</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {filtered.map((row) => (
+                                    <TableRow key={row.loan_id} hover>
+                                        <TableCell>
+                                            <Typography variant="body2" sx={{ fontWeight: 600 }}>{row.member_name || "—"}</Typography>
+                                            <Typography variant="caption" color="text.secondary">{row.member_no || "—"}</Typography>
+                                        </TableCell>
+                                        <TableCell>
+                                            <Typography variant="caption">{row.loan_number || "—"}</Typography>
+                                            {row.monthly_rate_percent ? (
+                                                <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                                                    {row.monthly_rate_percent}% / month
+                                                </Typography>
+                                            ) : null}
+                                        </TableCell>
+                                        <TableCell align="right" sx={{ fontWeight: 700 }}>{formatCurrency(row.interest_total)}</TableCell>
+                                        <TableCell align="right">{formatCurrency(row.principal_total)}</TableCell>
+                                        <TableCell align="right">{formatCurrency(row.paid_total)}</TableCell>
+                                        <TableCell align="right">{row.payment_count}</TableCell>
+                                        <TableCell>{formatDate(row.last_payment_at)}</TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+
+                    {/* The working behind every figure above: each payment, when it was
+                        posted, who posted it, how it split, and the balance it left. This
+                        is what makes a disagreement with the sheet answerable. */}
+                    <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>How each figure was earned</Typography>
+                    <TableContainer component={Paper} variant="outlined" sx={{ maxHeight: 520 }}>
+                        <Table size="small" stickyHeader>
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell>Posted</TableCell>
+                                    <TableCell>Member</TableCell>
+                                    <TableCell align="right">Cash paid</TableCell>
+                                    <TableCell align="right">To interest</TableCell>
+                                    <TableCell align="right">To principal</TableCell>
+                                    <TableCell align="right">Balance after</TableCell>
+                                    <TableCell>Reference</TableCell>
+                                    <TableCell>By</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {filtered.flatMap((row) => row.payments.map((payment) => (
+                                    <TableRow key={payment.transaction_id} hover>
+                                        <TableCell sx={{ whiteSpace: "nowrap" }}>{formatDate(payment.posted_at)}</TableCell>
+                                        <TableCell>
+                                            <Typography variant="caption">{row.member_name || row.member_no || "—"}</Typography>
+                                        </TableCell>
+                                        <TableCell align="right">{formatCurrency(payment.amount)}</TableCell>
+                                        <TableCell align="right" sx={{ fontWeight: 700 }}>{formatCurrency(payment.interest_component)}</TableCell>
+                                        <TableCell align="right">{formatCurrency(payment.principal_component)}</TableCell>
+                                        <TableCell align="right">{formatCurrency(payment.principal_balance_after)}</TableCell>
+                                        <TableCell>
+                                            <Typography variant="caption" sx={{ wordBreak: "break-all" }}>{payment.reference || "—"}</Typography>
+                                            {payment.is_top_up_settlement ? (
+                                                <Chip size="small" label="Top-up settlement" color="info" variant="outlined" sx={{ ml: 0.5 }} />
+                                            ) : null}
+                                        </TableCell>
+                                        <TableCell><Typography variant="caption">{payment.posted_by || "—"}</Typography></TableCell>
+                                    </TableRow>
+                                )))}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+
+                    {typed.investment_income.length ? (
+                        <>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>Investment income</Typography>
+                            <TableContainer component={Paper} variant="outlined">
+                                <Table size="small">
+                                    <TableHead>
+                                        <TableRow>
+                                            <TableCell>Received</TableCell>
+                                            <TableCell>Type</TableCell>
+                                            <TableCell>Description</TableCell>
+                                            <TableCell align="right">Amount</TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {typed.investment_income.map((row) => (
+                                            <TableRow key={row.id} hover>
+                                                <TableCell>{formatDate(row.received_date)}</TableCell>
+                                                <TableCell>{row.income_type}</TableCell>
+                                                <TableCell>{row.description || "—"}</TableCell>
+                                                <TableCell align="right" sx={{ fontWeight: 700 }}>{formatCurrency(row.amount)}</TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+                        </>
+                    ) : (
+                        <Alert severity="warning" variant="outlined">
+                            No investment income is recorded for this period. If the SACCO received a UTT dividend, it has not been entered yet.
+                        </Alert>
+                    )}
                 </Stack>
             );
         }

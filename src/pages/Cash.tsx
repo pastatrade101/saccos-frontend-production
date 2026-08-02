@@ -23,6 +23,8 @@ import {
     Pagination,
     Stack,
     TextField,
+    ToggleButton,
+    ToggleButtonGroup,
     Typography
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
@@ -76,6 +78,10 @@ const actionSchema = z.object({
     deposit_kind: depositKindSchema.default("savings_deposit"),
     account_id: z.string().optional().or(z.literal("")),
     loan_id: z.string().optional().or(z.literal("")),
+    // Matches the loan officer's Loan Repayment dialog. The counter had no such
+    // control, so every teller posting silently used "auto" -- interest first --
+    // and a member paying down principal could not be recorded as doing so.
+    allocation: z.enum(["auto", "interest_only", "principal_only"]).default("auto"),
     member_id: z.string().optional().or(z.literal("")),
     fee_rule_code: z.string().max(80).optional().or(z.literal("")),
     amount: z.coerce.number().positive("Amount must be greater than zero."),
@@ -483,6 +489,7 @@ export function CashPage() {
             deposit_kind: "savings_deposit",
             account_id: defaultAccountId,
             loan_id: "",
+            allocation: "auto",
             member_id: "",
             fee_rule_code: "",
             amount: 0,
@@ -497,6 +504,7 @@ export function CashPage() {
             deposit_kind: "savings_deposit",
             account_id: defaultAccountId,
             loan_id: "",
+            allocation: "auto",
             member_id: "",
             fee_rule_code: "",
             amount: 0,
@@ -1055,6 +1063,7 @@ export function CashPage() {
                     tenant_id: selectedTenantId || undefined,
                     loan_id: loan.id,
                     amount: action.values.amount,
+                    allocation: action.values.allocation || "auto",
                     reference: action.values.reference || null,
                     description: action.values.description || "Counter loan repayment",
                     receipt_ids: receiptIds
@@ -2266,6 +2275,37 @@ export function CashPage() {
                                             {currentForm.formState.errors.account_id.message}
                                         </Typography>
                                     ) : null}
+                                </Box>
+                            ) : null}
+
+                            {actionDialog === "deposit" && depositKind === "loan_repayment" ? (
+                                <Box sx={{ mb: 2 }}>
+                                    <Typography variant="caption" color="text.secondary">
+                                        Pay towards
+                                    </Typography>
+                                    <ToggleButtonGroup
+                                        exclusive
+                                        fullWidth
+                                        size="small"
+                                        value={depositForm.watch("allocation") || "auto"}
+                                        onChange={(_, next) => {
+                                            if (next) {
+                                                depositForm.setValue("allocation", next, { shouldValidate: true });
+                                            }
+                                        }}
+                                        sx={{ mt: 0.75 }}
+                                    >
+                                        <ToggleButton value="auto">Both (interest first)</ToggleButton>
+                                        <ToggleButton value="interest_only">Interest only</ToggleButton>
+                                        <ToggleButton value="principal_only">Principal only</ToggleButton>
+                                    </ToggleButtonGroup>
+                                    <Typography variant="caption" color="text.secondary" sx={{ mt: 0.75, display: "block" }}>
+                                        {depositForm.watch("allocation") === "interest_only"
+                                            ? "The whole amount clears interest. Principal is untouched."
+                                            : depositForm.watch("allocation") === "principal_only"
+                                                ? "The whole amount reduces principal. Interest due stays outstanding."
+                                                : "Interest is cleared first, then the balance reduces principal."}
+                                    </Typography>
                                 </Box>
                             ) : null}
 
