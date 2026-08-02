@@ -1,5 +1,6 @@
 import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
+import EventRoundedIcon from "@mui/icons-material/EventRounded";
 import UndoRoundedIcon from "@mui/icons-material/UndoRounded";
 import {
     Alert,
@@ -12,6 +13,7 @@ import {
     DialogTitle,
     Grid,
     IconButton,
+    Paper,
     Menu,
     MenuItem,
     Pagination,
@@ -63,6 +65,14 @@ export function CashTransactionsReport({ tenantId }: { tenantId: string | null }
     const canEditBankMeta = profile?.role === "teller";
     // Branch-manager correction path: reverse a wrong posting, teller re-posts.
     const canReverse = ["branch_manager", "super_admin"].includes(profile?.role || "");
+    // Moving a posted transaction in time. Same role as reversal: it changes
+    // which period the money lands in, so it is not a teller annotation.
+    const [dateRow, setDateRow] = useState<StatementRow | null>(null);
+    const [dateValue, setDateValue] = useState("");
+    const [dateReason, setDateReason] = useState("");
+    const [dateSaving, setDateSaving] = useState(false);
+    const [dateError, setDateError] = useState<string | null>(null);
+
     const [reverseRow, setReverseRow] = useState<StatementRow | null>(null);
     const [reverseReason, setReverseReason] = useState("");
     const [reverseSaving, setReverseSaving] = useState(false);
@@ -70,6 +80,26 @@ export function CashTransactionsReport({ tenantId }: { tenantId: string | null }
     const [reloadKey, setReloadKey] = useState(0);
 
     const REVERSIBLE_TYPES = ["deposit", "withdraw", "share_contribution"];
+
+    const submitDate = async () => {
+        if (!dateRow) return;
+        setDateSaving(true);
+        setDateError(null);
+        try {
+            await api.patch(endpoints.finance.correctTransactionDate(dateRow.transaction_id), {
+                value_date: dateValue,
+                reason: dateReason || null
+            });
+            setDateRow(null);
+            setDateValue("");
+            setDateReason("");
+            setReloadKey((key) => key + 1);
+        } catch (submitError) {
+            setDateError(getApiErrorMessage(submitError));
+        } finally {
+            setDateSaving(false);
+        }
+    };
 
     const submitReverse = async () => {
         if (!reverseRow) return;
@@ -267,6 +297,26 @@ export function CashTransactionsReport({ tenantId }: { tenantId: string | null }
             : []),
         ...(canReverse
             ? [{
+                key: "value-date",
+                header: "",
+                render: (row: StatementRow) => (
+                    <IconButton
+                        size="small"
+                        onClick={() => {
+                            setDateRow(row);
+                            setDateValue(String(row.transaction_date).slice(0, 10));
+                            setDateReason("");
+                            setDateError(null);
+                        }}
+                        title="Correct the date this transaction is recorded under"
+                    >
+                        <EventRoundedIcon fontSize="small" />
+                    </IconButton>
+                )
+            } satisfies Column<StatementRow>]
+            : []),
+        ...(canReverse
+            ? [{
                 key: "reverse",
                 header: "",
                 render: (row: StatementRow) => (
@@ -442,6 +492,59 @@ export function CashTransactionsReport({ tenantId }: { tenantId: string | null }
                     </Stack>
                 )}
             </CardContent>
+
+            <Dialog open={Boolean(dateRow)} onClose={() => !dateSaving && setDateRow(null)} maxWidth="xs" fullWidth>
+                <DialogTitle sx={{ fontWeight: 800 }}>Correct Transaction Date</DialogTitle>
+                <DialogContent dividers>
+                    <Stack spacing={2} sx={{ mt: 0.5 }}>
+                        {dateError ? <Alert severity="error" variant="outlined">{dateError}</Alert> : null}
+                        <Alert severity="info" variant="outlined">
+                            This moves when the transaction is recorded, not the money. The amount, member and
+                            account are untouched, the journal moves with it, and the account's running balances
+                            are rebuilt in the new order.
+                        </Alert>
+                        {dateRow ? (
+                            <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
+                                <Stack spacing={0.5}>
+                                    <Typography variant="body2" sx={{ fontWeight: 700 }}>{dateRow.member_name}</Typography>
+                                    <Stack direction="row" justifyContent="space-between">
+                                        <Typography variant="caption" color="text.secondary">Amount</Typography>
+                                        <Typography variant="caption">{formatCurrency(dateRow.amount)}</Typography>
+                                    </Stack>
+                                    <Stack direction="row" justifyContent="space-between">
+                                        <Typography variant="caption" color="text.secondary">Currently dated</Typography>
+                                        <Typography variant="caption" sx={{ fontWeight: 700 }}>{formatDate(dateRow.transaction_date)}</Typography>
+                                    </Stack>
+                                    <Typography variant="caption" color="text.secondary" sx={{ wordBreak: "break-all" }}>
+                                        {dateRow.reference || "No reference"}
+                                    </Typography>
+                                </Stack>
+                            </Paper>
+                        ) : null}
+                        <TextField
+                            type="date"
+                            label="Correct date"
+                            value={dateValue}
+                            onChange={(event) => setDateValue(event.target.value)}
+                            InputLabelProps={{ shrink: true }}
+                            fullWidth
+                        />
+                        <TextField
+                            label="Reason (optional)"
+                            value={dateReason}
+                            onChange={(event) => setDateReason(event.target.value)}
+                            placeholder="e.g. imported with the wrong year"
+                            fullWidth
+                        />
+                    </Stack>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setDateRow(null)} disabled={dateSaving}>Cancel</Button>
+                    <Button variant="contained" onClick={() => void submitDate()} disabled={dateSaving || !dateValue}>
+                        {dateSaving ? "Saving..." : "Save date"}
+                    </Button>
+                </DialogActions>
+            </Dialog>
 
             <Dialog open={Boolean(reverseRow)} onClose={() => !reverseSaving && setReverseRow(null)} maxWidth="xs" fullWidth>
                 <DialogTitle sx={{ fontWeight: 800 }}>Reverse Transaction</DialogTitle>

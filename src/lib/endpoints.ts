@@ -564,6 +564,7 @@ export const endpoints = {
         updateBankMeta: (transactionId: string) => `/transactions/${transactionId}/bank-meta`,
         reverseTransaction: (transactionId: string) => `/transactions/${transactionId}/reverse`,
         correctLoanInterest: (transactionId: string) => `/loan/transactions/${transactionId}/correct-interest`,
+        correctTransactionDate: (transactionId: string) => `/transactions/${transactionId}/value-date`,
         nplReclassStatus: () => routeMap.finance.nplReclassStatus,
         nplReclassRun: () => routeMap.finance.nplReclassRun
     },
