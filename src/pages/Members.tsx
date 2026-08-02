@@ -34,7 +34,14 @@ import {
     InputAdornment,
     MenuItem,
     Pagination,
+    Paper,
     Stack,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
     TextField,
     Tooltip,
     Typography
@@ -62,6 +69,7 @@ import {
     type CreateMemberRequest,
     type CreateMemberResponse,
     type MemberAccountsResponse,
+    type StatementsResponse,
     type MembersResponse,
     type MembersSummaryData,
     type MembersSummaryResponse,
@@ -74,7 +82,7 @@ import {
     type UpdateMemberRequest,
     type UpdateMemberResponse
 } from "../lib/endpoints";
-import type { Branch, Member, MemberAccount, ProductBootstrapPayload } from "../types/api";
+import type { Branch, Member, MemberAccount, ProductBootstrapPayload, StatementRow } from "../types/api";
 import { formatCurrency, formatCurrencyCompact, formatDate, formatRole } from "../utils/format";
 
 const schema = z.object({
@@ -426,6 +434,12 @@ export function MembersPage() {
     const [accountsLoading, setAccountsLoading] = useState(false);
     const [accountsLoaded, setAccountsLoaded] = useState(false);
     const [selectedMemberAccountsLoading, setSelectedMemberAccountsLoading] = useState(false);
+    // The deposit trail for whoever is open in the workspace. Staff kept
+    // leaving this page to check a member's payments on another screen; the
+    // accounts panel above shows only balances, never how they were reached.
+    const [selectedMemberStatement, setSelectedMemberStatement] = useState<StatementRow[]>([]);
+    const [statementLoading, setStatementLoading] = useState(false);
+    const [statementError, setStatementError] = useState<string | null>(null);
     const [productBootstrapLoading, setProductBootstrapLoading] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [updatingMember, setUpdatingMember] = useState(false);
@@ -951,10 +965,65 @@ export function MembersPage() {
             setSelectedMemberAccounts([]);
             setSelectedMemberAccountsLoading(false);
             setShowUpdateMemberForm(false);
+            setSelectedMemberStatement([]);
+            setStatementError(null);
             return;
         }
 
         void loadSelectedMemberAccounts(selectedMember.id);
+    }, [selectedMember?.id, selectedTenantId]);
+
+    // Deposit trail for the open member. Paged to exhaustion rather than
+    // capped: a member with years of monthly savings runs past any single page,
+    // and a list that silently stops partway is worse than none.
+    useEffect(() => {
+        const memberId = selectedMember?.id;
+        if (!memberId || !selectedTenantId) {
+            return;
+        }
+
+        let cancelled = false;
+        setStatementLoading(true);
+        setStatementError(null);
+
+        void (async () => {
+            try {
+                const collected: StatementRow[] = [];
+                const PAGE_SIZE = 200;
+                for (let page = 1; page <= 25; page += 1) {
+                    const { data } = await api.get<StatementsResponse>(endpoints.finance.statements(), {
+                        params: {
+                            tenant_id: selectedTenantId,
+                            member_id: memberId,
+                            page,
+                            limit: PAGE_SIZE,
+                            include_total: false
+                        }
+                    });
+                    const batch = data.data || [];
+                    collected.push(...batch);
+                    if (batch.length < PAGE_SIZE) {
+                        break;
+                    }
+                }
+                if (!cancelled) {
+                    setSelectedMemberStatement(collected);
+                }
+            } catch (loadError) {
+                if (!cancelled) {
+                    setSelectedMemberStatement([]);
+                    setStatementError(getApiErrorMessage(loadError, "Unable to load this member's transactions."));
+                }
+            } finally {
+                if (!cancelled) {
+                    setStatementLoading(false);
+                }
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
     }, [selectedMember?.id, selectedTenantId]);
 
     const filteredMembers = useMemo(() => {
@@ -2437,6 +2506,107 @@ export function MembersPage() {
                                                     <Alert severity="warning" variant="outlined">
                                                         No member accounts are provisioned yet for this member.
                                                     </Alert>
+                                                )}
+                                            </Stack>
+                                        ) : null}
+
+                                        {!isTeller ? (
+                                            <Stack spacing={1.5}>
+                                                <Box>
+                                                    <Typography variant="subtitle1" fontWeight={700}>Deposits & Transactions</Typography>
+                                                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                                                        Every posting on this member's accounts, newest first, with the balance each one left behind.
+                                                    </Typography>
+                                                </Box>
+
+                                                {statementError ? (
+                                                    <Alert severity="error" variant="outlined">{statementError}</Alert>
+                                                ) : statementLoading ? (
+                                                    <Typography variant="body2" color="text.secondary">Loading transactions...</Typography>
+                                                ) : !selectedMemberStatement.length ? (
+                                                    <Alert severity="info" variant="outlined">
+                                                        No transactions have been posted on this member's accounts yet.
+                                                    </Alert>
+                                                ) : (
+                                                    <>
+                                                        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                                                            <Chip
+                                                                size="small"
+                                                                variant="outlined"
+                                                                label={`${selectedMemberStatement.length} transaction(s)`}
+                                                            />
+                                                            <Chip
+                                                                size="small"
+                                                                variant="outlined"
+                                                                color="success"
+                                                                label={`In ${formatCurrency(selectedMemberStatement
+                                                                    .filter((row) => row.direction === "in")
+                                                                    .reduce((sum, row) => sum + Number(row.amount || 0), 0))}`}
+                                                            />
+                                                            <Chip
+                                                                size="small"
+                                                                variant="outlined"
+                                                                color="warning"
+                                                                label={`Out ${formatCurrency(selectedMemberStatement
+                                                                    .filter((row) => row.direction === "out")
+                                                                    .reduce((sum, row) => sum + Number(row.amount || 0), 0))}`}
+                                                            />
+                                                        </Stack>
+                                                        <TableContainer
+                                                            component={Paper}
+                                                            variant="outlined"
+                                                            sx={{ borderRadius: 2, maxHeight: 420 }}
+                                                        >
+                                                            <Table size="small" stickyHeader>
+                                                                <TableHead>
+                                                                    <TableRow>
+                                                                        <TableCell sx={{ fontWeight: 700 }}>#</TableCell>
+                                                                        <TableCell sx={{ fontWeight: 700 }}>Date</TableCell>
+                                                                        <TableCell sx={{ fontWeight: 700 }}>Account</TableCell>
+                                                                        <TableCell sx={{ fontWeight: 700 }}>Type</TableCell>
+                                                                        <TableCell align="right" sx={{ fontWeight: 700 }}>Amount</TableCell>
+                                                                        <TableCell align="right" sx={{ fontWeight: 700 }}>Balance</TableCell>
+                                                                        <TableCell sx={{ fontWeight: 700 }}>Reference</TableCell>
+                                                                    </TableRow>
+                                                                </TableHead>
+                                                                <TableBody>
+                                                                    {[...selectedMemberStatement]
+                                                                        .sort((left, right) => String(right.transaction_date).localeCompare(String(left.transaction_date)))
+                                                                        .map((row, index) => (
+                                                                            <TableRow key={row.transaction_id} hover>
+                                                                                <TableCell sx={{ color: "text.secondary" }}>{index + 1}</TableCell>
+                                                                                <TableCell sx={{ whiteSpace: "nowrap" }}>{formatDate(row.transaction_date)}</TableCell>
+                                                                                <TableCell>
+                                                                                    <Typography variant="caption">{row.account_number}</Typography>
+                                                                                </TableCell>
+                                                                                <TableCell>
+                                                                                    <Chip
+                                                                                        size="small"
+                                                                                        variant="outlined"
+                                                                                        color={row.direction === "in" ? "success" : "warning"}
+                                                                                        label={String(row.transaction_type).replace(/_/g, " ")}
+                                                                                    />
+                                                                                </TableCell>
+                                                                                <TableCell
+                                                                                    align="right"
+                                                                                    sx={{ whiteSpace: "nowrap", fontWeight: 700, color: row.direction === "in" ? "success.main" : "warning.main" }}
+                                                                                >
+                                                                                    {row.direction === "in" ? "+" : "-"}{formatCurrency(row.amount)}
+                                                                                </TableCell>
+                                                                                <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
+                                                                                    {formatCurrency(row.running_balance)}
+                                                                                </TableCell>
+                                                                                <TableCell>
+                                                                                    <Typography variant="caption" sx={{ wordBreak: "break-all" }}>
+                                                                                        {row.reference || "—"}
+                                                                                    </Typography>
+                                                                                </TableCell>
+                                                                            </TableRow>
+                                                                        ))}
+                                                                </TableBody>
+                                                            </Table>
+                                                        </TableContainer>
+                                                    </>
                                                 )}
                                             </Stack>
                                         ) : null}
