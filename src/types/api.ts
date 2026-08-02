@@ -800,6 +800,10 @@ export interface SaccoPerformanceTargetSettings {
     performance_target_actual_source: PerformanceTargetActualSource;
     performance_target_default_annual_amount: number;
     performance_target_required_amount: number;
+    /** Step added to "Needed now" each calendar month. Null keeps the fixed amount above. */
+    performance_target_required_monthly_amount?: number | null;
+    /** First month counted, inclusive, as YYYY-MM-DD. */
+    performance_target_required_start_date?: string | null;
     performance_target_on_track_percent: number;
     performance_target_member_target_source: PerformanceTargetMemberSource;
     performance_target_configured_at?: string | null;

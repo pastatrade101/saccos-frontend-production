@@ -36,6 +36,7 @@ import type { Member, MemberAccount, SaccoPerformanceTargetSettings } from "../t
 import { MotionCard } from "../ui/motion";
 import {
     calculateMemberPerformanceTarget,
+    calculateRequiredToDate,
     DEFAULT_SACCO_PERFORMANCE_TARGET_SETTINGS,
     normalizeSaccoPerformanceTargetSettings,
     resolvePerformanceTargetStatusId,
@@ -403,6 +404,46 @@ export function PerformanceTargetsPage() {
         return sortTargetRows(filtered, sortKey);
     }, [reconciliationFilter, rows, search, settings, sortKey, statusFilter, targetBandFilter]);
 
+    const hiddenRowCount = rows.length - filteredRows.length;
+
+    // Names the filters actually doing the hiding, so the banner explains itself
+    // rather than sending the reader off to hunt for which control is set.
+    const activeFilterSummary = useMemo(() => {
+        const parts: string[] = [];
+
+        if (statusFilter !== "all") {
+            const label = statusFilterOptions.find((option) => option.value === statusFilter)?.label;
+            if (label) {
+                parts.push(`the "${label}" filter`);
+            }
+        }
+
+        if (targetBandFilter !== "all") {
+            const label = targetBandOptions.find((option) => option.value === targetBandFilter)?.label;
+            if (label) {
+                parts.push(`target band "${label}"`);
+            }
+        }
+
+        if (reconciliationFilter !== "all") {
+            parts.push(`reconciliation "${reconciliationFilter}"`);
+        }
+
+        if (search.trim()) {
+            parts.push(`the search "${search.trim()}"`);
+        }
+
+        if (!parts.length) {
+            return "the current filters";
+        }
+
+        if (parts.length === 1) {
+            return parts[0];
+        }
+
+        return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+    }, [reconciliationFilter, search, statusFilter, targetBandFilter]);
+
     const paginatedRows = useMemo(
         () => filteredRows.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage),
         [filteredRows, page, rowsPerPage]
@@ -429,6 +470,16 @@ export function PerformanceTargetsPage() {
         setSortKey("reach_asc");
     };
 
+    // Distinct from clearFilters, which returns to the "Needs action" worklist
+    // the page opens on. This one really does show everyone.
+    const showAllRows = () => {
+        setSearch("");
+        setStatusFilter("all");
+        setTargetBandFilter("all");
+        setReconciliationFilter("all");
+        setPage(0);
+    };
+
     if (loading) {
         return <AppLoader fullscreen={false} minHeight="72vh" message="Loading performance targets..." />;
     }
@@ -447,7 +498,12 @@ export function PerformanceTargetsPage() {
                         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                             <Chip label={`${rows.length} active member(s)`} color="primary" variant="outlined" />
                             <Chip label={`On-track line ${percentLabel(settings.performance_target_on_track_percent)}`} variant="outlined" />
-                            <Chip label={`Needed now ${formatCurrency(settings.performance_target_required_amount)}`} variant="outlined" />
+                            {/* Same figure the rows use, so the header cannot drift
+                                from the table once the monthly rule is on. */}
+                            <Chip
+                                label={`Needed now ${formatCurrency(calculateRequiredToDate(settings) ?? settings.performance_target_required_amount)}`}
+                                variant="outlined"
+                            />
                         </Stack>
                     </Stack>
                 </CardContent>
@@ -592,6 +648,24 @@ export function PerformanceTargetsPage() {
                             </Button>
                         </Grid>
                     </Grid>
+
+                    {/* The page opens on the "Needs action" worklist, so the very first
+                        thing a user sees is 98 of 150 members with the reason showing
+                        only as a highlighted chip. That reads as missing data. Say what
+                        is hidden and why, and offer the way back in the same breath. */}
+                    {hiddenRowCount > 0 ? (
+                        <Alert
+                            severity="info"
+                            variant="outlined"
+                            action={
+                                <Button color="inherit" size="small" onClick={showAllRows}>
+                                    Show all {rows.length}
+                                </Button>
+                            }
+                        >
+                            Showing {filteredRows.length} of {rows.length} members — {hiddenRowCount} hidden by {activeFilterSummary}. Every active member has a target.
+                        </Alert>
+                    ) : null}
 
                     {!filteredRows.length ? (
                         <Alert severity="info" variant="outlined">

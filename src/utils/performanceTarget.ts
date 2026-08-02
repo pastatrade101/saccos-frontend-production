@@ -10,6 +10,8 @@ export const DEFAULT_SACCO_PERFORMANCE_TARGET_SETTINGS: SaccoPerformanceTargetSe
     performance_target_actual_source: "savings_balance",
     performance_target_default_annual_amount: 50_000_000,
     performance_target_required_amount: 3_200_000,
+    performance_target_required_monthly_amount: null,
+    performance_target_required_start_date: null,
     performance_target_on_track_percent: 60,
     performance_target_member_target_source: "notes_or_member_field",
     performance_target_configured_at: null,
@@ -18,6 +20,47 @@ export const DEFAULT_SACCO_PERFORMANCE_TARGET_SETTINGS: SaccoPerformanceTargetSe
 };
 
 const SAVINGS_ONLY_ACTUAL_SOURCES = new Set(["savings_balance", "available_savings"]);
+
+/**
+ * What a member should have contributed by today, when the SACCO runs a flat
+ * monthly contribution that accumulates.
+ *
+ * Counted in whole calendar months and inclusive of both ends, so the figure
+ * steps on the 1st and holds for the rest of the month: 1-31 Aug is one value,
+ * 1-30 Sep the next. Deliberately not day-based -- a member is not a few
+ * thousand shillings further behind each morning.
+ *
+ * Returns null when the SACCO has not configured the monthly rule, leaving the
+ * caller on the fixed performance_target_required_amount.
+ */
+export function calculateRequiredToDate(
+    settings: Pick<SaccoPerformanceTargetSettings, "performance_target_required_monthly_amount" | "performance_target_required_start_date">,
+    asOf: Date = new Date()
+): number | null {
+    const monthly = Number(settings.performance_target_required_monthly_amount || 0);
+    const startRaw = settings.performance_target_required_start_date;
+
+    if (!(monthly > 0) || !startRaw) {
+        return null;
+    }
+
+    // Parsed field-by-field rather than through Date(string): "2023-10-01" is
+    // read as UTC midnight, which in a timezone behind UTC lands on 30 Sep and
+    // costs a whole month.
+    const [startYear, startMonth] = String(startRaw).split("-").map(Number);
+    if (!Number.isFinite(startYear) || !Number.isFinite(startMonth)) {
+        return null;
+    }
+
+    const monthsElapsed =
+        (asOf.getFullYear() - startYear) * 12 + (asOf.getMonth() + 1 - startMonth) + 1;
+
+    if (monthsElapsed <= 0) {
+        return 0;
+    }
+
+    return monthly * monthsElapsed;
+}
 
 export interface MemberPerformanceTargetPosition {
     actualDetailAmount: number;
@@ -236,7 +279,9 @@ export function calculateMemberPerformanceTarget(
     const remainingToTargetAmount = Math.max(annualTargetAmount - actualFormAmount, 0);
     const reachPercent = annualTargetAmount > 0 ? (actualFormAmount / annualTargetAmount) * 100 : 0;
     const remainingPercent = reachPercent - 100;
-    const requiredAmount = normalized.performance_target_required_amount;
+    // The running monthly total when the SACCO has configured one, else the
+    // fixed figure someone maintains by hand.
+    const requiredAmount = calculateRequiredToDate(normalized) ?? normalized.performance_target_required_amount;
     const nextRequiredAmount = Math.max(0, Math.min(requiredAmount, remainingToTargetAmount));
     const matchesDetail = Math.abs(actualDetailAmount - actualFormAmount) <= 0.005;
     const level = resolvePerformanceTargetLevel(reachPercent, actualFormAmount, normalized);
