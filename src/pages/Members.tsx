@@ -989,15 +989,16 @@ export function MembersPage() {
         void (async () => {
             try {
                 const collected: StatementRow[] = [];
-                const PAGE_SIZE = 200;
-                for (let page = 1; page <= 25; page += 1) {
+                // 100 is the ceiling statementQuerySchema allows; asking for
+                // more is rejected outright rather than clamped.
+                const PAGE_SIZE = 100;
+                for (let page = 1; page <= 50; page += 1) {
                     const { data } = await api.get<StatementsResponse>(endpoints.finance.statements(), {
                         params: {
                             tenant_id: selectedTenantId,
                             member_id: memberId,
                             page,
-                            limit: PAGE_SIZE,
-                            include_total: false
+                            limit: PAGE_SIZE
                         }
                     });
                     const batch = data.data || [];
