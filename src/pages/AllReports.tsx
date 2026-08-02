@@ -21,6 +21,7 @@ import {
     TableCell,
     Paper,
     TableContainer,
+    TableFooter,
     TableHead,
     TablePagination,
     TableRow,
@@ -1160,6 +1161,7 @@ export function AllReportsPage() {
                         <Table size="small">
                             <TableHead>
                                 <TableRow>
+                                    <TableCell sx={{ width: 56 }}>#</TableCell>
                                     <TableCell>Member</TableCell>
                                     <TableCell>Loan</TableCell>
                                     <TableCell align="right">Interest earned</TableCell>
@@ -1170,8 +1172,9 @@ export function AllReportsPage() {
                                 </TableRow>
                             </TableHead>
                             <TableBody>
-                                {filtered.map((row) => (
+                                {filtered.map((row, index) => (
                                     <TableRow key={row.loan_id} hover>
+                                        <TableCell sx={{ color: "text.secondary" }}>{index + 1}</TableCell>
                                         <TableCell>
                                             <Typography variant="body2" sx={{ fontWeight: 600 }}>{row.member_name || "—"}</Typography>
                                             <Typography variant="caption" color="text.secondary">{row.member_no || "—"}</Typography>
@@ -1192,6 +1195,28 @@ export function AllReportsPage() {
                                     </TableRow>
                                 ))}
                             </TableBody>
+                            <TableFooter>
+                                <TableRow sx={{ "& td": { fontWeight: 800, color: "text.primary", borderTop: 2, borderColor: "divider", fontSize: "0.875rem" } }}>
+                                    <TableCell />
+                                    <TableCell colSpan={2}>
+                                        Total — {filtered.length} loan(s)
+                                        {filtered.length !== typed.loans.length ? ` of ${typed.loans.length}` : ""}
+                                    </TableCell>
+                                    <TableCell align="right">
+                                        {formatCurrency(filtered.reduce((sum, row) => sum + row.interest_total, 0))}
+                                    </TableCell>
+                                    <TableCell align="right">
+                                        {formatCurrency(filtered.reduce((sum, row) => sum + row.principal_total, 0))}
+                                    </TableCell>
+                                    <TableCell align="right">
+                                        {formatCurrency(filtered.reduce((sum, row) => sum + row.paid_total, 0))}
+                                    </TableCell>
+                                    <TableCell align="right">
+                                        {filtered.reduce((sum, row) => sum + row.payment_count, 0)}
+                                    </TableCell>
+                                    <TableCell />
+                                </TableRow>
+                            </TableFooter>
                         </Table>
                     </TableContainer>
 
