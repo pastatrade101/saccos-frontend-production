@@ -20,7 +20,14 @@ import {
     FormControlLabel,
     Grid,
     MenuItem,
+    Paper,
     Stack,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
     TextField,
     Typography
 } from "@mui/material";
@@ -288,6 +295,35 @@ function parseCsv(text: string): Array<Record<string, string>> {
             return record;
         }, {});
     });
+}
+
+interface DistributionPreview {
+    as_of_date: string | null;
+    member_count: number;
+    eligible_count: number;
+    without_savings_account: number;
+    total_basis: number;
+    pool: number;
+    allocated_total: number;
+    rows: {
+        member_id: string;
+        member_no: string;
+        full_name: string;
+        savings_account_id: string | null;
+        basis: number;
+        share_percent: number;
+        amount: number;
+    }[];
+}
+
+interface DistributionResult {
+    reference: string;
+    pool: number;
+    total_basis: number;
+    posted_count: number;
+    posted_total: number;
+    skipped: { member_no: string; full_name: string; amount: number; reason: string }[];
+    failed: { member_no: string; full_name: string; amount: number; reason: string }[];
 }
 
 export function DividendsPage() {
@@ -727,6 +763,68 @@ export function DividendsPage() {
         }
     };
 
+    // Share a pool across members in proportion to their position -- the Excel's
+    // DJ/total*pool. Preview writes nothing, so the figures can be checked
+    // against the spreadsheet before a shilling moves.
+    const [showDistributeDialog, setShowDistributeDialog] = useState(false);
+    const [distAsOf, setDistAsOf] = useState("");
+    const [distPool, setDistPool] = useState("");
+    const [distReference, setDistReference] = useState("");
+    const [distDescription, setDistDescription] = useState("");
+    const [distPreview, setDistPreview] = useState<DistributionPreview | null>(null);
+    const [distBusy, setDistBusy] = useState(false);
+    const [distError, setDistError] = useState<string | null>(null);
+    const [distResult, setDistResult] = useState<DistributionResult | null>(null);
+
+    const openDistributeDialog = () => {
+        setShowDistributeDialog(true);
+        setDistPreview(null);
+        setDistResult(null);
+        setDistError(null);
+    };
+
+    const runDistributionPreview = async () => {
+        setDistBusy(true);
+        setDistError(null);
+        setDistResult(null);
+        try {
+            const { data } = await api.get<{ data: DistributionPreview }>(endpoints.dividends.distributionPreview(), {
+                params: { as_of_date: distAsOf, pool_amount: Number(distPool) }
+            });
+            setDistPreview(data.data);
+        } catch (previewError) {
+            setDistPreview(null);
+            setDistError(getApiErrorMessage(previewError));
+        } finally {
+            setDistBusy(false);
+        }
+    };
+
+    const commitDistribution = async () => {
+        setDistBusy(true);
+        setDistError(null);
+        try {
+            const { data } = await api.post<{ data: DistributionResult }>(endpoints.dividends.distribution(), {
+                as_of_date: distAsOf,
+                pool_amount: Number(distPool),
+                reference: distReference.trim(),
+                description: distDescription.trim(),
+                value_date: distAsOf
+            });
+            setDistResult(data.data);
+            setDistPreview(null);
+            pushToast({
+                type: "success",
+                title: "Dividend distributed",
+                message: `${data.data.posted_count} member(s) credited with ${formatCurrency(data.data.posted_total)}.`
+            });
+        } catch (commitError) {
+            setDistError(getApiErrorMessage(commitError));
+        } finally {
+            setDistBusy(false);
+        }
+    };
+
     const openFormulaDividendDialog = () => {
         setFormulaDraft((current) => ({
             ...current,
@@ -1068,7 +1166,10 @@ export function DividendsPage() {
                             />
                             {canManageCycles ? (
                                 <>
-                                    <Button variant="contained" color="secondary" startIcon={<AddCircleOutlineRoundedIcon />} onClick={openFormulaDividendDialog}>
+                                    <Button variant="contained" startIcon={<AddCircleOutlineRoundedIcon />} onClick={openDistributeDialog}>
+                                        Distribute Dividend
+                                    </Button>
+                                    <Button variant="outlined" color="secondary" startIcon={<AddCircleOutlineRoundedIcon />} onClick={openFormulaDividendDialog}>
                                         Generate Formula Batch
                                     </Button>
                                 </>
@@ -1289,6 +1390,159 @@ export function DividendsPage() {
                     </CardContent>
                 </MotionCard>
             ) : null}
+
+            <MotionModal open={showDistributeDialog} onClose={distBusy ? undefined : () => setShowDistributeDialog(false)} maxWidth="lg" fullWidth>
+                <DialogTitle sx={{ fontWeight: 800 }}>Distribute Dividend</DialogTitle>
+                <DialogContent dividers>
+                    <Stack spacing={2} sx={{ mt: 0.5 }}>
+                        {distError ? <Alert severity="error" variant="outlined">{distError}</Alert> : null}
+                        <Alert severity="info" variant="outlined">
+                            Each member receives their share of the pool in proportion to their position on the
+                            chosen date — lifetime contributions plus dividends already received, net of
+                            withdrawals. Nothing is posted until you confirm the preview.
+                        </Alert>
+
+                        <Grid container spacing={1.5}>
+                            <Grid size={{ xs: 12, md: 3 }}>
+                                <TextField
+                                    type="date"
+                                    label="Position as at"
+                                    value={distAsOf}
+                                    onChange={(event) => { setDistAsOf(event.target.value); setDistPreview(null); }}
+                                    InputLabelProps={{ shrink: true }}
+                                    helperText="Anything posted after this date is ignored"
+                                    fullWidth
+                                />
+                            </Grid>
+                            <Grid size={{ xs: 12, md: 3 }}>
+                                <TextField
+                                    label="Pool to share (TSh)"
+                                    value={distPool}
+                                    onChange={(event) => { setDistPool(event.target.value.replace(/[^\d.]/g, "")); setDistPreview(null); }}
+                                    inputProps={{ inputMode: "decimal" }}
+                                    fullWidth
+                                />
+                            </Grid>
+                            <Grid size={{ xs: 12, md: 3 }}>
+                                <TextField
+                                    label="Batch reference"
+                                    value={distReference}
+                                    onChange={(event) => setDistReference(event.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, ""))}
+                                    placeholder="DIV-LOANS-JUL2026"
+                                    helperText="Each member's posting is tagged with this"
+                                    fullWidth
+                                />
+                            </Grid>
+                            <Grid size={{ xs: 12, md: 3 }}>
+                                <TextField
+                                    label="Description"
+                                    value={distDescription}
+                                    onChange={(event) => setDistDescription(event.target.value)}
+                                    placeholder="DIV (Loans July 2026)"
+                                    fullWidth
+                                />
+                            </Grid>
+                        </Grid>
+
+                        <Box>
+                            <Button
+                                variant="outlined"
+                                onClick={() => void runDistributionPreview()}
+                                disabled={distBusy || !distAsOf || !(Number(distPool) > 0)}
+                            >
+                                {distBusy ? "Working..." : "Preview allocation"}
+                            </Button>
+                        </Box>
+
+                        {distResult ? (
+                            <Alert severity="success" variant="outlined">
+                                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                                    {distResult.posted_count} member(s) credited with {formatCurrency(distResult.posted_total)}
+                                </Typography>
+                                {distResult.skipped.length ? (
+                                    <Typography variant="body2" sx={{ mt: 0.5 }}>
+                                        Skipped {distResult.skipped.length}: {distResult.skipped.slice(0, 3).map((row) => `${row.member_no} (${row.reason})`).join("; ")}
+                                        {distResult.skipped.length > 3 ? "…" : ""}
+                                    </Typography>
+                                ) : null}
+                                {distResult.failed.length ? (
+                                    <Typography variant="body2" sx={{ mt: 0.5, fontWeight: 700 }}>
+                                        Failed {distResult.failed.length}: {distResult.failed.slice(0, 3).map((row) => `${row.member_no} (${row.reason})`).join("; ")}
+                                    </Typography>
+                                ) : null}
+                            </Alert>
+                        ) : null}
+
+                        {distPreview ? (
+                            <>
+                                <Grid container spacing={1.5}>
+                                    {[
+                                        ["Members", String(distPreview.member_count)],
+                                        ["Total position", formatCurrency(distPreview.total_basis)],
+                                        ["Pool", formatCurrency(distPreview.pool)],
+                                        ["Allocated", formatCurrency(distPreview.allocated_total)]
+                                    ].map(([label, value]) => (
+                                        <Grid key={label} size={{ xs: 6, md: 3 }}>
+                                            <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
+                                                <Typography variant="caption" color="text.secondary">{label}</Typography>
+                                                <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>{value}</Typography>
+                                            </Paper>
+                                        </Grid>
+                                    ))}
+                                </Grid>
+
+                                {distPreview.without_savings_account ? (
+                                    <Alert severity="warning" variant="outlined">
+                                        {distPreview.without_savings_account} member(s) hold a position but have no open savings
+                                        account, so they cannot be credited. They are listed below with their share and will be
+                                        reported as skipped.
+                                    </Alert>
+                                ) : null}
+
+                                <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2, maxHeight: 380 }}>
+                                    <Table size="small" stickyHeader>
+                                        <TableHead>
+                                            <TableRow>
+                                                <TableCell sx={{ fontWeight: 700 }}>#</TableCell>
+                                                <TableCell sx={{ fontWeight: 700 }}>Member</TableCell>
+                                                <TableCell align="right" sx={{ fontWeight: 700 }}>Position</TableCell>
+                                                <TableCell align="right" sx={{ fontWeight: 700 }}>Share</TableCell>
+                                                <TableCell align="right" sx={{ fontWeight: 700 }}>Dividend</TableCell>
+                                            </TableRow>
+                                        </TableHead>
+                                        <TableBody>
+                                            {distPreview.rows.map((row, index) => (
+                                                <TableRow key={row.member_id} hover>
+                                                    <TableCell sx={{ color: "text.secondary" }}>{index + 1}</TableCell>
+                                                    <TableCell>
+                                                        <Typography variant="body2" sx={{ fontWeight: 600 }}>{row.full_name}</Typography>
+                                                        <Typography variant="caption" color="text.secondary">
+                                                            {row.member_no}{row.savings_account_id ? "" : " · no savings account"}
+                                                        </Typography>
+                                                    </TableCell>
+                                                    <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>{formatCurrency(row.basis)}</TableCell>
+                                                    <TableCell align="right">{row.share_percent.toFixed(4)}%</TableCell>
+                                                    <TableCell align="right" sx={{ whiteSpace: "nowrap", fontWeight: 700 }}>{formatCurrency(row.amount)}</TableCell>
+                                                </TableRow>
+                                            ))}
+                                        </TableBody>
+                                    </Table>
+                                </TableContainer>
+                            </>
+                        ) : null}
+                    </Stack>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setShowDistributeDialog(false)} disabled={distBusy}>Close</Button>
+                    <Button
+                        variant="contained"
+                        onClick={() => void commitDistribution()}
+                        disabled={distBusy || !distPreview || !distReference.trim() || distDescription.trim().length < 3}
+                    >
+                        {distBusy ? "Posting..." : `Post ${distPreview ? formatCurrency(distPreview.allocated_total) : "dividend"}`}
+                    </Button>
+                </DialogActions>
+            </MotionModal>
 
             <MotionModal open={showFormulaDialog} onClose={submitting ? undefined : () => setShowFormulaDialog(false)} maxWidth="lg" fullWidth>
                 <DialogTitle>Generate Dividend Formula Batch</DialogTitle>
