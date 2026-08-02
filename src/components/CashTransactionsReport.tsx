@@ -1,6 +1,5 @@
 import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
-import EventRoundedIcon from "@mui/icons-material/EventRounded";
 import UndoRoundedIcon from "@mui/icons-material/UndoRounded";
 import {
     Alert,
@@ -13,7 +12,6 @@ import {
     DialogTitle,
     Grid,
     IconButton,
-    Paper,
     Menu,
     MenuItem,
     Pagination,
@@ -62,17 +60,9 @@ export function CashTransactionsReport({ tenantId }: { tenantId: string | null }
     const [exportAnchor, setExportAnchor] = useState<null | HTMLElement>(null);
     // Teller-only edit of the bank statement annotation (no ledger impact).
     const { profile } = useAuth();
-    const canEditBankMeta = profile?.role === "teller";
+    const canEditBankMeta = ["teller", "branch_manager", "super_admin"].includes(profile?.role || "");
     // Branch-manager correction path: reverse a wrong posting, teller re-posts.
     const canReverse = ["branch_manager", "super_admin"].includes(profile?.role || "");
-    // Moving a posted transaction in time. Same role as reversal: it changes
-    // which period the money lands in, so it is not a teller annotation.
-    const [dateRow, setDateRow] = useState<StatementRow | null>(null);
-    const [dateValue, setDateValue] = useState("");
-    const [dateReason, setDateReason] = useState("");
-    const [dateSaving, setDateSaving] = useState(false);
-    const [dateError, setDateError] = useState<string | null>(null);
-
     const [reverseRow, setReverseRow] = useState<StatementRow | null>(null);
     const [reverseReason, setReverseReason] = useState("");
     const [reverseSaving, setReverseSaving] = useState(false);
@@ -80,26 +70,6 @@ export function CashTransactionsReport({ tenantId }: { tenantId: string | null }
     const [reloadKey, setReloadKey] = useState(0);
 
     const REVERSIBLE_TYPES = ["deposit", "withdraw", "share_contribution"];
-
-    const submitDate = async () => {
-        if (!dateRow) return;
-        setDateSaving(true);
-        setDateError(null);
-        try {
-            await api.patch(endpoints.finance.correctTransactionDate(dateRow.transaction_id), {
-                value_date: dateValue,
-                reason: dateReason || null
-            });
-            setDateRow(null);
-            setDateValue("");
-            setDateReason("");
-            setReloadKey((key) => key + 1);
-        } catch (submitError) {
-            setDateError(getApiErrorMessage(submitError));
-        } finally {
-            setDateSaving(false);
-        }
-    };
 
     const submitReverse = async () => {
         if (!reverseRow) return;
@@ -121,6 +91,7 @@ export function CashTransactionsReport({ tenantId }: { tenantId: string | null }
     const [editRow, setEditRow] = useState<StatementRow | null>(null);
     const [editDescription, setEditDescription] = useState("");
     const [editReference, setEditReference] = useState("");
+    const [editDate, setEditDate] = useState("");
     const [editSaving, setEditSaving] = useState(false);
     const [editError, setEditError] = useState<string | null>(null);
 
@@ -128,6 +99,7 @@ export function CashTransactionsReport({ tenantId }: { tenantId: string | null }
         setEditRow(row);
         setEditDescription(row.bank_description || "");
         setEditReference(row.bank_reference || "");
+        setEditDate(String(row.transaction_date).slice(0, 10));
         setEditError(null);
     };
 
@@ -135,11 +107,32 @@ export function CashTransactionsReport({ tenantId }: { tenantId: string | null }
         if (!editRow) return;
         setEditSaving(true);
         setEditError(null);
+
+        const originalDate = String(editRow.transaction_date).slice(0, 10);
+        const dateChanged = Boolean(editDate) && editDate !== originalDate;
+        const metaChanged = (editDescription || null) !== (editRow.bank_description || null)
+            || (editReference || null) !== (editRow.bank_reference || null);
+
         try {
-            await api.patch(endpoints.finance.updateBankMeta(editRow.transaction_id), {
-                bank_description: editDescription || null,
-                bank_reference: editReference || null
-            });
+            if (metaChanged) {
+                await api.patch(endpoints.finance.updateBankMeta(editRow.transaction_id), {
+                    bank_description: editDescription || null,
+                    bank_reference: editReference || null
+                });
+            }
+
+            // The date goes last. It rebuilds the account's running balances and
+            // reorders history, so the whole table is reloaded rather than
+            // patched in place -- every row after the moved one may have shifted.
+            if (dateChanged) {
+                await api.patch(endpoints.finance.correctTransactionDate(editRow.transaction_id), {
+                    value_date: editDate
+                });
+                setEditRow(null);
+                setReloadKey((key) => key + 1);
+                return;
+            }
+
             setRows((current) => current.map((row) => (
                 row.transaction_id === editRow.transaction_id
                     ? { ...row, bank_description: editDescription || null, bank_reference: editReference || null }
@@ -291,26 +284,6 @@ export function CashTransactionsReport({ tenantId }: { tenantId: string | null }
                 render: (row: StatementRow) => (
                     <IconButton size="small" onClick={() => openEdit(row)} title="Edit bank statement details">
                         <EditRoundedIcon fontSize="small" />
-                    </IconButton>
-                )
-            } satisfies Column<StatementRow>]
-            : []),
-        ...(canReverse
-            ? [{
-                key: "value-date",
-                header: "",
-                render: (row: StatementRow) => (
-                    <IconButton
-                        size="small"
-                        onClick={() => {
-                            setDateRow(row);
-                            setDateValue(String(row.transaction_date).slice(0, 10));
-                            setDateReason("");
-                            setDateError(null);
-                        }}
-                        title="Correct the date this transaction is recorded under"
-                    >
-                        <EventRoundedIcon fontSize="small" />
                     </IconButton>
                 )
             } satisfies Column<StatementRow>]
@@ -493,59 +466,6 @@ export function CashTransactionsReport({ tenantId }: { tenantId: string | null }
                 )}
             </CardContent>
 
-            <Dialog open={Boolean(dateRow)} onClose={() => !dateSaving && setDateRow(null)} maxWidth="xs" fullWidth>
-                <DialogTitle sx={{ fontWeight: 800 }}>Correct Transaction Date</DialogTitle>
-                <DialogContent dividers>
-                    <Stack spacing={2} sx={{ mt: 0.5 }}>
-                        {dateError ? <Alert severity="error" variant="outlined">{dateError}</Alert> : null}
-                        <Alert severity="info" variant="outlined">
-                            This moves when the transaction is recorded, not the money. The amount, member and
-                            account are untouched, the journal moves with it, and the account's running balances
-                            are rebuilt in the new order.
-                        </Alert>
-                        {dateRow ? (
-                            <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
-                                <Stack spacing={0.5}>
-                                    <Typography variant="body2" sx={{ fontWeight: 700 }}>{dateRow.member_name}</Typography>
-                                    <Stack direction="row" justifyContent="space-between">
-                                        <Typography variant="caption" color="text.secondary">Amount</Typography>
-                                        <Typography variant="caption">{formatCurrency(dateRow.amount)}</Typography>
-                                    </Stack>
-                                    <Stack direction="row" justifyContent="space-between">
-                                        <Typography variant="caption" color="text.secondary">Currently dated</Typography>
-                                        <Typography variant="caption" sx={{ fontWeight: 700 }}>{formatDate(dateRow.transaction_date)}</Typography>
-                                    </Stack>
-                                    <Typography variant="caption" color="text.secondary" sx={{ wordBreak: "break-all" }}>
-                                        {dateRow.reference || "No reference"}
-                                    </Typography>
-                                </Stack>
-                            </Paper>
-                        ) : null}
-                        <TextField
-                            type="date"
-                            label="Correct date"
-                            value={dateValue}
-                            onChange={(event) => setDateValue(event.target.value)}
-                            InputLabelProps={{ shrink: true }}
-                            fullWidth
-                        />
-                        <TextField
-                            label="Reason (optional)"
-                            value={dateReason}
-                            onChange={(event) => setDateReason(event.target.value)}
-                            placeholder="e.g. imported with the wrong year"
-                            fullWidth
-                        />
-                    </Stack>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setDateRow(null)} disabled={dateSaving}>Cancel</Button>
-                    <Button variant="contained" onClick={() => void submitDate()} disabled={dateSaving || !dateValue}>
-                        {dateSaving ? "Saving..." : "Save date"}
-                    </Button>
-                </DialogActions>
-            </Dialog>
-
             <Dialog open={Boolean(reverseRow)} onClose={() => !reverseSaving && setReverseRow(null)} maxWidth="xs" fullWidth>
                 <DialogTitle sx={{ fontWeight: 800 }}>Reverse Transaction</DialogTitle>
                 <DialogContent>
@@ -576,13 +496,22 @@ export function CashTransactionsReport({ tenantId }: { tenantId: string | null }
             </Dialog>
 
             <Dialog open={Boolean(editRow)} onClose={() => !editSaving && setEditRow(null)} maxWidth="xs" fullWidth>
-                <DialogTitle sx={{ fontWeight: 800 }}>Edit Bank Statement Details</DialogTitle>
+                <DialogTitle sx={{ fontWeight: 800 }}>Edit Transaction Details</DialogTitle>
                 <DialogContent>
                     <Stack spacing={2} sx={{ mt: 0.5 }}>
                         {editError ? <Alert severity="error" variant="outlined">{editError}</Alert> : null}
                         <Typography variant="body2" color="text.secondary">
-                            {editRow ? `${formatDate(editRow.transaction_date)} · ${editRow.member_name} · ${formatCurrency(editRow.amount)}` : ""}
+                            {editRow ? `${editRow.member_name} · ${formatCurrency(editRow.amount)} · ${editRow.reference || "no reference"}` : ""}
                         </Typography>
+                        <TextField
+                            type="date"
+                            label="Transaction date"
+                            value={editDate}
+                            onChange={(event) => setEditDate(event.target.value)}
+                            InputLabelProps={{ shrink: true }}
+                            helperText="Changing this moves when the transaction is recorded. The journal moves with it and balances are rebuilt."
+                            fullWidth
+                        />
                         <TextField
                             label="Description (as per bank statement)"
                             fullWidth
@@ -598,7 +527,7 @@ export function CashTransactionsReport({ tenantId }: { tenantId: string | null }
                             onChange={(event) => setEditReference(event.target.value)}
                         />
                         <Typography variant="caption" color="text.secondary">
-                            Only the bank statement annotation changes — amounts, dates and the ledger stay untouched. Edits are audit-logged.
+                            Amounts, member and account stay untouched. Changing the date moves the journal with it and rebuilds the account's balances. Every edit is audit-logged.
                         </Typography>
                     </Stack>
                 </DialogContent>
