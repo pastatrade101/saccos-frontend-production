@@ -34,7 +34,7 @@ import {
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -76,6 +76,7 @@ import { MotionCard, MotionModal } from "../ui/motion";
 import { crestGold } from "../theme/colors";
 import { formatCurrency, formatDate } from "../utils/format";
 import { annualToMonthlyRate, formatMonthlyLoanRate, monthlyToAnnualRate } from "../utils/loanInterest";
+import { computeLoanOverdueBalance } from "../utils/loanOverdue";
 
 const createApplicationSchema = z.object({
     member_id: z.string().uuid("Select a member."),
@@ -452,39 +453,39 @@ function MetricCard({
 }) {
     return (
         <MotionCard variant="outlined" sx={{ height: "100%", borderRadius: 2.5 }}>
-            <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
-                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
+            <CardContent sx={{ p: 2, "&:last-child": { pb: 2 } }}>
+                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1.5}>
                     <Box sx={{ minWidth: 0 }}>
                         <Typography
                             variant="caption"
                             color="text.secondary"
-                            sx={{ textTransform: "uppercase", letterSpacing: "0.12em", fontWeight: 700 }}
+                            sx={{ textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 700 }}
                         >
                             {title}
                         </Typography>
                         <Typography
                             component="p"
                             sx={{
-                                mt: 1,
+                                mt: 0.5,
                                 fontWeight: 800,
                                 fontVariantNumeric: "tabular-nums",
                                 letterSpacing: "-0.01em",
                                 lineHeight: 1.1,
-                                fontSize: "clamp(1.45rem, 1.8vw, 1.85rem)"
+                                fontSize: "clamp(1.25rem, 1.5vw, 1.5rem)"
                             }}
                         >
                             {value}
                         </Typography>
-                        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: "block" }}>
                             {helper}
                         </Typography>
                     </Box>
                     <Box
                         sx={{
-                            width: 50,
-                            height: 50,
+                            width: 36,
+                            height: 36,
                             flexShrink: 0,
-                            borderRadius: 2,
+                            borderRadius: 1.5,
                             display: "grid",
                             placeItems: "center",
                             bgcolor: "action.hover",
@@ -545,14 +546,14 @@ function ProfessionalStatCard({
                 boxShadow: featured ? `0 14px 30px ${alpha(toneMap.main, 0.08)}` : "none"
             }}
         >
-            <CardContent sx={{ height: "100%" }}>
-                <Stack spacing={1.75} sx={{ height: "100%" }}>
+            <CardContent sx={{ height: "100%", p: 2, "&:last-child": { pb: 2 } }}>
+                <Stack spacing={1} sx={{ height: "100%" }}>
                     <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1.5}>
-                        <Stack spacing={0.5}>
+                        <Stack spacing={0.25}>
                             <Typography
                                 variant="caption"
                                 color="text.secondary"
-                                sx={{ textTransform: "uppercase", letterSpacing: "0.12em", fontWeight: 700 }}
+                                sx={{ textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 700 }}
                             >
                                 {label}
                             </Typography>
@@ -564,8 +565,8 @@ function ProfessionalStatCard({
                                     fontVariantNumeric: "tabular-nums",
                                     letterSpacing: "-0.01em",
                                     fontSize: featured
-                                        ? "clamp(1.9rem, 2.4vw, 2.4rem)"
-                                        : "clamp(1.6rem, 2vw, 2rem)"
+                                        ? "clamp(1.5rem, 1.8vw, 1.8rem)"
+                                        : "clamp(1.3rem, 1.5vw, 1.55rem)"
                                 }}
                             >
                                 {value}
@@ -573,9 +574,9 @@ function ProfessionalStatCard({
                         </Stack>
                         <Box
                             sx={{
-                                width: featured ? 46 : 40,
-                                height: featured ? 46 : 40,
-                                borderRadius: 2,
+                                width: 36,
+                                height: 36,
+                                borderRadius: 1.5,
                                 bgcolor: toneMap.soft,
                                 color: toneMap.main,
                                 display: "flex",
@@ -587,7 +588,7 @@ function ProfessionalStatCard({
                             {icon}
                         </Box>
                     </Stack>
-                    <Typography variant="body2" color="text.secondary">
+                    <Typography variant="caption" color="text.secondary">
                         {helper}
                     </Typography>
                     <Chip
@@ -611,6 +612,7 @@ function ProfessionalStatCard({
 export function LoansPage() {
     const theme = useTheme();
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
     const { pushToast } = useToast();
     const { profile, selectedTenantId, selectedBranchId, user } = useAuth();
     const [members, setMembers] = useState<Member[]>([]);
@@ -647,9 +649,25 @@ export function LoansPage() {
     const [pendingApprovalNotice, setPendingApprovalNotice] = useState<PendingDisbursementNotice | null>(null);
     const [applicationPage, setApplicationPage] = useState(1);
     const [loanPage, setLoanPage] = useState(1);
+    const [loanMemberFilter, setLoanMemberFilter] = useState("");
+    // Deep links (e.g. the dashboard's Loan Book card) can preselect the tab
+    // and a portfolio status filter via ?tab=...&status=...
+    const [loanStatusFilter, setLoanStatusFilter] = useState<string>(() => {
+        const status = searchParams.get("status") || "";
+        return ["draft", "active", "closed", "in_arrears", "written_off"].includes(status) ? status : "";
+    });
+    const [loanPageSize, setLoanPageSize] = useState(8);
     const [applicationTotal, setApplicationTotal] = useState(0);
     const [loanTotal, setLoanTotal] = useState(0);
-    const [activeTab, setActiveTab] = useState<LoanWorkspaceTab>("applications");
+    // Unfiltered portfolio size for the tab badge, independent of any
+    // status/member filter applied to the table fetch.
+    const [portfolioTotal, setPortfolioTotal] = useState(0);
+    const [activeTab, setActiveTab] = useState<LoanWorkspaceTab>(() => {
+        const tab = searchParams.get("tab");
+        return tab && ["applications", "portfolio", "collections", "activity"].includes(tab)
+            ? (tab as LoanWorkspaceTab)
+            : "applications";
+    });
     const [referencesLoaded, setReferencesLoaded] = useState(false);
     const [referencesLoading, setReferencesLoading] = useState(false);
     const [createLoanCapacity, setCreateLoanCapacity] = useState<LoanCapacitySummary | null>(null);
@@ -852,7 +870,16 @@ export function LoansPage() {
                     params: { tenant_id: selectedTenantId, page: applicationPage, limit: pageSize }
                 }),
                 api.get<LoansResponse>(endpoints.finance.loanPortfolio(), {
-                    params: { tenant_id: selectedTenantId, page: loanPage, limit: pageSize }
+                    params: {
+                        tenant_id: selectedTenantId,
+                        // The in-arrears view drops ledger-current loans client-side,
+                        // so fetch the full set and paginate locally to keep the
+                        // count, range, and page controls consistent.
+                        page: loanStatusFilter === "in_arrears" ? 1 : loanPage,
+                        limit: loanStatusFilter === "in_arrears" ? 100 : loanPageSize,
+                        ...(loanMemberFilter ? { member_id: loanMemberFilter } : {}),
+                        ...(loanStatusFilter ? { status: loanStatusFilter } : {})
+                    }
                 }),
                 api.get<LoanSchedulesResponse>(endpoints.finance.loanSchedules(), {
                     params: { tenant_id: selectedTenantId, page: 1, limit: 100 }
@@ -872,6 +899,10 @@ export function LoansPage() {
             setLoanTotal(
                 Number((loansResponse as unknown as { pagination?: { total?: number } }).pagination?.total || 0) ||
                 (loansResponse.data || []).length
+            );
+            setPortfolioTotal(
+                Number((allLoansResponse as unknown as { pagination?: { total?: number } }).pagination?.total || 0) ||
+                (allLoansResponse.data || []).length
             );
             setSchedules((schedulesResponse.data || []).filter((schedule) => ["pending", "partial", "overdue"].includes(schedule.status)));
         } catch (error) {
@@ -1093,7 +1124,7 @@ export function LoansPage() {
         // Load loan activity up front so the Activity tab badge shows the real
         // transaction count instead of 0 until the tab is opened.
         void loadActivityData({ silent: true });
-    }, [applicationPage, loanPage, selectedTenantId]);
+    }, [applicationPage, loanPage, loanPageSize, loanMemberFilter, loanStatusFilter, selectedTenantId]);
 
     useEffect(() => {
         if (activeTab === "activity" && !activityLoaded && !activityLoading) {
@@ -1489,6 +1520,18 @@ export function LoansPage() {
         return map;
     }, [schedules]);
 
+    // Ledger-aware overdue balance per loan (see utils/loanOverdue.ts): stored
+    // schedule rows on rebuilt loans park the residual on one past-due
+    // installment and overstate arrears, so this derives from the loans table.
+    const overdueBalanceByLoan = useMemo(() => {
+        const map = new Map<string, number>();
+        const portfolio = allLoans.length ? allLoans : loans;
+        portfolio.forEach((loan) => {
+            map.set(loan.id, computeLoanOverdueBalance(loan));
+        });
+        return map;
+    }, [allLoans, loans]);
+
     const metrics = useMemo(() => {
         // Portfolio metrics are computed across ALL loans, not just the visible page.
         const portfolio = allLoans.length ? allLoans : loans;
@@ -1708,23 +1751,38 @@ export function LoansPage() {
             ["loan_officer", "branch_manager"].includes(role)
                 ? [
                     { value: "applications" as const, label: "Applications", count: applicationTotal },
-                    { value: "portfolio" as const, label: "Portfolio", count: loanTotal },
+                    { value: "portfolio" as const, label: "Portfolio", count: portfolioTotal },
                     { value: "collections" as const, label: "Collections", count: openDefaultCaseCount || overdueScheduleCount },
                     { value: "activity" as const, label: "Activity", count: transactions.length }
                 ]
                 : [
                     { value: "applications" as const, label: "Applications", count: applicationTotal },
-                    { value: "portfolio" as const, label: "Portfolio", count: loanTotal },
+                    { value: "portfolio" as const, label: "Portfolio", count: portfolioTotal },
                     { value: "activity" as const, label: "Activity", count: transactions.length }
                 ],
-        [applicationTotal, loanTotal, openDefaultCaseCount, overdueScheduleCount, role, transactions.length]
+        [applicationTotal, portfolioTotal, openDefaultCaseCount, overdueScheduleCount, role, transactions.length]
     );
 
     const paginatedApplications = applications;
     const applicationTotalPages = Math.max(1, Math.ceil((applicationTotal || 0) / pageSize));
 
-    const paginatedLoans = loans;
-    const loanTotalPages = Math.max(1, Math.ceil((loanTotal || 0) / pageSize));
+    // The in-arrears view hides loans whose ledger position is actually ahead
+    // of contract (stale DB flag) — they carry no overdue balance to collect.
+    // That view fetches the full set and paginates client-side so the count,
+    // range text, and page controls all describe the same filtered list.
+    const arrearsView = loanStatusFilter === "in_arrears";
+    const filteredLoans = useMemo(
+        () =>
+            arrearsView
+                ? loans.filter((loan) => (overdueBalanceByLoan.get(loan.id) || 0) > 0)
+                : loans,
+        [arrearsView, loans, overdueBalanceByLoan]
+    );
+    const effectiveLoanTotal = arrearsView ? filteredLoans.length : loanTotal;
+    const paginatedLoans = arrearsView
+        ? filteredLoans.slice((loanPage - 1) * loanPageSize, loanPage * loanPageSize)
+        : filteredLoans;
+    const loanTotalPages = Math.max(1, Math.ceil((effectiveLoanTotal || 0) / loanPageSize));
 
     useEffect(() => {
         if (!workspaceTabs.some((tab) => tab.value === activeTab)) {
@@ -2764,17 +2822,48 @@ export function LoansPage() {
         {
             key: "status",
             header: "Status",
-            render: (row) => (
-                <Chip
-                    size="small"
-                    label={row.status}
-                    color={row.status === "active" ? "success" : row.status === "in_arrears" ? "warning" : "default"}
-                    variant={row.status === "active" ? "filled" : "outlined"}
-                />
-            )
+            render: (row) => {
+                // Rebuilt loans can stay flagged in_arrears from stale schedule
+                // rows even when the ledger shows the member ahead of contract.
+                const flaggedButCurrent = row.status === "in_arrears" && (overdueBalanceByLoan.get(row.id) || 0) <= 0;
+                return (
+                    <Stack spacing={0.25} alignItems="flex-start">
+                        <Chip
+                            size="small"
+                            label={row.status}
+                            color={row.status === "active" ? "success" : row.status === "in_arrears" ? "warning" : "default"}
+                            variant={row.status === "active" ? "filled" : "outlined"}
+                        />
+                        {flaggedButCurrent ? (
+                            <Typography variant="caption" color="success.main">
+                                paid ahead of schedule
+                            </Typography>
+                        ) : null}
+                    </Stack>
+                );
+            }
         },
         { key: "principal", header: "Outstanding", render: (row) => formatCurrency(row.outstanding_principal) },
         { key: "interest", header: "Accrued Interest", render: (row) => formatCurrency(row.accrued_interest) },
+        {
+            key: "overdue",
+            header: "Overdue Balance",
+            render: (row) => {
+                const overdue = overdueBalanceByLoan.get(row.id) || 0;
+                return overdue > 0 ? (
+                    <Typography
+                        variant="body2"
+                        sx={{ fontWeight: 700, color: "error.main", fontVariantNumeric: "tabular-nums" }}
+                    >
+                        {formatCurrency(overdue)}
+                    </Typography>
+                ) : (
+                    <Typography variant="body2" color="text.secondary">
+                        —
+                    </Typography>
+                );
+            }
+        },
         { key: "frequency", header: "Frequency", render: (row) => row.repayment_frequency },
         { key: "nextDue", header: "Next Due", render: (row) => formatDate(nextDueByLoan.get(row.id) || null) }
     ];
@@ -2980,7 +3069,7 @@ export function LoansPage() {
     };
 
     return (
-        <Stack spacing={3}>
+        <Stack spacing={2}>
             {role === "loan_officer" ? (
                 <MotionCard
                     variant="outlined"
@@ -2992,18 +3081,15 @@ export function LoansPage() {
                             : `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.1)}, ${alpha(theme.palette.background.paper, 0.97)})`
                     }}
                 >
-                    <CardContent sx={{ p: { xs: 2.25, md: 2.75 } }}>
-                        <Stack spacing={2}>
+                    <CardContent sx={{ p: { xs: 2, md: 2.25 }, "&:last-child": { pb: { xs: 2, md: 2.25 } } }}>
+                        <Stack spacing={1.5}>
                             <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={1.5}>
                                 <Box>
                                     <Typography variant="overline" color="text.secondary">
                                         Loan officer workspace
                                     </Typography>
-                                    <Typography variant="h5" sx={{ mt: 0.5 }}>
+                                    <Typography variant="h6" sx={{ mt: 0.25 }}>
                                         Appraise pipeline, disburse responsibly, and protect collections
-                                    </Typography>
-                                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75, maxWidth: 760 }}>
-                                        Run your full lending cycle from intake through collections with clear risk cues, prioritized follow-up, and fast operational actions.
                                     </Typography>
                                 </Box>
                                 <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="flex-start">
@@ -3071,12 +3157,12 @@ export function LoansPage() {
                             : `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.08)}, ${alpha(theme.palette.background.paper, 0.92)})`
                     }}
                 >
-                    <CardContent>
-                        <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={2.5}>
+                    <CardContent sx={{ py: 2, "&:last-child": { pb: 2 } }}>
+                        <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" alignItems={{ md: "center" }} spacing={2}>
                             <Box>
-                                <Typography variant="h5">Loan Workflow</Typography>
-                                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75, maxWidth: 760 }}>
-                                    Origination now runs through application, appraisal, approval, and controlled disbursement. The loan disbursement procedure remains the final posting step and cannot run until the workflow reaches approved status.
+                                <Typography variant="h6">Loan Workflow</Typography>
+                                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+                                    Application → appraisal → approval → disbursement.
                                 </Typography>
                             </Box>
                             <Stack
@@ -3167,7 +3253,7 @@ export function LoansPage() {
                         variant="outlined"
                         sx={{ borderTop: `4px solid ${crestGold.main}`, borderRadius: 2.5 }}
                     >
-                        <CardContent sx={{ p: { xs: 3, md: 4 } }}>
+                        <CardContent sx={{ p: { xs: 2, md: 2.5 }, "&:last-child": { pb: { xs: 2, md: 2.5 } } }}>
                             <Stack
                                 direction={{ xs: "column", md: "row" }}
                                 justifyContent="space-between"
@@ -3185,12 +3271,12 @@ export function LoansPage() {
                                     <Typography
                                         component="p"
                                         sx={{
-                                            mt: 1,
+                                            mt: 0.5,
                                             fontWeight: 800,
                                             fontVariantNumeric: "tabular-nums",
                                             letterSpacing: "-0.02em",
                                             lineHeight: 1.05,
-                                            fontSize: "clamp(2.2rem, 4.5vw, 3.4rem)"
+                                            fontSize: "clamp(1.7rem, 3vw, 2.3rem)"
                                         }}
                                     >
                                         {formatCurrency(metrics.outstandingPrincipal)}
@@ -3243,42 +3329,42 @@ export function LoansPage() {
                         </CardContent>
                     </MotionCard>
                     <Grid container spacing={2}>
-                        <Grid size={{ xs: 12, sm: 6, xl: 3 }}>
+                        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                             <ProfessionalStatCard
                                 label="Awaiting Appraisal"
                                 value={String(metrics.awaitingAppraisal)}
-                                helper="Submitted applications waiting for your recommendation."
+                                helper="Submitted, waiting for your recommendation."
                                 status={metrics.awaitingAppraisal > 0 ? "Needs review" : "Queue clear"}
                                 tone={metrics.awaitingAppraisal > 0 ? "neutral" : "positive"}
                                 icon={<PendingActionsRoundedIcon fontSize="small" />}
                                 featured
                             />
                         </Grid>
-                        <Grid size={{ xs: 12, sm: 6, xl: 3 }}>
+                        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                             <ProfessionalStatCard
                                 label="Awaiting Approval"
                                 value={String(metrics.awaitingApproval)}
-                                helper="Appraised facilities pending branch-level approval decision."
+                                helper="Pending branch-level approval."
                                 status={metrics.awaitingApproval > 0 ? "In approval flow" : "No pending approvals"}
                                 tone={metrics.awaitingApproval > 0 ? "neutral" : "positive"}
                                 icon={<ApprovalRoundedIcon fontSize="small" />}
                             />
                         </Grid>
-                        <Grid size={{ xs: 12, sm: 6, xl: 3 }}>
+                        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                             <ProfessionalStatCard
                                 label="Ready to Disburse"
                                 value={String(metrics.readyToDisburse)}
-                                helper="Approved applications waiting final disbursement posting."
+                                helper="Approved, awaiting final posting."
                                 status={metrics.readyToDisburse > 0 ? "Execution required" : "No disbursement backlog"}
                                 tone={metrics.readyToDisburse > 0 ? "neutral" : "positive"}
                                 icon={<PlaylistAddCheckRoundedIcon fontSize="small" />}
                             />
                         </Grid>
-                        <Grid size={{ xs: 12, sm: 6, xl: 3 }}>
+                        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                             <ProfessionalStatCard
                                 label="Due in 7 Days"
                                 value={String(dueWithin7DaysCount)}
-                                helper="Installments due this week that should be pre-emptively engaged."
+                                helper="Installments due this week."
                                 status={dueWithin7DaysCount > 0 ? "Engage borrowers early" : "Nothing due this week"}
                                 tone={dueWithin7DaysCount > 0 ? "neutral" : "positive"}
                                 icon={<AssignmentTurnedInRoundedIcon fontSize="small" />}
@@ -3292,7 +3378,7 @@ export function LoansPage() {
                         <MetricCard
                             title="Approval Queue"
                             value={String(metrics.awaitingApproval)}
-                            helper="Appraised applications currently waiting for branch approval."
+                            helper="Awaiting branch approval."
                             icon={<ApprovalRoundedIcon fontSize="small" />}
                         />
                     </Grid>
@@ -3300,7 +3386,7 @@ export function LoansPage() {
                         <MetricCard
                             title="Ready to Disburse"
                             value={String(metrics.readyToDisburse)}
-                            helper="Approved applications waiting for loan officer or teller execution."
+                            helper="Awaiting disbursement execution."
                             icon={<PlaylistAddCheckRoundedIcon fontSize="small" />}
                         />
                     </Grid>
@@ -3308,7 +3394,7 @@ export function LoansPage() {
                         <MetricCard
                             title="Open Default Cases"
                             value={String(openDefaultCaseCount)}
-                            helper="Detected default cases requiring branch follow-up."
+                            helper="Default cases needing follow-up."
                             icon={<PendingActionsRoundedIcon fontSize="small" />}
                         />
                     </Grid>
@@ -3358,14 +3444,10 @@ export function LoansPage() {
                 <Stack spacing={2}>
                     <MotionCard variant="outlined">
                         <CardContent>
-                            <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={2} sx={{ mb: 2 }}>
-                                <Box>
-                                    <Typography variant="h6">Loan Applications</Typography>
-                                    <Typography variant="body2" color="text.secondary">
-                                        Review every step before the final disbursement posting occurs.
-                                    </Typography>
-                                </Box>
+                            <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2} sx={{ mb: 2 }}>
+                                <Typography variant="h6">Loan Applications</Typography>
                                 <Chip
+                                    size="small"
                                     label={`${applicationTotal} application(s)`}
                                     color="primary"
                                     variant="outlined"
@@ -3448,20 +3530,78 @@ export function LoansPage() {
                     <Grid size={{ xs: 12 }}>
                         <MotionCard variant="outlined">
                             <CardContent>
-                                <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={2} sx={{ mb: 2 }}>
-                                    <Box>
+                                <Stack
+                                    direction={{ xs: "column", md: "row" }}
+                                    justifyContent="space-between"
+                                    alignItems={{ xs: "stretch", md: "center" }}
+                                    spacing={1.5}
+                                    sx={{ mb: 2 }}
+                                >
+                                    <Stack direction="row" spacing={1.25} alignItems="center">
                                         <Typography variant="h6">Loan Portfolio</Typography>
-                                        <Typography variant="body2" color="text.secondary">
-                                            Disbursed loans remain visible here with their repayment position and next due date.
-                                        </Typography>
-                                    </Box>
-                                    <Chip label={`${loanTotal} disbursed loan(s)`} variant="outlined" />
+                                        <Chip size="small" label={`${effectiveLoanTotal} loan(s)`} variant="outlined" />
+                                    </Stack>
+                                    <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25} sx={{ width: { xs: "100%", md: "auto" } }}>
+                                        <TextField
+                                            select
+                                            size="small"
+                                            label="Status"
+                                            value={loanStatusFilter}
+                                            onChange={(event) => {
+                                                setLoanStatusFilter(event.target.value);
+                                                setLoanPage(1);
+                                            }}
+                                            sx={{ width: { xs: "100%", sm: 150 } }}
+                                        >
+                                            <MenuItem value="">All statuses</MenuItem>
+                                            <MenuItem value="active">Active</MenuItem>
+                                            <MenuItem value="in_arrears">In arrears</MenuItem>
+                                            <MenuItem value="closed">Closed</MenuItem>
+                                            <MenuItem value="written_off">Written off</MenuItem>
+                                        </TextField>
+                                        <Box sx={{ width: { xs: "100%", sm: 300 } }}>
+                                            <SearchableSelect
+                                                size="small"
+                                                value={loanMemberFilter}
+                                                options={memberOptions}
+                                                placeholder="Search member..."
+                                                loading={referencesLoading}
+                                                onChange={(value) => {
+                                                    setLoanMemberFilter(value);
+                                                    setLoanPage(1);
+                                                }}
+                                            />
+                                        </Box>
+                                    </Stack>
                                 </Stack>
-                                <DataTable rows={paginatedLoans} columns={loanColumns} emptyMessage={loading ? "Loading loan portfolio..." : "No disbursed loans found."} />
-                                <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 2 }}>
-                                    <Typography variant="body2" color="text.secondary">
-                                        Showing {loanTotal ? (loanPage - 1) * pageSize + 1 : 0}-{Math.min(loanPage * pageSize, loanTotal)} of {loanTotal}
-                                    </Typography>
+                                <DataTable rows={paginatedLoans} columns={loanColumns} emptyMessage={loading ? "Loading loan portfolio..." : loanMemberFilter ? "No disbursed loans found for this member." : "No disbursed loans found."} />
+                                <Stack
+                                    direction={{ xs: "column", sm: "row" }}
+                                    justifyContent="space-between"
+                                    alignItems="center"
+                                    spacing={1.5}
+                                    sx={{ mt: 2 }}
+                                >
+                                    <Stack direction="row" spacing={1.5} alignItems="center">
+                                        <TextField
+                                            select
+                                            size="small"
+                                            label="Per page"
+                                            value={loanPageSize}
+                                            onChange={(event) => {
+                                                setLoanPageSize(Number(event.target.value));
+                                                setLoanPage(1);
+                                            }}
+                                            sx={{ width: 104 }}
+                                        >
+                                            {[8, 25, 50, 100].map((size) => (
+                                                <MenuItem key={size} value={size}>{size}</MenuItem>
+                                            ))}
+                                        </TextField>
+                                        <Typography variant="body2" color="text.secondary">
+                                            Showing {effectiveLoanTotal ? (loanPage - 1) * loanPageSize + 1 : 0}-{Math.min(loanPage * loanPageSize, effectiveLoanTotal)} of {effectiveLoanTotal}
+                                        </Typography>
+                                    </Stack>
                                     <Pagination
                                         page={loanPage}
                                         count={loanTotalPages}

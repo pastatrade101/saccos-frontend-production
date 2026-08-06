@@ -207,6 +207,26 @@ function formatWholeMoneyInput(value: string) {
     return new Intl.NumberFormat("en-TZ").format(Number(digits));
 }
 
+// Like formatWholeMoneyInput but keeps one decimal point with up to two
+// decimal places (bank charges and similar expenses arrive in cents).
+function formatDecimalMoneyInput(value: string) {
+    const cleaned = value.replace(/[^\d.]/g, "");
+    const [wholeRaw, ...rest] = cleaned.split(".");
+    const hasDot = rest.length > 0;
+    const decimals = rest.join("").slice(0, 2);
+    const whole = wholeRaw.replace(/^0+(?=\d)/, "");
+    const formattedWhole = whole ? new Intl.NumberFormat("en-TZ").format(Number(whole)) : "";
+    if (!formattedWhole && !hasDot) {
+        return "";
+    }
+    return hasDot ? `${formattedWhole || "0"}.${decimals}` : formattedWhole;
+}
+
+function parseMoneyInput(value: string) {
+    const numeric = Number(value.replace(/,/g, ""));
+    return Number.isFinite(numeric) ? numeric : 0;
+}
+
 function generateCashReference(type: ActionType) {
     const prefix = type === "deposit" ? "DEP" : type === "withdraw" ? "WDL" : "SHR";
     const stamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
@@ -2101,14 +2121,13 @@ export function CashPage() {
                                 inputRef={expenseAmountInputRef}
                                 value={expenseAmountInput}
                                 onChange={(event) => {
-                                    const digits = event.target.value.replace(/[^\d]/g, "");
-                                    const formatted = formatWholeMoneyInput(digits);
+                                    const formatted = formatDecimalMoneyInput(event.target.value);
                                     setExpenseAmountInput(formatted);
-                                    expenseForm.setValue("amount", digits ? Number(digits) : 0, { shouldValidate: true, shouldDirty: true });
+                                    expenseForm.setValue("amount", parseMoneyInput(formatted), { shouldValidate: true, shouldDirty: true });
                                 }}
                                 error={Boolean(expenseForm.formState.errors.amount)}
                                 helperText={expenseForm.formState.errors.amount?.message || "This reduces the teller's expected cash."}
-                                inputProps={{ inputMode: "numeric" }}
+                                inputProps={{ inputMode: "decimal" }}
                                 InputProps={{ startAdornment: <InputAdornment position="start">TSh</InputAdornment> }}
                                 sx={{ "& .MuiInputBase-input": { fontSize: "1.5rem", fontWeight: 700, py: 1.2 } }}
                             />

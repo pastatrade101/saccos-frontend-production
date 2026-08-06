@@ -170,6 +170,7 @@ import {
 } from "../utils/nextOfKin";
 import { formatCurrency, formatCurrencyCompact, formatDate, formatRole } from "../utils/format";
 import { annualToMonthlyRate, formatMonthlyLoanRate } from "../utils/loanInterest";
+import { computeLoanOverdueBalance, contractualInstallment, nextContractualDueDate } from "../utils/loanOverdue";
 import { projectLoanSchedule } from "../utils/loanSchedule";
 import { DEFAULT_SACCO_FINANCIAL_YEAR_SETTINGS, resolveFinancialYearPeriod } from "../utils/financialYear";
 import {
@@ -3750,7 +3751,23 @@ export function MemberPortalPage() {
 
         return pending[0] || null;
     }, [loanSchedules, activeLoanIds]);
-    const nextPaymentDue = nextLoanInstallment?.due_date || null;
+    // Ledger-aware: if the earliest unpaid schedule row is past due but the
+    // loan is actually on/ahead of contract (stale rebuilt row), roll the due
+    // date forward to the next contractual period end.
+    const nextPaymentDue = useMemo(() => {
+        if (!nextLoanInstallment) {
+            return null;
+        }
+        const loan = loans.find((entry) => entry.id === nextLoanInstallment.loan_id);
+        const today = new Date().toISOString().slice(0, 10);
+        if (loan && nextLoanInstallment.due_date < today && computeLoanOverdueBalance(loan) <= 0) {
+            const rolled = nextContractualDueDate(loan);
+            if (rolled) {
+                return rolled.toISOString().slice(0, 10);
+            }
+        }
+        return nextLoanInstallment.due_date;
+    }, [nextLoanInstallment, loans]);
     const daysUntilDue = useMemo(() => getDaysUntil(nextPaymentDue), [nextPaymentDue]);
     const activeLoanCount = useMemo(() => loans.filter((loan) => ["active", "in_arrears"].includes(loan.status)).length, [loans]);
     const pendingLoanApplications = useMemo(
@@ -3788,21 +3805,38 @@ export function MemberPortalPage() {
     const currentView = visiblePortalSections.find((section) => section.id === activeSection) || visiblePortalSections[0];
     const totalVisibleCapital = totalSavings;
     const netPosition = totalVisibleCapital - totalOutstandingLoans;
-    const hasOverdueLoan = useMemo(() => loans.some((loan) => loan.status === "in_arrears"), [loans]);
+    // Ledger-aware: the DB flag can be stale on rebuilt loans (residual parked
+    // on a past-due schedule row); only alert when the member is genuinely
+    // behind the contractual schedule.
+    const hasOverdueLoan = useMemo(
+        () => loans.some((loan) => loan.status === "in_arrears" && computeLoanOverdueBalance(loan) > 0),
+        [loans]
+    );
     const drawerWidth = sidebarOpen ? 296 : 96;
     const chartLabels = balanceTrend.map((entry) => entry.label);
     const chartValues = balanceTrend.map((entry) => entry.balance);
     const savingsTrendLabels = monthlySavingsTrend.map((entry) => entry.label);
     const savingsTrendValues = monthlySavingsTrend.map((entry) => entry.balance);
-    const monthlyInstallment = nextLoanInstallment
-        ? Math.max(
+    // Cap the schedule row's pending at the contractual annuity — rebuilt rows
+    // can carry the whole remaining balance and read as one giant installment.
+    const monthlyInstallment = useMemo(() => {
+        if (!nextLoanInstallment) {
+            return 0;
+        }
+        const pending = Math.max(
             nextLoanInstallment.principal_due +
             nextLoanInstallment.interest_due -
             nextLoanInstallment.principal_paid -
             nextLoanInstallment.interest_paid,
             0
-        )
-        : 0;
+        );
+        const loan = loans.find((entry) => entry.id === nextLoanInstallment.loan_id);
+        if (!loan) {
+            return pending;
+        }
+        const contractual = contractualInstallment(loan);
+        return contractual > 0 ? Math.min(pending, Math.round(contractual)) : pending;
+    }, [nextLoanInstallment, loans]);
     const totalOriginalLoanAmount = useMemo(() => loans.reduce((sum, loan) => sum + loan.principal_amount, 0), [loans]);
     const loanProgressPercent = totalOriginalLoanAmount > 0 ? ((totalOriginalLoanAmount - totalOutstandingLoans) / totalOriginalLoanAmount) * 100 : 0;
     const lastContribution = useMemo(

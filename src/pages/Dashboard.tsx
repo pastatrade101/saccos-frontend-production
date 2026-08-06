@@ -606,7 +606,8 @@ function BranchManagerTopCard({
     tone,
     icon,
     featured = false,
-    footer
+    footer,
+    onClick
 }: {
     label: string;
     value: string;
@@ -617,6 +618,7 @@ function BranchManagerTopCard({
     icon: ReactNode;
     featured?: boolean;
     footer?: ReactNode;
+    onClick?: () => void;
 }) {
     const theme = useTheme();
     const neutralAccent = theme.palette.mode === "dark" ? "#D9B273" : theme.palette.primary.main;
@@ -639,10 +641,12 @@ function BranchManagerTopCard({
         <MotionCard
             variant="outlined"
             inView
+            onClick={onClick}
             sx={{
                 height: "100%",
                 position: "relative",
                 overflow: "hidden",
+                cursor: onClick ? "pointer" : undefined,
                 borderColor: alpha(toneMap.main, featured ? 0.28 : 0.18),
                 background: featured
                     ? `linear-gradient(135deg, ${alpha(toneMap.main, 0.08)}, ${theme.palette.background.paper})`
@@ -3404,6 +3408,11 @@ export function DashboardPage() {
                                 status={`${metrics.branchOverdueLoans} overdue loan(s)`}
                                 tone={metrics.branchOverdueLoans > 0 ? "negative" : "neutral"}
                                 icon={<RequestQuoteRoundedIcon fontSize="small" />}
+                                onClick={() => navigate(
+                                    metrics.branchOverdueLoans > 0
+                                        ? "/loans?tab=portfolio&status=in_arrears"
+                                        : "/loans?tab=portfolio"
+                                )}
                             />
                         </Grid>
                         <Grid size={{ xs: 10, sm: 5, lg: 2 }}>
