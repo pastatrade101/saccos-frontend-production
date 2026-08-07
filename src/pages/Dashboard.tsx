@@ -97,6 +97,7 @@ import {
     type PerformanceTargetStatusId
 } from "../utils/performanceTarget";
 import { formatCurrency, formatCurrencyCompact, formatDate, formatRole } from "../utils/format";
+import { computeLoanOverdueBalance } from "../utils/loanOverdue";
 
 registerCharts();
 
@@ -2013,7 +2014,11 @@ export function DashboardPage() {
             .filter((entry) => entry.direction === "out")
             .reduce((sum, entry) => sum + entry.amount, 0);
         const activeLoans = state.loans.filter((loan) => ["active", "in_arrears"].includes(loan.status));
-        const overdueLoans = state.loans.filter((loan) => loan.status === "in_arrears");
+        // Ledger-aware: the in_arrears flag is stale on rebuilt loans, so only
+        // count loans genuinely behind the contractual schedule.
+        const isGenuinelyOverdue = (loan: (typeof state.loans)[number]) =>
+            loan.status === "in_arrears" && computeLoanOverdueBalance(loan) > 0;
+        const overdueLoans = state.loans.filter(isGenuinelyOverdue);
         const overdueSchedules = state.schedules.filter((schedule) => schedule.status === "overdue");
         const branchLoans = branchIds.length
             ? activeLoans.filter((loan) => branchIds.includes(loan.branch_id))
@@ -2032,7 +2037,7 @@ export function DashboardPage() {
             .filter((entry) => entry.direction === "out" && !isShareBranchActivity(entry))
             .reduce((sum, entry) => sum + entry.amount, 0);
         const branchOverdueOutstanding = branchLoans
-            .filter((loan) => loan.status === "in_arrears")
+            .filter(isGenuinelyOverdue)
             .reduce((sum, loan) => sum + loan.outstanding_principal + loan.accrued_interest, 0);
         const today = new Date().toISOString().slice(0, 10);
         const branchInflowsToday = branchStatements
@@ -2074,7 +2079,7 @@ export function DashboardPage() {
             branchWithdrawalOutflow,
             branchOutstanding: branchLoans.reduce((sum, loan) => sum + loan.outstanding_principal, 0),
             branchAccruedInterest: branchLoans.reduce((sum, loan) => sum + loan.accrued_interest, 0),
-            branchOverdueLoans: branchLoans.filter((loan) => loan.status === "in_arrears").length,
+            branchOverdueLoans: branchLoans.filter(isGenuinelyOverdue).length,
             branchOverdueSchedules: branchSchedules.filter((schedule) => schedule.status === "overdue").length,
             branchOverdueOutstanding,
             branchInflowsToday,
