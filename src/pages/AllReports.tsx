@@ -6,12 +6,15 @@ import {
     Button,
     Card,
     CardContent,
+    Checkbox,
     Chip,
     CircularProgress,
     Dialog,
     DialogActions,
     DialogContent,
     DialogTitle,
+    Divider,
+    FormControlLabel,
     Grid,
     Menu,
     MenuItem,
@@ -29,7 +32,7 @@ import {
     Typography
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext";
@@ -166,6 +169,9 @@ interface LoansReportData {
         member_name: string;
         principal: number;
         interest: number;
+        /** Interest the loan carries inside the chosen window; null when no range is set. */
+        period_interest: number | null;
+        contractual_interest: number;
         total_due: number;
         due_date: string | null;
         paid: number;
@@ -174,9 +180,54 @@ interface LoansReportData {
         collateral: number;
         status: string;
         repayments?: { date: string; amount: number; balance: number }[];
+        schedule?: {
+            installment: number;
+            due_date: string;
+            principal_due: number;
+            interest_due: number;
+            total_due: number;
+            principal_paid: number;
+            interest_paid: number;
+            status: string;
+        }[];
     }[];
-    totals: { count: number; principal: number; interest: number; total: number; paid: number; balance: number };
+    totals: { count: number; principal: number; interest: number; total: number; paid: number; balance: number; period_interest: number | null };
+    period: { start_date: string | null; end_date: string | null } | null;
 }
+
+interface OperationsTransferRow {
+    member_id: string;
+    member_no?: string | null;
+    full_name: string;
+    reason?: "insufficient_balance" | "no_savings_account" | "guarantee_encumbrance" | "posting_failed";
+    available_balance?: number;
+    shortfall?: number;
+    encumbered_amount?: number;
+    amount?: number;
+    new_balance?: number;
+}
+
+interface OperationsTransferResult {
+    dry_run: boolean;
+    eligible?: OperationsTransferRow[];
+    transferred?: OperationsTransferRow[];
+    skipped: OperationsTransferRow[];
+    totals: {
+        amount_per_member: number;
+        eligible_count: number;
+        eligible_total: number;
+        skipped_count: number;
+        transferred_count?: number;
+        transferred_total?: number;
+    };
+}
+
+const TRANSFER_SKIP_REASONS: Record<string, string> = {
+    insufficient_balance: "Akiba haitoshi",
+    no_savings_account: "Hana akaunti ya akiba",
+    guarantee_encumbrance: "Akiba imefungwa na dhamana ya mkopo",
+    posting_failed: "Imeshindikana kupost"
+};
 
 interface OperationsFundData {
     months: string[];
@@ -283,6 +334,25 @@ export function AllReportsPage() {
     const { pushToast } = useToast();
     const [startDate, setStartDate] = useState("");
     const [endDate, setEndDate] = useState("");
+    // The loans report answers "what interest does the book carry this month",
+    // so it opens on the current month instead of all time. Cleared ranges are
+    // remembered per visit — this only seeds the first time the report is shown.
+    const seededLoansPeriod = useRef(false);
+    useEffect(() => {
+        if (activeKey !== "loans" || seededLoansPeriod.current) {
+            return;
+        }
+        seededLoansPeriod.current = true;
+        if (startDate || endDate) {
+            return;
+        }
+        const now = new Date();
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        const iso = (value: Date) => `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
+        setStartDate(iso(monthStart));
+        setEndDate(iso(monthEnd));
+    }, [activeKey, startDate, endDate]);
     // Payload is tagged with the report it belongs to: on navigation the
     // component re-renders with the new key BEFORE the fetch effect runs, and
     // rendering the new report's branch against the old report's shape crashes.
@@ -329,6 +399,54 @@ export function AllReportsPage() {
             setEntryError(getApiErrorMessage(submitError));
         } finally {
             setEntrySubmitting(false);
+        }
+    };
+
+    // Savings → Operations transfer (single or bulk levy). Always previews
+    // (dry run) before the real run so the officer sees who will be skipped.
+    const [transferOpen, setTransferOpen] = useState(false);
+    const [transferSubmitting, setTransferSubmitting] = useState(false);
+    const [transferError, setTransferError] = useState<string | null>(null);
+    const [transferForm, setTransferForm] = useState({
+        amount: "200000",
+        entry_date: new Date().toISOString().slice(0, 10),
+        all_active: true,
+        members: [] as Member[],
+        notes: ""
+    });
+    const [transferPreview, setTransferPreview] = useState<OperationsTransferResult | null>(null);
+    const [transferResult, setTransferResult] = useState<OperationsTransferResult | null>(null);
+
+    const openTransferDialog = () => {
+        setTransferError(null);
+        setTransferPreview(null);
+        setTransferResult(null);
+        setTransferOpen(true);
+    };
+
+    const runTransfer = async (dryRun: boolean) => {
+        setTransferSubmitting(true);
+        setTransferError(null);
+        try {
+            const response = await api.post<{ data: OperationsTransferResult }>(endpoints.operations.savingsTransfers(), {
+                amount: Number(transferForm.amount),
+                entry_date: transferForm.entry_date,
+                all_active: transferForm.all_active || undefined,
+                member_ids: transferForm.all_active ? undefined : transferForm.members.map((member) => member.id),
+                notes: transferForm.notes.trim() || undefined,
+                dry_run: dryRun || undefined
+            });
+            if (dryRun) {
+                setTransferPreview(response.data.data);
+            } else {
+                setTransferResult(response.data.data);
+                setTransferPreview(null);
+                await load();
+            }
+        } catch (submitError) {
+            setTransferError(getApiErrorMessage(submitError));
+        } finally {
+            setTransferSubmitting(false);
         }
     };
 
@@ -453,7 +571,11 @@ export function AllReportsPage() {
                 });
             } else if (activeKey === "loans") {
                 response = await api.get<{ data: LoansReportData }>(endpoints.allReports.loans(), {
-                    params: { include_repayments: "true" }
+                    params: {
+                        include_repayments: "true",
+                        ...(startDate ? { start_date: startDate } : {}),
+                        ...(endDate ? { end_date: endDate } : {})
+                    }
                 });
             } else if (activeKey === "loan-income") {
                 response = await api.get<{ data: LoanIncomeData }>(endpoints.allReports.loanIncome(), { params });
@@ -522,7 +644,7 @@ export function AllReportsPage() {
         }
     };
 
-    const showDateFilters = activeKey === "contributions" || activeKey === "monthly" || activeKey === "loan-income";
+    const showDateFilters = activeKey === "contributions" || activeKey === "monthly" || activeKey === "loan-income" || activeKey === "loans";
 
     const getExportData = (): { name: string; title: string; headers: string[]; rows: (string | number | null)[][] } | null => {
         if (!data) return null;
@@ -610,10 +732,22 @@ export function AllReportsPage() {
             return {
                 name: "loans-mikopo",
                 title: "Loans (MIKOPO)",
-                headers: ["#", "Date", "Member No", "Member", "Loan Amount", "Interest", "Total + Interest", "Due Date", "Paid", "Balance", "Guarantors", "Collateral", "Status"],
+                headers: [
+                    "#", "Date", "Member No", "Member", "Loan Amount",
+                    ...(typed.period ? ["Interest (period)"] : []),
+                    "Interest", "Total + Interest", "Due Date", "Paid", "Balance", "Guarantors", "Collateral", "Status"
+                ],
                 rows: [
-                    ...typed.rows.map((row) => [row.index, row.date_applied, row.member_no, row.member_name, row.principal, row.interest, row.total_due, row.due_date, row.paid, row.balance, row.guarantors, row.collateral, row.status] as (string | number | null)[]),
-                    ["", "", "", "TOTAL", typed.totals.principal, typed.totals.interest, typed.totals.total, "", typed.totals.paid, typed.totals.balance, "", "", `${typed.totals.count} loans`]
+                    ...typed.rows.map((row) => [
+                        row.index, row.date_applied, row.member_no, row.member_name, row.principal,
+                        ...(typed.period ? [row.period_interest ?? 0] : []),
+                        row.interest, row.total_due, row.due_date, row.paid, row.balance, row.guarantors, row.collateral, row.status
+                    ] as (string | number | null)[]),
+                    [
+                        "", "", "", "TOTAL", typed.totals.principal,
+                        ...(typed.period ? [typed.totals.period_interest ?? 0] : []),
+                        typed.totals.interest, typed.totals.total, "", typed.totals.paid, typed.totals.balance, "", "", `${typed.totals.count} loans`
+                    ]
                 ]
             };
         }
@@ -1323,16 +1457,38 @@ export function AllReportsPage() {
         if (activeKey === "loans") {
             const typed = data as LoansReportData;
             const filtered = typed.rows.filter((row) => matchesSearch(row.member_no, row.member_name));
+            // Tiles must describe the rows on screen: a member search that shows
+            // 2 loans alongside the whole portfolio's totals reads as if those
+            // two loans carried the entire figure.
+            const shownTotals = filtered.length === typed.rows.length
+                ? typed.totals
+                : filtered.reduce(
+                    (sum, row) => ({
+                        principal: sum.principal + row.principal,
+                        interest: sum.interest + row.interest,
+                        paid: sum.paid + row.paid,
+                        balance: sum.balance + row.balance,
+                        period_interest: sum.period_interest + (row.period_interest || 0)
+                    }),
+                    { principal: 0, interest: 0, paid: 0, balance: 0, period_interest: 0 }
+                );
+            const hasPeriod = Boolean(typed.period);
+            const periodLabel = typed.period?.start_date && typed.period?.end_date
+                ? `Interest ${formatDate(typed.period.start_date)} – ${formatDate(typed.period.end_date)}`
+                : "Interest (period)";
             const statusColor = (status: string): "success" | "warning" | "error" | "default" =>
                 status === "closed" ? "success" : status === "in_arrears" ? "error" : status === "active" ? "warning" : "default";
             return (
                 <Stack spacing={2}>
                     <StatTiles items={[
-                        { label: "Loans", value: String(filtered.length) },
-                        { label: "Principal", value: formatCurrency(typed.totals.principal) },
-                        { label: "Interest", value: formatCurrency(typed.totals.interest) },
-                        { label: "Paid", value: formatCurrency(typed.totals.paid) },
-                        { label: "Outstanding", value: formatCurrency(typed.totals.balance) }
+                        { label: filtered.length === typed.rows.length ? "Loans" : `Loans (of ${typed.rows.length})`, value: String(filtered.length) },
+                        { label: "Principal", value: formatCurrency(shownTotals.principal) },
+                        ...(hasPeriod
+                            ? [{ label: "Interest this period", value: formatCurrency(shownTotals.period_interest ?? 0) }]
+                            : []),
+                        { label: "Interest charged", value: formatCurrency(shownTotals.interest) },
+                        { label: "Paid", value: formatCurrency(shownTotals.paid) },
+                        { label: "Outstanding", value: formatCurrency(shownTotals.balance) }
                     ]} />
                     <TableContainer sx={{ maxHeight: 560, borderRadius: 1.5, border: `1px solid ${theme.palette.divider}` }}>
                         <Table size="small" stickyHeader sx={zebraSx}>
@@ -1342,6 +1498,7 @@ export function AllReportsPage() {
                                     <TableCell sx={headCellSx}>Date</TableCell>
                                     <TableCell sx={headCellSx}>Member</TableCell>
                                     <TableCell align="right" sx={headCellSx}>Loan Amount</TableCell>
+                                    {hasPeriod ? <TableCell align="right" sx={headCellSx}>{periodLabel}</TableCell> : null}
                                     <TableCell align="right" sx={headCellSx}>Interest</TableCell>
                                     <TableCell align="right" sx={headCellSx}>Total + Interest</TableCell>
                                     <TableCell align="right" sx={headCellSx}>Paid</TableCell>
@@ -1354,14 +1511,27 @@ export function AllReportsPage() {
                             </TableHead>
                             <TableBody>
                                 {paginate(filtered).map((row) => {
+                                    // One row can open either its schedule or its payment
+                                    // trail, so the expansion key carries which of the two.
+                                    const paymentsKey = `${row.loan_number}:payments`;
+                                    const scheduleKey = `${row.loan_number}:schedule`;
+                                    const showingPayments = expandedBatch === paymentsKey;
+                                    const showingSchedule = expandedBatch === scheduleKey;
+                                    const expanded = showingPayments || showingSchedule;
                                     const batchKey = row.loan_number;
-                                    const expanded = expandedBatch === batchKey;
                                     return [
                                         <TableRow key={batchKey}>
                                             <TableCell>{row.index}</TableCell>
                                             <TableCell sx={{ whiteSpace: "nowrap" }}>{formatDate(row.date_applied)}</TableCell>
                                             <TableCell><MemberCell memberNo={row.member_no} name={row.member_name} /></TableCell>
                                             <TableCell align="right"><Money value={row.principal} bold /></TableCell>
+                                            {hasPeriod ? (
+                                                <TableCell align="right">
+                                                    <Typography component="span" variant="body2" sx={{ fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>
+                                                        {row.period_interest ? formatCurrency(row.period_interest) : "—"}
+                                                    </Typography>
+                                                </TableCell>
+                                            ) : null}
                                             <TableCell align="right"><Money value={row.interest} /></TableCell>
                                             <TableCell align="right"><Money value={row.total_due} /></TableCell>
                                             <TableCell align="right"><Money value={row.paid} /></TableCell>
@@ -1378,15 +1548,69 @@ export function AllReportsPage() {
                                                 <Chip size="small" label={row.status.replace(/_/g, " ")} color={statusColor(row.status)} variant="outlined" sx={{ fontWeight: 700 }} />
                                             </TableCell>
                                             <TableCell align="right">
-                                                <Button size="small" variant={expanded ? "contained" : "text"} onClick={() => setExpandedBatch(expanded ? null : batchKey)} disabled={!row.repayments?.length}>
-                                                    {expanded ? "Hide" : `Payments (${row.repayments?.length || 0})`}
-                                                </Button>
+                                                <Stack direction="row" spacing={0.5} justifyContent="flex-end">
+                                                    <Button
+                                                        size="small"
+                                                        variant={showingSchedule ? "contained" : "text"}
+                                                        onClick={() => setExpandedBatch(showingSchedule ? null : scheduleKey)}
+                                                        disabled={!row.schedule?.length}
+                                                    >
+                                                        {showingSchedule ? "Hide" : `Schedule (${row.schedule?.length || 0})`}
+                                                    </Button>
+                                                    <Button
+                                                        size="small"
+                                                        variant={showingPayments ? "contained" : "text"}
+                                                        onClick={() => setExpandedBatch(showingPayments ? null : paymentsKey)}
+                                                        disabled={!row.repayments?.length}
+                                                    >
+                                                        {showingPayments ? "Hide" : `Payments (${row.repayments?.length || 0})`}
+                                                    </Button>
+                                                </Stack>
                                             </TableCell>
                                         </TableRow>,
                                         expanded ? (
                                             <TableRow key={`${batchKey}-detail`}>
-                                                <TableCell colSpan={12} sx={{ py: 0, bgcolor: alpha(theme.palette.primary.main, 0.03) }}>
-                                                    <Box sx={{ maxHeight: 260, overflow: "auto", my: 1.5, mx: 2, borderRadius: 1, border: `1px solid ${theme.palette.divider}` }}>
+                                                <TableCell colSpan={hasPeriod ? 13 : 12} sx={{ py: 0, bgcolor: alpha(theme.palette.primary.main, 0.03) }}>
+                                                    <Box sx={{ maxHeight: 300, overflow: "auto", my: 1.5, mx: 2, borderRadius: 1, border: `1px solid ${theme.palette.divider}` }}>
+                                                        {showingSchedule ? (
+                                                            <Table size="small" stickyHeader>
+                                                                <TableHead>
+                                                                    <TableRow>
+                                                                        <TableCell sx={headCellSx}>#</TableCell>
+                                                                        <TableCell sx={headCellSx}>Due date</TableCell>
+                                                                        <TableCell align="right" sx={headCellSx}>Principal</TableCell>
+                                                                        <TableCell align="right" sx={headCellSx}>Interest</TableCell>
+                                                                        <TableCell align="right" sx={headCellSx}>Installment</TableCell>
+                                                                        <TableCell align="right" sx={headCellSx}>Paid</TableCell>
+                                                                        <TableCell sx={headCellSx}>Status</TableCell>
+                                                                    </TableRow>
+                                                                </TableHead>
+                                                                <TableBody>
+                                                                    {(row.schedule || []).map((entry) => {
+                                                                        const entryPaid = entry.principal_paid + entry.interest_paid;
+                                                                        return (
+                                                                            <TableRow key={`${batchKey}-inst-${entry.installment}`}>
+                                                                                <TableCell>{entry.installment}</TableCell>
+                                                                                <TableCell sx={{ whiteSpace: "nowrap" }}>{formatDate(entry.due_date)}</TableCell>
+                                                                                <TableCell align="right"><Money value={entry.principal_due} /></TableCell>
+                                                                                <TableCell align="right"><Money value={entry.interest_due} /></TableCell>
+                                                                                <TableCell align="right"><Money value={entry.total_due} bold /></TableCell>
+                                                                                <TableCell align="right"><Money value={entryPaid} /></TableCell>
+                                                                                <TableCell>
+                                                                                    <Chip
+                                                                                        size="small"
+                                                                                        variant="outlined"
+                                                                                        label={entry.status.replace(/_/g, " ")}
+                                                                                        color={entry.status === "paid" ? "success" : entry.status === "overdue" ? "error" : entry.status === "partial" ? "warning" : "default"}
+                                                                                        sx={{ fontWeight: 700 }}
+                                                                                    />
+                                                                                </TableCell>
+                                                                            </TableRow>
+                                                                        );
+                                                                    })}
+                                                                </TableBody>
+                                                            </Table>
+                                                        ) : (
                                                         <Table size="small">
                                                             <TableBody>
                                                                 {(row.repayments || []).map((payment, paymentIndex) => (
@@ -1402,6 +1626,7 @@ export function AllReportsPage() {
                                                                 ))}
                                                             </TableBody>
                                                         </Table>
+                                                        )}
                                                     </Box>
                                                 </TableCell>
                                             </TableRow>
@@ -1724,9 +1949,14 @@ export function AllReportsPage() {
                         {showDateFilters || ["member-statement", "positions", "performance-targets", "commitments", "summary-sorted", "loans", "loan-income", "operations"].includes(activeKey) ? (
                             <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }} flexWrap="wrap" useFlexGap>
                                 {activeKey === "operations" && canManageOperations ? (
-                                    <Button variant="contained" size="small" onClick={() => setEntryOpen(true)}>
-                                        Add entry
-                                    </Button>
+                                    <>
+                                        <Button variant="contained" size="small" onClick={() => setEntryOpen(true)}>
+                                            Add entry
+                                        </Button>
+                                        <Button variant="outlined" size="small" onClick={openTransferDialog}>
+                                            Transfer from savings
+                                        </Button>
+                                    </>
                                 ) : null}
                                 {["contributions", "monthly", "positions", "performance-targets", "commitments", "summary-sorted", "loans", "loan-income", "operations"].includes(activeKey) ? (
                                     <TextField
@@ -1788,6 +2018,176 @@ export function AllReportsPage() {
                     </Stack>
                 </CardContent>
             </Card>
+
+            <Dialog open={transferOpen} onClose={() => !transferSubmitting && setTransferOpen(false)} maxWidth="sm" fullWidth>
+                <DialogTitle sx={{ fontWeight: 800 }}>Transfer from Savings → Operations Fund</DialogTitle>
+                <DialogContent>
+                    <Stack spacing={2} sx={{ mt: 0.5 }}>
+                        {transferError ? <Alert severity="error" variant="outlined">{transferError}</Alert> : null}
+                        {transferResult ? (
+                            <>
+                                <Alert severity="success" variant="outlined">
+                                    Wamehamishiwa {transferResult.totals.transferred_count} member{(transferResult.totals.transferred_count || 0) === 1 ? "" : "s"} —
+                                    jumla {formatCurrency(transferResult.totals.transferred_total || 0)} imeingia Operations Fund.
+                                </Alert>
+                                {transferResult.skipped.length ? (
+                                    <>
+                                        <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                                            Walioruka ({transferResult.skipped.length})
+                                        </Typography>
+                                        <TableContainer sx={{ maxHeight: 240, border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
+                                            <Table size="small" stickyHeader>
+                                                <TableHead>
+                                                    <TableRow>
+                                                        <TableCell>Member</TableCell>
+                                                        <TableCell>Sababu</TableCell>
+                                                        <TableCell align="right">Akiba iliyopo</TableCell>
+                                                    </TableRow>
+                                                </TableHead>
+                                                <TableBody>
+                                                    {transferResult.skipped.map((row) => (
+                                                        <TableRow key={row.member_id}>
+                                                            <TableCell>{row.member_no ? `${row.member_no} — ` : ""}{row.full_name}</TableCell>
+                                                            <TableCell>{TRANSFER_SKIP_REASONS[row.reason || ""] || row.reason}</TableCell>
+                                                            <TableCell align="right">{formatCurrency(row.available_balance || 0)}</TableCell>
+                                                        </TableRow>
+                                                    ))}
+                                                </TableBody>
+                                            </Table>
+                                        </TableContainer>
+                                    </>
+                                ) : null}
+                            </>
+                        ) : (
+                            <>
+                                <Typography variant="body2" color="text.secondary">
+                                    Inahamisha kiasi ulichoweka kutoka kwenye akiba ya kila member kwenda Operations Fund —
+                                    inaonekana kwenye statement ya member kama <b>operations transfer</b>. Hakuna cash inayotoka.
+                                </Typography>
+                                <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                                    <TextField
+                                        label="Kiasi kwa kila member (TZS)"
+                                        size="small"
+                                        type="number"
+                                        value={transferForm.amount}
+                                        onChange={(event) => {
+                                            setTransferForm((current) => ({ ...current, amount: event.target.value }));
+                                            setTransferPreview(null);
+                                        }}
+                                        sx={{ flex: 1 }}
+                                    />
+                                    <TextField
+                                        label="Tarehe"
+                                        size="small"
+                                        type="date"
+                                        value={transferForm.entry_date}
+                                        onChange={(event) => {
+                                            setTransferForm((current) => ({ ...current, entry_date: event.target.value }));
+                                            setTransferPreview(null);
+                                        }}
+                                        slotProps={{ inputLabel: { shrink: true } }}
+                                        sx={{ flex: 1 }}
+                                    />
+                                </Stack>
+                                <FormControlLabel
+                                    control={(
+                                        <Checkbox
+                                            checked={transferForm.all_active}
+                                            onChange={(event) => {
+                                                setTransferForm((current) => ({ ...current, all_active: event.target.checked }));
+                                                setTransferPreview(null);
+                                            }}
+                                        />
+                                    )}
+                                    label="Members wote walio active"
+                                />
+                                {!transferForm.all_active ? (
+                                    <Autocomplete
+                                        multiple
+                                        options={members}
+                                        value={transferForm.members}
+                                        onChange={(_, value) => {
+                                            setTransferForm((current) => ({ ...current, members: value }));
+                                            setTransferPreview(null);
+                                        }}
+                                        getOptionLabel={(member) => `${member.member_no ? `${member.member_no} — ` : ""}${member.full_name}`}
+                                        isOptionEqualToValue={(left, right) => left.id === right.id}
+                                        renderInput={(params) => <TextField {...params} label="Chagua members" size="small" />}
+                                    />
+                                ) : null}
+                                <TextField
+                                    label="Notes (optional)"
+                                    size="small"
+                                    value={transferForm.notes}
+                                    onChange={(event) => setTransferForm((current) => ({ ...current, notes: event.target.value }))}
+                                />
+                                {transferPreview ? (
+                                    <>
+                                        <Divider />
+                                        <Alert severity={transferPreview.totals.eligible_count ? "info" : "warning"} variant="outlined">
+                                            Watakaokatwa: <b>{transferPreview.totals.eligible_count}</b> member{transferPreview.totals.eligible_count === 1 ? "" : "s"} ×
+                                            {" "}{formatCurrency(transferPreview.totals.amount_per_member)} = <b>{formatCurrency(transferPreview.totals.eligible_total)}</b>.
+                                            Watakaoruka: {transferPreview.totals.skipped_count}.
+                                        </Alert>
+                                        {transferPreview.skipped.length ? (
+                                            <TableContainer sx={{ maxHeight: 200, border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
+                                                <Table size="small" stickyHeader>
+                                                    <TableHead>
+                                                        <TableRow>
+                                                            <TableCell>Ataruka</TableCell>
+                                                            <TableCell>Sababu</TableCell>
+                                                            <TableCell align="right">Akiba iliyopo</TableCell>
+                                                        </TableRow>
+                                                    </TableHead>
+                                                    <TableBody>
+                                                        {transferPreview.skipped.map((row) => (
+                                                            <TableRow key={row.member_id}>
+                                                                <TableCell>{row.member_no ? `${row.member_no} — ` : ""}{row.full_name}</TableCell>
+                                                                <TableCell>{TRANSFER_SKIP_REASONS[row.reason || ""] || row.reason}</TableCell>
+                                                                <TableCell align="right">{formatCurrency(row.available_balance || 0)}</TableCell>
+                                                            </TableRow>
+                                                        ))}
+                                                    </TableBody>
+                                                </Table>
+                                            </TableContainer>
+                                        ) : null}
+                                    </>
+                                ) : null}
+                            </>
+                        )}
+                    </Stack>
+                </DialogContent>
+                <DialogActions>
+                    <Button color="inherit" onClick={() => setTransferOpen(false)} disabled={transferSubmitting}>
+                        {transferResult ? "Close" : "Cancel"}
+                    </Button>
+                    {!transferResult ? (
+                        transferPreview ? (
+                            <Button
+                                variant="contained"
+                                color="warning"
+                                onClick={() => void runTransfer(false)}
+                                disabled={transferSubmitting || !transferPreview.totals.eligible_count}
+                            >
+                                {transferSubmitting ? "Inahamisha…" : `Hamisha ${formatCurrency(transferPreview.totals.eligible_total)}`}
+                            </Button>
+                        ) : (
+                            <Button
+                                variant="contained"
+                                onClick={() => void runTransfer(true)}
+                                disabled={
+                                    transferSubmitting
+                                    || !Number(transferForm.amount)
+                                    || Number(transferForm.amount) <= 0
+                                    || (!transferForm.all_active && !transferForm.members.length)
+                                }
+                            >
+                                {transferSubmitting ? "Inakagua…" : "Preview"}
+                            </Button>
+                        )
+                    ) : null}
+                </DialogActions>
+            </Dialog>
 
             <Dialog open={Boolean(assignRow)} onClose={() => !assignSubmitting && setAssignRow(null)} maxWidth="xs" fullWidth>
                 <DialogTitle sx={{ fontWeight: 800 }}>Assign Fee to Member</DialogTitle>
