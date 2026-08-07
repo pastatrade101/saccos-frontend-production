@@ -19,7 +19,7 @@ import {
     TextField,
     Typography
 } from "@mui/material";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext";
@@ -221,6 +221,86 @@ export function SecuritySettingsPage() {
             });
         } finally {
             setLoanGuideSaving(false);
+        }
+    };
+
+    // SACCO collection account shown to every member in the portal and app.
+    const [bankDraft, setBankDraft] = useState({
+        bank_account_name: "",
+        bank_name: "",
+        bank_branch: "",
+        bank_account_number: "",
+        bank_swift_code: "",
+        bank_instructions: ""
+    });
+    const [bankSaving, setBankSaving] = useState(false);
+
+    useEffect(() => {
+        setBankDraft({
+            bank_account_name: memberPortalPaymentControls?.bank_account_name || "",
+            bank_name: memberPortalPaymentControls?.bank_name || "",
+            bank_branch: memberPortalPaymentControls?.bank_branch || "",
+            bank_account_number: memberPortalPaymentControls?.bank_account_number || "",
+            bank_swift_code: memberPortalPaymentControls?.bank_swift_code || "",
+            bank_instructions: memberPortalPaymentControls?.bank_instructions || ""
+        });
+    }, [
+        memberPortalPaymentControls?.bank_account_name,
+        memberPortalPaymentControls?.bank_name,
+        memberPortalPaymentControls?.bank_branch,
+        memberPortalPaymentControls?.bank_account_number,
+        memberPortalPaymentControls?.bank_swift_code,
+        memberPortalPaymentControls?.bank_instructions
+    ]);
+
+    const bankDraftDirty = useMemo(
+        () => bankDraft.bank_account_name.trim() !== (memberPortalPaymentControls?.bank_account_name || "")
+            || bankDraft.bank_name.trim() !== (memberPortalPaymentControls?.bank_name || "")
+            || bankDraft.bank_branch.trim() !== (memberPortalPaymentControls?.bank_branch || "")
+            || bankDraft.bank_account_number.trim() !== (memberPortalPaymentControls?.bank_account_number || "")
+            || bankDraft.bank_swift_code.trim() !== (memberPortalPaymentControls?.bank_swift_code || "")
+            || bankDraft.bank_instructions.trim() !== (memberPortalPaymentControls?.bank_instructions || ""),
+        [bankDraft, memberPortalPaymentControls]
+    );
+
+    const saveSaccoBankAccount = async () => {
+        if (!canManageMemberPortalPaymentControls || !profile.tenant_id) {
+            return;
+        }
+
+        setBankSaving(true);
+        try {
+            const payload: UpdateMemberPortalPaymentControlsRequest = {
+                tenant_id: profile.tenant_id,
+                bank_account_name: bankDraft.bank_account_name.trim() || null,
+                bank_name: bankDraft.bank_name.trim() || null,
+                bank_branch: bankDraft.bank_branch.trim() || null,
+                bank_account_number: bankDraft.bank_account_number.trim() || null,
+                bank_swift_code: bankDraft.bank_swift_code.trim() || null,
+                bank_instructions: bankDraft.bank_instructions.trim() || null
+            };
+
+            const { data } = await api.patch<MemberPortalPaymentControlsResponse>(
+                endpoints.memberPortalSettings.paymentControls(),
+                payload
+            );
+
+            setMemberPortalPaymentControls(data.data || null);
+            pushToast({
+                type: "success",
+                title: "SACCO bank account saved",
+                message: bankDraft.bank_account_number.trim()
+                    ? "Every member now sees this account in the portal and app."
+                    : "The account was cleared — the portal hides the card when it is empty."
+            });
+        } catch (error) {
+            pushToast({
+                type: "error",
+                title: "Unable to save the SACCO bank account",
+                message: getApiErrorMessage(error)
+            });
+        } finally {
+            setBankSaving(false);
         }
     };
 
@@ -1011,6 +1091,83 @@ export function SecuritySettingsPage() {
 
                                         {memberPortalPaymentControls ? (
                                             <>
+                                                <Divider />
+                                                <Stack spacing={1.5}>
+                                                    <Box>
+                                                        <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                                                            SACCO bank account (shown to every member)
+                                                        </Typography>
+                                                        <Typography variant="body2" color="text.secondary">
+                                                            The account members deposit into. It appears on the portal overview, the
+                                                            contributions page, and the mobile app. Double-check the account number —
+                                                            a wrong digit here sends members&apos; money to the wrong place. Leave the
+                                                            account number empty to hide the card.
+                                                        </Typography>
+                                                    </Box>
+                                                    <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                                                        <TextField
+                                                            fullWidth
+                                                            size="small"
+                                                            label="Account name"
+                                                            placeholder="Ilboru Alumni SACCOS"
+                                                            value={bankDraft.bank_account_name}
+                                                            onChange={(event) => setBankDraft((current) => ({ ...current, bank_account_name: event.target.value }))}
+                                                        />
+                                                        <TextField
+                                                            fullWidth
+                                                            size="small"
+                                                            label="Account number"
+                                                            placeholder="22610050162"
+                                                            value={bankDraft.bank_account_number}
+                                                            onChange={(event) => setBankDraft((current) => ({ ...current, bank_account_number: event.target.value }))}
+                                                        />
+                                                    </Stack>
+                                                    <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                                                        <TextField
+                                                            fullWidth
+                                                            size="small"
+                                                            label="Bank"
+                                                            placeholder="NMB"
+                                                            value={bankDraft.bank_name}
+                                                            onChange={(event) => setBankDraft((current) => ({ ...current, bank_name: event.target.value }))}
+                                                        />
+                                                        <TextField
+                                                            fullWidth
+                                                            size="small"
+                                                            label="Branch"
+                                                            placeholder="Msasani Branch"
+                                                            value={bankDraft.bank_branch}
+                                                            onChange={(event) => setBankDraft((current) => ({ ...current, bank_branch: event.target.value }))}
+                                                        />
+                                                        <TextField
+                                                            fullWidth
+                                                            size="small"
+                                                            label="SWIFT (optional)"
+                                                            value={bankDraft.bank_swift_code}
+                                                            onChange={(event) => setBankDraft((current) => ({ ...current, bank_swift_code: event.target.value }))}
+                                                        />
+                                                    </Stack>
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        multiline
+                                                        minRows={2}
+                                                        label="Note to members (optional)"
+                                                        placeholder="Weka jina lako kamili au namba ya uanachama kwenye maelezo ya malipo."
+                                                        value={bankDraft.bank_instructions}
+                                                        onChange={(event) => setBankDraft((current) => ({ ...current, bank_instructions: event.target.value }))}
+                                                    />
+                                                    <Box>
+                                                        <Button
+                                                            variant="contained"
+                                                            onClick={() => void saveSaccoBankAccount()}
+                                                            disabled={bankSaving || !bankDraftDirty}
+                                                        >
+                                                            {bankSaving ? "Saving…" : "Save bank account"}
+                                                        </Button>
+                                                    </Box>
+                                                </Stack>
+
                                                 <Divider />
                                                 <Stack spacing={1.5}>
                                                     <Box>
