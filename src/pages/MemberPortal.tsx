@@ -111,6 +111,7 @@ import { LoanSchedulePreview } from "../components/member-portal/LoanSchedulePre
 import { HeirsSection } from "../components/member-portal/HeirsSection";
 import { PaymentReceiptDialog } from "../components/member-portal/PaymentReceiptDialog";
 import { LoanEligibilitySummary } from "../components/loan-capacity/LoanEligibilitySummary";
+import { SaccoBankAccountCard } from "../components/member-overview/SaccoBankAccountCard";
 import { NotificationBell } from "../components/notifications/NotificationBell";
 import { SearchableSelect } from "../components/SearchableSelect";
 import { useToast } from "../components/Toast";
@@ -124,6 +125,7 @@ import {
     type UpdateLoanApplicationRequest,
     type LoanApplicationResponse,
     type LoanApplicationsResponse,
+    type BestLoanCapacityResponse,
     type LoanCapacityResponse,
     type LoanProductsResponse,
     type LoansResponse,
@@ -1251,6 +1253,7 @@ export function MemberPortalPage() {
     const [topUpQuote, setTopUpQuote] = useState<TopUpQuote | null>(null);
     const [topUpNewCashInput, setTopUpNewCashInput] = useState("");
     const [dashboardLoanCapacity, setDashboardLoanCapacity] = useState<LoanCapacitySummary | null>(null);
+    const [dashboardCapacityProductName, setDashboardCapacityProductName] = useState<string | null>(null);
     const [dashboardLoanCapacityLoading, setDashboardLoanCapacityLoading] = useState(false);
     const [dashboardLoanCapacityError, setDashboardLoanCapacityError] = useState<string | null>(null);
     const [showContributionDialog, setShowContributionDialog] = useState(false);
@@ -1662,44 +1665,6 @@ export function MemberPortalPage() {
             method: selectedLoanProduct.interest_method === "reducing_balance" ? "reducing_balance" : "flat"
         });
     }, [requestedLoanAmount, requestedLoanTerm, selectedLoanProduct]);
-    const dashboardReferenceLoan = useMemo(
-        () =>
-            loans
-                .filter((loan) => ["active", "in_arrears"].includes(loan.status))
-                .slice()
-                .sort((left, right) => new Date(right.disbursed_at || right.created_at).getTime() - new Date(left.disbursed_at || left.created_at).getTime())[0] || null,
-        [loans]
-    );
-    const dashboardLoanProduct = useMemo(
-        () => {
-            const activeProducts = loanProducts.filter((product) => product.status === "active");
-
-            if (dashboardReferenceLoan) {
-                const matchingRateAndRangeProduct = activeProducts.find((product) =>
-                    Math.abs(Number(product.annual_interest_rate || 0) - Number(dashboardReferenceLoan.annual_interest_rate || 0)) < 0.0001 &&
-                    Number(dashboardReferenceLoan.principal_amount || 0) >= Number(product.min_amount || 0) &&
-                    (!product.max_amount || Number(dashboardReferenceLoan.principal_amount || 0) <= Number(product.max_amount))
-                );
-
-                if (matchingRateAndRangeProduct) {
-                    return matchingRateAndRangeProduct;
-                }
-
-                const matchingRateProduct = activeProducts.find((product) =>
-                    Math.abs(Number(product.annual_interest_rate || 0) - Number(dashboardReferenceLoan.annual_interest_rate || 0)) < 0.0001
-                );
-
-                if (matchingRateProduct) {
-                    return matchingRateProduct;
-                }
-            }
-
-            return activeProducts.find((product) => product.is_default)
-                || activeProducts[0]
-                || null;
-        },
-        [dashboardReferenceLoan, loanProducts]
-    );
     const selectedLoanBranchId = memberRecord?.branch_id || profile?.branch_id || "";
     const selectedLoanPolicy = useMemo(
         () => resolveLoanEligibilityPolicy(selectedLoanProduct),
@@ -2130,11 +2095,16 @@ export function MemberPortalPage() {
         };
     }, [memberRecord?.id, profile?.tenant_id, selectedLoanBranchId, selectedLoanProductId, showApplyDialog]);
 
+    // The dashboard limit is judged across EVERY active loan product and the
+    // best tier wins — scoring only the tier of the member's current loan
+    // would cap a 94M-savings member at that old tier's product maximum. The
+    // backend does the scan in one call and audits just the winning product.
     useEffect(() => {
         let cancelled = false;
 
-        if (!profile?.tenant_id || !memberRecord?.id || !selectedLoanBranchId || !dashboardLoanProduct?.id) {
+        if (!profile?.tenant_id || !memberRecord?.id || !selectedLoanBranchId) {
             setDashboardLoanCapacity(null);
+            setDashboardCapacityProductName(null);
             setDashboardLoanCapacityError(null);
             setDashboardLoanCapacityLoading(false);
             return () => {
@@ -2145,11 +2115,10 @@ export function MemberPortalPage() {
         setDashboardLoanCapacityLoading(true);
         setDashboardLoanCapacityError(null);
 
-        void api.get<LoanCapacityResponse>(endpoints.loanCapacity.capacity(), {
+        void api.get<BestLoanCapacityResponse>(endpoints.loanCapacity.bestCapacity(), {
             params: {
                 tenant_id: profile.tenant_id,
                 member_id: memberRecord.id,
-                loan_product_id: dashboardLoanProduct.id,
                 branch_id: selectedLoanBranchId
             }
         })
@@ -2158,7 +2127,8 @@ export function MemberPortalPage() {
                     return;
                 }
 
-                setDashboardLoanCapacity(data.data || null);
+                setDashboardLoanCapacity(data.data?.summary || null);
+                setDashboardCapacityProductName(data.data?.loan_product?.name || null);
             })
             .catch((capacityError) => {
                 if (cancelled) {
@@ -2166,6 +2136,7 @@ export function MemberPortalPage() {
                 }
 
                 setDashboardLoanCapacity(null);
+                setDashboardCapacityProductName(null);
                 setDashboardLoanCapacityError(getApiErrorMessage(capacityError, "Unable to load borrowing capacity summary."));
             })
             .finally(() => {
@@ -2177,7 +2148,7 @@ export function MemberPortalPage() {
         return () => {
             cancelled = true;
         };
-    }, [dashboardLoanProduct?.id, memberRecord?.id, profile?.tenant_id, selectedLoanBranchId]);
+    }, [memberRecord?.id, profile?.tenant_id, selectedLoanBranchId]);
 
     useEffect(() => {
         if (!selectedLoanProduct) {
@@ -3699,6 +3670,29 @@ export function MemberPortalPage() {
         () => loans.reduce((sum, loan) => sum + loan.outstanding_principal + loan.accrued_interest, 0),
         [loans]
     );
+    // SACCO collection account, shown to every member for deposits.
+    const saccoBankAccount = useMemo(
+        () => (memberPortalPaymentControls.bank_account_number
+            ? {
+                accountName: memberPortalPaymentControls.bank_account_name,
+                bankName: memberPortalPaymentControls.bank_name,
+                bankBranch: memberPortalPaymentControls.bank_branch,
+                accountNumber: memberPortalPaymentControls.bank_account_number,
+                swiftCode: memberPortalPaymentControls.bank_swift_code,
+                instructions: memberPortalPaymentControls.bank_instructions
+            }
+            : null),
+        [memberPortalPaymentControls]
+    );
+    // Savings × the product multiplier, already net of savings pledged as
+    // guarantees for other members.
+    const dashboardSavingsBasedLimit = useMemo(
+        () => Math.max(0, Number(dashboardLoanCapacity?.contribution_limit || 0)),
+        [dashboardLoanCapacity]
+    );
+    // borrow_limit is ALREADY net of what is currently borrowed (the backend
+    // subtracts exposure inside contribution_headroom) — never subtract it a
+    // second time here.
     const dashboardMaximumBorrowable = useMemo(
         () => Math.max(0, Number(dashboardLoanCapacity?.borrow_limit || 0)),
         [dashboardLoanCapacity]
@@ -3707,9 +3701,9 @@ export function MemberPortalPage() {
         () => Math.max(0, Number(dashboardLoanCapacity?.current_loan_exposure || totalOutstandingLoans || 0)),
         [dashboardLoanCapacity, totalOutstandingLoans]
     );
-    const dashboardRemainingBorrowCapacity = useMemo(
-        () => Math.max(0, dashboardMaximumBorrowable - dashboardCurrentLoanExposure),
-        [dashboardCurrentLoanExposure, dashboardMaximumBorrowable]
+    const dashboardGuarantorExposure = useMemo(
+        () => Math.max(0, Number(dashboardLoanCapacity?.guarantor_exposure || 0)),
+        [dashboardLoanCapacity]
     );
     const dashboardLiquidityStatus = useMemo(() => {
         if (!dashboardLoanCapacity) {
@@ -5641,8 +5635,8 @@ export function MemberPortalPage() {
                         <Typography variant="subtitle1" sx={{ fontWeight: 800, mt: 0.25, lineHeight: 1.2 }}>
                             {dashboardLoanCapacityLoading
                                 ? "Refreshing current limits..."
-                                : dashboardLoanProduct?.name
-                                    ? `Based on ${dashboardLoanProduct.name}`
+                                : dashboardCapacityProductName
+                                    ? `Best available: ${dashboardCapacityProductName}`
                                     : "Current lending position"}
                         </Typography>
                     </Box>
@@ -5678,16 +5672,16 @@ export function MemberPortalPage() {
                     sx={{
                         display: "grid",
                         gap: 2,
-                        gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "repeat(3, minmax(0, 1fr))" }
+                        gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "repeat(2, minmax(0, 1fr))", md: "repeat(4, minmax(0, 1fr))" }
                     }}
                 >
                     <Box sx={{ minWidth: 0 }}>
                         <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2, height: "100%" }}>
                             <Typography variant="caption" color="text.secondary">
-                                Maximum Loan Available
+                                Savings-Based Limit
                             </Typography>
-                            <Typography title={formatCurrency(dashboardMaximumBorrowable)} sx={{ mt: 0.25, fontWeight: 800, fontSize: "1.2rem", lineHeight: 1.2, fontVariantNumeric: "tabular-nums" }}>
-                                {formatCurrencyCompact(dashboardMaximumBorrowable)}
+                            <Typography title={formatCurrency(dashboardSavingsBasedLimit)} sx={{ mt: 0.25, fontWeight: 800, fontSize: "1.2rem", lineHeight: 1.2, fontVariantNumeric: "tabular-nums" }}>
+                                {formatCurrencyCompact(dashboardSavingsBasedLimit)}
                             </Typography>
                         </Paper>
                     </Box>
@@ -5698,6 +5692,19 @@ export function MemberPortalPage() {
                             </Typography>
                             <Typography title={formatCurrency(dashboardCurrentLoanExposure)} sx={{ mt: 0.25, fontWeight: 800, fontSize: "1.2rem", lineHeight: 1.2, fontVariantNumeric: "tabular-nums" }}>
                                 {formatCurrencyCompact(dashboardCurrentLoanExposure)}
+                            </Typography>
+                        </Paper>
+                    </Box>
+                    <Box sx={{ minWidth: 0 }}>
+                        <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2, height: "100%" }}>
+                            <Typography variant="caption" color="text.secondary">
+                                Pledged as Guarantor
+                            </Typography>
+                            <Typography title={formatCurrency(dashboardGuarantorExposure)} sx={{ mt: 0.25, fontWeight: 800, fontSize: "1.2rem", lineHeight: 1.2, fontVariantNumeric: "tabular-nums" }}>
+                                {formatCurrencyCompact(dashboardGuarantorExposure)}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.25 }}>
+                                {dashboardGuarantorExposure > 0 ? "Uliyowadhamini wenzako" : "Hujadhamini mtu"}
                             </Typography>
                         </Paper>
                     </Box>
@@ -5713,10 +5720,10 @@ export function MemberPortalPage() {
                             }}
                         >
                             <Typography variant="caption" color="text.secondary">
-                                Remaining Borrow Capacity
+                                New Loan Available Now
                             </Typography>
-                            <Typography title={formatCurrency(dashboardRemainingBorrowCapacity)} sx={{ mt: 0.25, fontWeight: 800, fontSize: "1.2rem", lineHeight: 1.2, fontVariantNumeric: "tabular-nums" }}>
-                                {formatCurrencyCompact(dashboardRemainingBorrowCapacity)}
+                            <Typography title={formatCurrency(dashboardMaximumBorrowable)} sx={{ mt: 0.25, fontWeight: 800, fontSize: "1.2rem", lineHeight: 1.2, fontVariantNumeric: "tabular-nums" }}>
+                                {formatCurrencyCompact(dashboardMaximumBorrowable)}
                             </Typography>
                         </Paper>
                     </Box>
@@ -5724,7 +5731,9 @@ export function MemberPortalPage() {
                 <Typography variant="caption" color="text.secondary">
                     {dashboardLoanCapacityError
                         ? dashboardLoanCapacityError
-                        : "Informational — final approval via branch appraisal."}
+                        : dashboardMaximumBorrowable < dashboardSavingsBasedLimit && dashboardSavingsBasedLimit > 0
+                            ? `Akiba yako inaruhusu ${formatCurrency(dashboardSavingsBasedLimit)}, lakini kikomo cha bidhaa/ukwasi wa SACCO kinaishia ${formatCurrency(dashboardMaximumBorrowable)}. Informational — final approval via branch appraisal.`
+                            : "Informational — final approval via branch appraisal."}
                 </Typography>
             </CardContent>
         </MotionCard>
@@ -6644,6 +6653,19 @@ export function MemberPortalPage() {
                 loanProgressPercent,
                 activeLoans: activeLoanCount
             }}
+            loanLimit={dashboardLoanCapacity || dashboardLoanCapacityLoading
+                ? {
+                    borrowLimit: Number(dashboardLoanCapacity?.borrow_limit || 0),
+                    contributionLimit: Number(dashboardLoanCapacity?.contribution_limit || 0),
+                    currentExposure: Number(dashboardLoanCapacity?.current_loan_exposure || totalOutstandingLoans || 0),
+                    guarantorExposure: Number(dashboardLoanCapacity?.guarantor_exposure || 0),
+                    eligible: Boolean(dashboardLoanCapacity?.is_currently_eligible),
+                    poolFrozen: Boolean(dashboardLoanCapacity?.loan_pool_frozen),
+                    hasProblemLoans: Boolean(dashboardLoanCapacity?.has_problem_loans),
+                    loading: dashboardLoanCapacityLoading
+                }
+                : null}
+            bankAccount={saccoBankAccount}
             recentActivity={{
                 lastTransactionDate: statements[0]?.transaction_date || null,
                 lastContribution,
@@ -7839,6 +7861,7 @@ export function MemberPortalPage() {
 
         return (
             <Stack spacing={3}>
+                {saccoBankAccount ? <SaccoBankAccountCard {...saccoBankAccount} /> : null}
                 <MotionCard
                     variant="outlined"
                     sx={{

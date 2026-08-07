@@ -184,7 +184,8 @@ const routeMap = {
     },
     public: {
         signup: "/public/signup",
-        branches: "/public/branches"
+        branches: "/public/branches",
+        signupReferrers: "/public/signup/referrers"
     },
     locations: {
         regions: "/locations/regions",
@@ -499,7 +500,8 @@ export const endpoints = {
     },
     public: {
         signup: () => routeMap.public.signup,
-        branches: () => routeMap.public.branches
+        branches: () => routeMap.public.branches,
+        signupReferrers: () => routeMap.public.signupReferrers
     },
     locations: {
         regions: () => routeMap.locations.regions,
@@ -527,6 +529,7 @@ export const endpoints = {
     },
     loanCapacity: {
         capacity: () => routeMap.loanCapacity.capacity,
+        bestCapacity: () => `${routeMap.loanCapacity.capacity}/best`,
         productPolicy: (loanProductId: string) => routeMap.loanCapacity.productPolicy(loanProductId),
         branchLiquidityPolicy: (branchId: string) => routeMap.loanCapacity.branchLiquidityPolicy(branchId),
         branchFundPool: (branchId: string) => routeMap.loanCapacity.branchFundPool(branchId),
@@ -684,7 +687,8 @@ export const endpoints = {
     operations: {
         entries: () => "/operations/entries",
         reverse: (id: string) => `/operations/entries/${id}/reverse`,
-        assignLoanFee: (journalId: string) => `/operations/loan-fees/${journalId}/assign`
+        assignLoanFee: (journalId: string) => `/operations/loan-fees/${journalId}/assign`,
+        savingsTransfers: () => "/operations/savings-transfers"
     },
     allReports: {
         contributionsSummary: () => routeMap.allReports.contributionsSummary,
@@ -822,8 +826,15 @@ export interface CreateBranchRequest {
 export type CreateBranchResponse = ApiEnvelope<Branch>;
 export type BranchesListResponse = ApiEnvelope<Branch[]>;
 
+export interface PublicReferrerOption {
+    id: string;
+    member_no: string | null;
+    full_name: string;
+}
+
 export interface PublicSignupRequest {
     branch_id: string;
+    referred_by_member_id?: string | null;
     first_name: string;
     last_name: string;
     gender: "male" | "female" | "other";
@@ -1235,6 +1246,22 @@ export type LoansResponse = ApiEnvelope<Loan[]>;
 export type LoanApplicationResponse = ApiEnvelope<LoanApplication>;
 export type LoanApplicationsResponse = ApiEnvelope<LoanApplication[]>;
 export type LoanCapacityResponse = ApiEnvelope<LoanCapacitySummary>;
+
+// Best-tier capacity read for the member portal: the winning product's summary
+// plus which product it came from. summary is null when no product qualifies.
+export interface BestLoanCapacity {
+    summary: LoanCapacitySummary | null;
+    loan_product: {
+        id: string;
+        name: string;
+        min_amount: number | null;
+        max_amount: number | null;
+        annual_interest_rate: number | null;
+    } | null;
+    evaluated_product_count: number;
+}
+
+export type BestLoanCapacityResponse = ApiEnvelope<BestLoanCapacity>;
 export type LoanProductPolicyResponse = ApiEnvelope<LoanProductPolicy>;
 export type BranchLiquidityPolicyResponse = ApiEnvelope<BranchLiquidityPolicy>;
 export type BranchFundPoolResponse = ApiEnvelope<BranchFundPool>;
@@ -2269,6 +2296,12 @@ export interface UpdateMemberPortalPaymentControlsRequest {
     savings_deposit_enabled?: boolean;
     loan_repayment_enabled?: boolean;
     loan_application_guide?: string | null;
+    bank_account_name?: string | null;
+    bank_name?: string | null;
+    bank_branch?: string | null;
+    bank_account_number?: string | null;
+    bank_swift_code?: string | null;
+    bank_instructions?: string | null;
 }
 
 export interface UpdateWorkspaceTwoFactorSettingsRequest {

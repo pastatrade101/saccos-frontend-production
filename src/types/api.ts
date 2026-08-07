@@ -590,6 +590,8 @@ export interface MemberApplication {
     heir_relationship?: string | null;
     heir_address?: string | null;
     employer?: string | null;
+    referred_by_member_id?: string | null;
+    referred_by_name?: string | null;
     membership_type?: "individual" | "group" | "company" | null;
     ilboru_completion_year?: number | null;
     initial_share_amount?: number | null;
@@ -757,6 +759,13 @@ export interface MemberPortalPaymentControls {
     savings_deposit_enabled: boolean;
     loan_repayment_enabled: boolean;
     loan_application_guide?: string | null;
+    // SACCO collection account shown to every member for deposits.
+    bank_account_name?: string | null;
+    bank_name?: string | null;
+    bank_branch?: string | null;
+    bank_account_number?: string | null;
+    bank_swift_code?: string | null;
+    bank_instructions?: string | null;
     updated_at?: string | null;
 }
 
