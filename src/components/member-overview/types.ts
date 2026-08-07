@@ -34,6 +34,17 @@ export interface LoanExposureData {
     activeLoans: number;
 }
 
+export interface LoanLimitData {
+    borrowLimit: number;
+    contributionLimit: number;
+    currentExposure: number;
+    guarantorExposure: number;
+    eligible: boolean;
+    poolFrozen: boolean;
+    hasProblemLoans: boolean;
+    loading?: boolean;
+}
+
 export interface MemberAlertItem {
     id: string;
     severity: "success" | "info" | "warning" | "error";

@@ -4,12 +4,14 @@ import type { StatementRow } from "../../types/api";
 import { Alerts } from "./Alerts";
 import { FinancialSummary } from "./FinancialSummary";
 import { LoanCard } from "./LoanCard";
+import { LoanLimitCard } from "./LoanLimitCard";
 import { LoanRepaymentProgress } from "./LoanRepaymentProgress";
 import { RecentActivityCard } from "./RecentActivityCard";
+import { SaccoBankAccountCard, type SaccoBankAccountData } from "./SaccoBankAccountCard";
 import { SavingsCard } from "./SavingsCard";
 import { SavingsTrendChart, type SavingsTrendPoint } from "./SavingsTrendChart";
 import { TransactionsPreview } from "./TransactionsPreview";
-import type { FinancialStanding, FinancialSummaryData, LoanExposureData, MemberAlertItem, RecentActivityData } from "./types";
+import type { FinancialStanding, FinancialSummaryData, LoanExposureData, LoanLimitData, MemberAlertItem, RecentActivityData } from "./types";
 
 interface MemberOverviewProps {
     summary: FinancialSummaryData;
@@ -20,6 +22,8 @@ interface MemberOverviewProps {
         lockedAmount: number;
     };
     loanExposure: LoanExposureData;
+    loanLimit?: LoanLimitData | null;
+    bankAccount?: SaccoBankAccountData | null;
     recentActivity: RecentActivityData;
     alerts: MemberAlertItem[];
     savingsTrend: {
@@ -39,6 +43,8 @@ export function MemberOverview({
     standing,
     savingsCard,
     loanExposure,
+    loanLimit,
+    bankAccount,
     recentActivity,
     alerts,
     savingsTrend,
@@ -59,16 +65,23 @@ export function MemberOverview({
             />
 
             <Grid container spacing={2} alignItems="stretch" sx={{ width: "100%", minWidth: 0 }}>
-                <Grid size={{ xs: 12, md: 4 }} sx={{ display: "flex", minWidth: 0 }}>
+                <Grid size={{ xs: 12, sm: 6, md: loanLimit ? 3 : 4 }} sx={{ display: "flex", minWidth: 0 }}>
                     <SavingsCard {...savingsCard} />
                 </Grid>
-                <Grid size={{ xs: 12, md: 4 }} sx={{ display: "flex", minWidth: 0 }}>
+                <Grid size={{ xs: 12, sm: 6, md: loanLimit ? 3 : 4 }} sx={{ display: "flex", minWidth: 0 }}>
                     <LoanCard {...loanExposure} />
                 </Grid>
-                <Grid size={{ xs: 12, md: 4 }} sx={{ display: "flex", minWidth: 0 }}>
+                {loanLimit ? (
+                    <Grid size={{ xs: 12, sm: 6, md: 3 }} sx={{ display: "flex", minWidth: 0 }}>
+                        <LoanLimitCard {...loanLimit} />
+                    </Grid>
+                ) : null}
+                <Grid size={{ xs: 12, sm: 6, md: loanLimit ? 3 : 4 }} sx={{ display: "flex", minWidth: 0 }}>
                     <RecentActivityCard {...recentActivity} />
                 </Grid>
             </Grid>
+
+            {bankAccount ? <SaccoBankAccountCard {...bankAccount} /> : null}
 
             <Alerts alerts={alerts} />
 
