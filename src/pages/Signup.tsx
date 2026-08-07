@@ -11,6 +11,7 @@ import VisibilityOffRoundedIcon from "@mui/icons-material/VisibilityOffRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import {
     Alert,
+    Autocomplete,
     Box,
     Button,
     Checkbox,
@@ -37,6 +38,7 @@ import { api, getApiErrorMessage } from "../lib/api";
 import { SearchableSelect } from "../components/SearchableSelect";
 import {
     endpoints,
+    type PublicReferrerOption,
     type PublicSignupBranch,
     type PublicSignupBranchesResponse,
     type PublicSignupRequest,
@@ -379,6 +381,10 @@ export function SignupPage() {
     const [heirSameAsKin, setHeirSameAsKin] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+    const [referrer, setReferrer] = useState<PublicReferrerOption | null>(null);
+    const [referrerQuery, setReferrerQuery] = useState("");
+    const [referrerOptions, setReferrerOptions] = useState<PublicReferrerOption[]>([]);
+    const [referrerLoading, setReferrerLoading] = useState(false);
 
     const form = useForm<SignupValues>({
         resolver: zodResolver(schema),
@@ -483,6 +489,32 @@ export function SignupPage() {
         [branches, selectedBranchId]
     );
     const publicRegistrationUnavailable = !branchesLoading && !branchesError && branches.length === 0;
+
+    // Server-side referrer search: the backend only answers queries of 3+
+    // characters with a small name/member-no match list, so the member
+    // register is never downloaded to the public form.
+    useEffect(() => {
+        const query = referrerQuery.trim();
+        if (!selectedBranchId || query.length < 3) {
+            setReferrerOptions([]);
+            setReferrerLoading(false);
+            return;
+        }
+        setReferrerLoading(true);
+        const timer = window.setTimeout(async () => {
+            try {
+                const response = await api.get<{ data: PublicReferrerOption[] }>(endpoints.public.signupReferrers(), {
+                    params: { branch_id: selectedBranchId, q: query }
+                });
+                setReferrerOptions(response.data.data || []);
+            } catch {
+                setReferrerOptions([]);
+            } finally {
+                setReferrerLoading(false);
+            }
+        }, 350);
+        return () => window.clearTimeout(timer);
+    }, [referrerQuery, selectedBranchId]);
     const {
         regions,
         districts,
@@ -592,6 +624,7 @@ export function SignupPage() {
 
         const payload: PublicSignupRequest = {
             branch_id: values.branch_id,
+            referred_by_member_id: referrer?.id || null,
             first_name: values.first_name.trim(),
             last_name: values.last_name.trim(),
             gender: values.gender,
@@ -1342,6 +1375,43 @@ export function SignupPage() {
                             </Grid>
                             <Grid size={{ xs: 12, md: 6 }}>
                                 <TextField fullWidth type="number" label="Monthly savings commitment (TZS)" size="small" sx={signupFieldSx} {...form.register("monthly_savings_commitment", { valueAsNumber: true })} error={Boolean(form.formState.errors.monthly_savings_commitment)} helperText={form.formState.errors.monthly_savings_commitment?.message} inputProps={{ min: selectedBranch?.minimum_monthly_savings_commitment || MIN_MONTHLY_SAVINGS_COMMITMENT_TZS }} />
+                            </Grid>
+                            <Grid size={{ xs: 12 }}>
+                                <Autocomplete
+                                    size="small"
+                                    options={referrerOptions}
+                                    value={referrer}
+                                    loading={referrerLoading}
+                                    filterOptions={(options) => options}
+                                    getOptionLabel={(option) => option.member_no ? `${option.full_name} (${option.member_no})` : option.full_name}
+                                    isOptionEqualToValue={(option, current) => option.id === current.id}
+                                    onInputChange={(_event, value, reason) => {
+                                        if (reason !== "reset") {
+                                            setReferrerQuery(value);
+                                        }
+                                    }}
+                                    onChange={(_event, option) => setReferrer(option)}
+                                    noOptionsText={referrerQuery.trim().length < 3
+                                        ? "Andika angalau herufi 3 za jina la mwanachama."
+                                        : "Hakuna mwanachama anayelingana na jina hilo."}
+                                    renderInput={(params) => (
+                                        <TextField
+                                            {...params}
+                                            label="Referred by an existing member (optional)"
+                                            sx={signupFieldSx}
+                                            helperText="Umejiunga kupitia/umeambiwa na mwanachama gani? Tafuta jina lake na umchague — si lazima."
+                                            InputProps={{
+                                                ...params.InputProps,
+                                                endAdornment: (
+                                                    <>
+                                                        {referrerLoading ? <CircularProgress size={16} /> : null}
+                                                        {params.InputProps.endAdornment}
+                                                    </>
+                                                )
+                                            }}
+                                        />
+                                    )}
+                                />
                             </Grid>
                         </Grid>
                     </StepShell>

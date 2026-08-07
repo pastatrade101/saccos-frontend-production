@@ -1014,6 +1014,7 @@ export function MemberApplicationsPage() {
                                             <ApplicationDetailItem label="Occupation" value={displayApplicationValue(selected?.occupation)} />
                                             <ApplicationDetailItem label="Employer" value={displayApplicationValue(selected?.employer)} />
                                             <ApplicationDetailItem label="Member number" value={displayApplicationValue(selected?.member_no)} />
+                                            <ApplicationDetailItem label="Referred by" value={displayApplicationValue(selected?.referred_by_name)} />
                                         </ReviewSectionCard>
 
                                         <ReviewSectionCard
