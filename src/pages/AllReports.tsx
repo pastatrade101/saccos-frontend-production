@@ -205,6 +205,10 @@ interface OperationsTransferRow {
     encumbered_amount?: number;
     amount?: number;
     new_balance?: number;
+    transferred_amount?: number;
+    transferred_on?: string | null;
+    /** Database message when the posting itself failed — shown so a failure explains itself. */
+    error?: string | null;
 }
 
 interface OperationsTransferResult {
@@ -212,17 +216,24 @@ interface OperationsTransferResult {
     eligible?: OperationsTransferRow[];
     transferred?: OperationsTransferRow[];
     skipped: OperationsTransferRow[];
+    /** Members already levied in the same month — excluded so a repeat run cannot double-charge. */
+    already_transferred?: OperationsTransferRow[];
     totals: {
         amount_per_member: number;
+        month?: string;
+        selected_count?: number;
         eligible_count: number;
         eligible_total: number;
         skipped_count: number;
+        already_count?: number;
+        already_total?: number;
         transferred_count?: number;
         transferred_total?: number;
     };
 }
 
 const TRANSFER_SKIP_REASONS: Record<string, string> = {
+    already_transferred: "Tayari amehamishiwa mwezi huu",
     insufficient_balance: "Akiba haitoshi",
     no_savings_account: "Hana akaunti ya akiba",
     guarantee_encumbrance: "Akiba imefungwa na dhamana ya mkopo",
@@ -2048,7 +2059,14 @@ export function AllReportsPage() {
                                                     {transferResult.skipped.map((row) => (
                                                         <TableRow key={row.member_id}>
                                                             <TableCell>{row.member_no ? `${row.member_no} — ` : ""}{row.full_name}</TableCell>
-                                                            <TableCell>{TRANSFER_SKIP_REASONS[row.reason || ""] || row.reason}</TableCell>
+                                                            <TableCell>
+                                                                {TRANSFER_SKIP_REASONS[row.reason || ""] || row.reason}
+                                                                {row.error ? (
+                                                                    <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.25 }}>
+                                                                        {row.error}
+                                                                    </Typography>
+                                                                ) : null}
+                                                            </TableCell>
                                                             <TableCell align="right">{formatCurrency(row.available_balance || 0)}</TableCell>
                                                         </TableRow>
                                                     ))}
@@ -2125,10 +2143,59 @@ export function AllReportsPage() {
                                     <>
                                         <Divider />
                                         <Alert severity={transferPreview.totals.eligible_count ? "info" : "warning"} variant="outlined">
-                                            Watakaokatwa: <b>{transferPreview.totals.eligible_count}</b> member{transferPreview.totals.eligible_count === 1 ? "" : "s"} ×
-                                            {" "}{formatCurrency(transferPreview.totals.amount_per_member)} = <b>{formatCurrency(transferPreview.totals.eligible_total)}</b>.
-                                            Watakaoruka: {transferPreview.totals.skipped_count}.
+                                            Watakaokatwa sasa: <b>{transferPreview.totals.eligible_count}</b> member{transferPreview.totals.eligible_count === 1 ? "" : "s"} ×
+                                            {" "}{formatCurrency(transferPreview.totals.amount_per_member)} = <b>{formatCurrency(transferPreview.totals.eligible_total)}</b>
                                         </Alert>
+                                        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                                            <Chip
+                                                variant="outlined"
+                                                label={`Umewachagua: ${transferPreview.totals.selected_count ?? "—"}`}
+                                            />
+                                            <Chip
+                                                color="success"
+                                                variant="outlined"
+                                                label={`Tayari wamehamishiwa: ${transferPreview.totals.already_count ?? 0}`}
+                                            />
+                                            <Chip
+                                                color="primary"
+                                                variant="outlined"
+                                                label={`Bado (watakatwa): ${transferPreview.totals.eligible_count}`}
+                                            />
+                                            <Chip
+                                                color="warning"
+                                                variant="outlined"
+                                                label={`Watakaoruka: ${transferPreview.totals.skipped_count}`}
+                                            />
+                                        </Stack>
+                                        {transferPreview.totals.already_count ? (
+                                            <Alert severity="success" variant="outlined">
+                                                <b>{transferPreview.totals.already_count}</b> member{transferPreview.totals.already_count === 1 ? "" : "s"} tayari
+                                                walihamishiwa mwezi wa {transferPreview.totals.month} ({formatCurrency(transferPreview.totals.already_total || 0)}).
+                                                Wameachwa nje ili wasikatwe mara mbili.
+                                            </Alert>
+                                        ) : null}
+                                        {transferPreview.already_transferred?.length ? (
+                                            <TableContainer sx={{ maxHeight: 180, border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
+                                                <Table size="small" stickyHeader>
+                                                    <TableHead>
+                                                        <TableRow>
+                                                            <TableCell>Tayari amehamishiwa</TableCell>
+                                                            <TableCell>Tarehe</TableCell>
+                                                            <TableCell align="right">Kiasi</TableCell>
+                                                        </TableRow>
+                                                    </TableHead>
+                                                    <TableBody>
+                                                        {transferPreview.already_transferred.map((row) => (
+                                                            <TableRow key={row.member_id}>
+                                                                <TableCell>{row.member_no ? `${row.member_no} — ` : ""}{row.full_name}</TableCell>
+                                                                <TableCell>{row.transferred_on ? formatDate(row.transferred_on) : "—"}</TableCell>
+                                                                <TableCell align="right">{formatCurrency(row.transferred_amount || 0)}</TableCell>
+                                                            </TableRow>
+                                                        ))}
+                                                    </TableBody>
+                                                </Table>
+                                            </TableContainer>
+                                        ) : null}
                                         {transferPreview.skipped.length ? (
                                             <TableContainer sx={{ maxHeight: 200, border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
                                                 <Table size="small" stickyHeader>
