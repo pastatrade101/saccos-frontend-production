@@ -6,6 +6,7 @@ import type {
     Loan,
     LoanSchedule,
     LoanTransaction,
+    LoanTransactionWithContext,
     Member,
     StatementRow,
     Tenant,
@@ -1277,6 +1278,7 @@ export type BranchFundPoolResponse = ApiEnvelope<BranchFundPool>;
 export type LoanCapacityDashboardResponse = ApiEnvelope<LoanCapacityDashboard>;
 export type LoanSchedulesResponse = ApiEnvelope<LoanSchedule[]>;
 export type LoanTransactionsResponse = ApiEnvelope<LoanTransaction[]>;
+export type LoanTransactionsWithContextResponse = ApiEnvelope<LoanTransactionWithContext[]>;
 export type GuarantorRequestsResponse = ApiEnvelope<GuarantorRequestItem[]>;
 export type TellerSessionsResponse = ApiEnvelope<TellerSession[]>;
 export type TellerSessionResponse = ApiEnvelope<TellerSession | null>;

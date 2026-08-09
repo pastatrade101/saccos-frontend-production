@@ -1541,7 +1541,17 @@ export interface LoanTransaction {
     member_id: string;
     branch_id: string;
     journal_id: string;
-    transaction_type: "loan_disbursement" | "loan_repayment" | "interest_accrual" | "adjustment";
+    // A reversal renames the row it cancels rather than flagging it, so every
+    // reader that filters on "loan_repayment" drops it automatically
+    // (migration 163). "loan_repayment_reversal" is the counter-entry.
+    transaction_type:
+        | "loan_disbursement"
+        | "loan_repayment"
+        | "interest_accrual"
+        | "adjustment"
+        | "loan_repayment_reversed"
+        | "loan_repayment_reversal"
+        | "adjustment_reversed";
     direction: "in" | "out";
     amount: number;
     principal_component: number;
@@ -1551,6 +1561,34 @@ export interface LoanTransaction {
     reference?: string | null;
     created_by: string;
     created_at: string;
+    reversed_at?: string | null;
+    reversed_by?: string | null;
+    reversal_journal_id?: string | null;
+    reversal_reason?: string | null;
+}
+
+export interface ReverseLoanRepaymentResult {
+    success: boolean;
+    message: string;
+    transaction_id: string;
+    loan_id: string;
+    amount: number;
+    reference: string;
+    reversal_journal_id: string;
+    correction_reversed: boolean;
+    loan_reopened: boolean;
+    loan_status: string;
+    outstanding_principal: number;
+    accrued_interest: number;
+}
+
+// Rows fetched with include_context=true carry the borrower and loan number
+// joined in, so a tenant-wide listing can name every row without holding the
+// whole portfolio and member roster in memory.
+export interface LoanTransactionWithContext extends LoanTransaction {
+    loan_number?: string | null;
+    member_name?: string | null;
+    member_no?: string | null;
 }
 
 export interface FinanceResult {

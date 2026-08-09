@@ -6,6 +6,7 @@ import CreditScoreRoundedIcon from "@mui/icons-material/CreditScoreRounded";
 import PaymentsRoundedIcon from "@mui/icons-material/PaymentsRounded";
 import PendingActionsRoundedIcon from "@mui/icons-material/PendingActionsRounded";
 import PlaylistAddCheckRoundedIcon from "@mui/icons-material/PlaylistAddCheckRounded";
+import UndoRoundedIcon from "@mui/icons-material/UndoRounded";
 import PersonAddAltRoundedIcon from "@mui/icons-material/PersonAddAltRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import {
@@ -33,7 +34,7 @@ import {
     Typography
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -62,6 +63,7 @@ import {
     type LoansResponse,
     type LoanSchedulesResponse,
     type LoanTransactionsResponse,
+    type LoanTransactionsWithContextResponse,
     type MembersResponse,
     type ApproveLoanApplicationRequest,
     type RejectLoanApplicationRequest,
@@ -71,9 +73,10 @@ import {
     type MergeLoansResponse,
     type MergeLoansResult
 } from "../lib/endpoints";
-import type { ApiEnvelope, FinanceResult, Loan, LoanApplication, LoanCapacitySummary, LoanDisbursementOrder, LoanGuarantor, LoanProduct, LoanSchedule, LoanTransaction, Member } from "../types/api";
+import type { ApiEnvelope, FinanceResult, Loan, LoanApplication, LoanCapacitySummary, LoanDisbursementOrder, LoanGuarantor, LoanProduct, LoanSchedule, LoanTransaction, LoanTransactionWithContext, Member, ReverseLoanRepaymentResult } from "../types/api";
 import { MotionCard, MotionModal } from "../ui/motion";
 import { crestGold } from "../theme/colors";
+import { downloadFile } from "../utils/downloadFile";
 import { formatCurrency, formatDate } from "../utils/format";
 import { annualToMonthlyRate, formatMonthlyLoanRate, monthlyToAnnualRate } from "../utils/loanInterest";
 import { computeLoanOverdueBalance } from "../utils/loanOverdue";
@@ -158,7 +161,70 @@ type PendingDisbursementNotice = {
     maker_user_id?: string | null;
 };
 
-type LoanWorkspaceTab = "applications" | "portfolio" | "collections" | "activity";
+type LoanWorkspaceTab = "applications" | "portfolio" | "payments" | "collections" | "activity";
+
+const LOAN_WORKSPACE_TABS: LoanWorkspaceTab[] = ["applications", "portfolio", "payments", "collections", "activity"];
+
+type PaymentRangePreset = "this_month" | "last_month" | "last_30_days" | "year_to_date" | "custom";
+
+// A repayment row with its split restated. A zero-amount `adjustment`
+// referencing CORR-<repayment id> moves money between the interest and
+// principal columns after the fact (migrations 152/154) without any cash
+// changing hands, so it is folded into the repayment instead of listed beside
+// it — otherwise the tab reports a split that was already known to be wrong.
+type LoanPaymentRow = {
+    transaction: LoanTransactionWithContext;
+    principal: number;
+    interest: number;
+    corrected: boolean;
+    // Still listed, so a reversal is visible rather than a payment silently
+    // vanishing from a month someone already reported on — but never counted.
+    reversed: boolean;
+};
+
+// Local calendar date, not the UTC one toISOString() yields. Dar es Salaam runs
+// three hours ahead, so between midnight and 03:00 those are different days and
+// "this month" would open on the wrong one.
+function toDateInputValue(date: Date) {
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${date.getFullYear()}-${month}-${day}`;
+}
+
+// Both bounds are sent as full instants so the window the server filters on is
+// exactly the window of dates the table renders. The upper bound is the start
+// of the day after the end date, which makes the end date itself inclusive.
+function dayStartInstant(value: string) {
+    const [year, month, day] = value.split("-").map(Number);
+    return new Date(year, month - 1, day).toISOString();
+}
+
+function dayAfterInstant(value: string) {
+    const [year, month, day] = value.split("-").map(Number);
+    return new Date(year, month - 1, day + 1).toISOString();
+}
+
+function resolvePaymentPresetRange(preset: Exclude<PaymentRangePreset, "custom">) {
+    const today = new Date();
+
+    switch (preset) {
+    case "last_month": {
+        const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        // Day 0 of this month is the last day of the previous one.
+        const end = new Date(today.getFullYear(), today.getMonth(), 0);
+        return { from: toDateInputValue(start), to: toDateInputValue(end) };
+    }
+    case "last_30_days": {
+        const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 29);
+        return { from: toDateInputValue(start), to: toDateInputValue(today) };
+    }
+    case "year_to_date":
+        return { from: toDateInputValue(new Date(today.getFullYear(), 0, 1)), to: toDateInputValue(today) };
+    case "this_month":
+    default:
+        return { from: toDateInputValue(new Date(today.getFullYear(), today.getMonth(), 1)), to: toDateInputValue(today) };
+    }
+}
 
 const OPEN_LOAN_DISBURSEMENT_STATUSES = new Set<LoanDisbursementOrder["status"]>(["created", "pending", "completed"]);
 
@@ -431,13 +497,24 @@ type DefaultDetectionRunResult = {
 };
 
 function formatLoanTransactionType(transactionType: LoanTransaction["transaction_type"]) {
-    if (transactionType === "loan_repayment") {
+    switch (transactionType) {
+    case "loan_repayment":
         return "Repayment";
-    }
-    if (transactionType === "loan_disbursement") {
+    case "loan_disbursement":
         return "Disbursement";
+    case "interest_accrual":
+        return "Interest Accrual";
+    case "loan_repayment_reversed":
+        return "Repayment (reversed)";
+    case "loan_repayment_reversal":
+        return "Reversal";
+    case "adjustment":
+        return "Adjustment";
+    case "adjustment_reversed":
+        return "Adjustment (reversed)";
+    default:
+        return "Adjustment";
     }
-    return "Interest Accrual";
 }
 
 function MetricCard({
@@ -664,10 +741,29 @@ export function LoansPage() {
     const [portfolioTotal, setPortfolioTotal] = useState(0);
     const [activeTab, setActiveTab] = useState<LoanWorkspaceTab>(() => {
         const tab = searchParams.get("tab");
-        return tab && ["applications", "portfolio", "collections", "activity"].includes(tab)
+        return tab && LOAN_WORKSPACE_TABS.includes(tab as LoanWorkspaceTab)
             ? (tab as LoanWorkspaceTab)
             : "applications";
     });
+    // Payments tab: a window over the loan ledger's repayments. The preset only
+    // seeds the two dates — from/to are the single source of truth for what is
+    // fetched, so editing either one simply flips the preset to "custom".
+    const [paymentPreset, setPaymentPreset] = useState<PaymentRangePreset>("this_month");
+    const [paymentFrom, setPaymentFrom] = useState(() => resolvePaymentPresetRange("this_month").from);
+    const [paymentTo, setPaymentTo] = useState(() => resolvePaymentPresetRange("this_month").to);
+    const [paymentMemberFilter, setPaymentMemberFilter] = useState("");
+    const [payments, setPayments] = useState<LoanTransactionWithContext[]>([]);
+    const [paymentsLoading, setPaymentsLoading] = useState(false);
+    const [paymentsTruncated, setPaymentsTruncated] = useState(false);
+    const [paymentPage, setPaymentPage] = useState(1);
+    const [paymentPageSize, setPaymentPageSize] = useState(25);
+    const [paymentsRefreshToken, setPaymentsRefreshToken] = useState(0);
+    const [reversalTarget, setReversalTarget] = useState<LoanPaymentRow | null>(null);
+    const [reversalReason, setReversalReason] = useState("");
+    const [reversing, setReversing] = useState(false);
+    // Each fetch stamps a sequence number so a slow reply for an abandoned
+    // range cannot overwrite the range the user is now looking at.
+    const paymentsRequestRef = useRef(0);
     const [referencesLoaded, setReferencesLoaded] = useState(false);
     const [referencesLoading, setReferencesLoading] = useState(false);
     const [createLoanCapacity, setCreateLoanCapacity] = useState<LoanCapacitySummary | null>(null);
@@ -1011,6 +1107,85 @@ export function LoansPage() {
         }
     };
 
+    // Pulls every repayment in the window, not just the first page: the whole
+    // point of the tab is a total, and a total drawn from page one only would
+    // be quietly wrong. Adjustments come along so the interest/principal split
+    // can be restated where a correction was posted.
+    const loadPayments = async (options?: { silent?: boolean }) => {
+        if (!selectedTenantId || !paymentFrom || !paymentTo || paymentFrom > paymentTo) {
+            return;
+        }
+
+        const requestId = paymentsRequestRef.current + 1;
+        paymentsRequestRef.current = requestId;
+        setPaymentsLoading(true);
+
+        try {
+            const rows: LoanTransactionWithContext[] = [];
+            const perPage = 100;
+            const maxPages = 30;
+            let truncated = false;
+
+            for (let page = 1; page <= maxPages; page += 1) {
+                const { data: response } = await api.get<LoanTransactionsWithContextResponse>(
+                    endpoints.finance.loanTransactions(),
+                    {
+                        params: {
+                            tenant_id: selectedTenantId,
+                            from_date: dayStartInstant(paymentFrom),
+                            to_date: dayAfterInstant(paymentTo),
+                            // Reversed payments come along so the tab can show
+                            // what was taken back and why, greyed out and left
+                            // out of every total.
+                            transaction_type: "loan_repayment,adjustment,loan_repayment_reversed",
+                            include_context: true,
+                            ...(paymentMemberFilter ? { member_id: paymentMemberFilter } : {}),
+                            page,
+                            limit: perPage
+                        }
+                    }
+                );
+
+                const batch = response.data || [];
+                rows.push(...batch);
+
+                if (batch.length < perPage) {
+                    break;
+                }
+
+                if (page === maxPages) {
+                    truncated = true;
+                }
+            }
+
+            if (paymentsRequestRef.current !== requestId) {
+                return;
+            }
+
+            setPayments(rows);
+            setPaymentsTruncated(truncated);
+            setPaymentPage(1);
+        } catch (error) {
+            if (paymentsRequestRef.current !== requestId) {
+                return;
+            }
+
+            setPayments([]);
+            setPaymentsTruncated(false);
+            if (!options?.silent) {
+                pushToast({
+                    type: "error",
+                    title: "Unable to load loan payments",
+                    message: getApiErrorMessage(error)
+                });
+            }
+        } finally {
+            if (paymentsRequestRef.current === requestId) {
+                setPaymentsLoading(false);
+            }
+        }
+    };
+
     const loadCreditRiskData = async (options?: { silent?: boolean; force?: boolean }) => {
         if (!selectedTenantId) {
             return;
@@ -1109,6 +1284,10 @@ export function LoansPage() {
         setActivityLoading(false);
         setCreditRiskLoaded(false);
         setCreditRiskLoading(false);
+        setPayments([]);
+        setPaymentsTruncated(false);
+        setPaymentMemberFilter("");
+        setPaymentPage(1);
         setActiveTab("applications");
     }, [selectedTenantId]);
 
@@ -1131,6 +1310,14 @@ export function LoansPage() {
             void loadActivityData({ silent: true });
         }
     }, [activeTab, activityLoaded, activityLoading]);
+
+    // Fetched up front rather than on first open, so the Payments badge shows
+    // the real count for the month instead of 0 — the same reason the Activity
+    // tab loads eagerly. Normally one request: the loop stops at the first
+    // short page.
+    useEffect(() => {
+        void loadPayments();
+    }, [paymentFrom, paymentTo, paymentMemberFilter, paymentsRefreshToken, selectedTenantId]);
 
     useEffect(() => {
         if (
@@ -1610,14 +1797,15 @@ export function LoansPage() {
         () => schedules.filter((schedule) => schedule.status === "overdue").length,
         [schedules]
     );
-    const pendingAmountForSchedule = (schedule: LoanSchedule) =>
-        Math.max(schedule.principal_due - schedule.principal_paid, 0) + Math.max(schedule.interest_due - schedule.interest_paid, 0);
+    // Summed from the same ledger-derived figure the portfolio table prints in
+    // its Overdue Balance column, so the snapshot and the rows above it agree.
+    // Summing overdue SCHEDULE rows instead — as this did — overstates arrears
+    // on rebuilt loans, which park the whole residual on one past-due
+    // installment (backend migration 157); that is the reason
+    // computeLoanOverdueBalance works off the loans table at all.
     const overdueExposure = useMemo(
-        () =>
-            schedules
-                .filter((schedule) => schedule.status === "overdue")
-                .reduce((sum, schedule) => sum + pendingAmountForSchedule(schedule), 0),
-        [schedules]
+        () => [...overdueBalanceByLoan.values()].reduce((sum, amount) => sum + amount, 0),
+        [overdueBalanceByLoan]
     );
     const dueWithin7DaysCount = useMemo(() => {
         const now = new Date();
@@ -1746,21 +1934,204 @@ export function LoansPage() {
             topLoans
         };
     }, [loans, allLoans, members, orderedTransactions]);
+
+    const paymentRows = useMemo<LoanPaymentRow[]>(() => {
+        // A correction references the repayment it restates as CORR-<id> and
+        // carries that repayment's own date (migration 154), so it always lands
+        // in the same window as its repayment and never orphans.
+        const corrections = new Map<string, { principal: number; interest: number }>();
+        payments.forEach((row) => {
+            const isCorrection = row.transaction_type === "adjustment" || row.transaction_type === "adjustment_reversed";
+            if (!isCorrection || !row.reference?.startsWith("CORR-")) {
+                return;
+            }
+
+            const target = row.reference.slice("CORR-".length);
+            const existing = corrections.get(target);
+            corrections.set(target, {
+                principal: (existing?.principal || 0) + Number(row.principal_component || 0),
+                interest: (existing?.interest || 0) + Number(row.interest_component || 0)
+            });
+        });
+
+        return payments
+            .filter((row) => row.transaction_type === "loan_repayment" || row.transaction_type === "loan_repayment_reversed")
+            .map((row) => {
+                const correction = corrections.get(row.id);
+                return {
+                    transaction: row,
+                    principal: Number(row.principal_component || 0) + (correction?.principal || 0),
+                    interest: Number(row.interest_component || 0) + (correction?.interest || 0),
+                    corrected: Boolean(correction),
+                    reversed: row.transaction_type === "loan_repayment_reversed"
+                };
+            })
+            .sort((left, right) =>
+                new Date(right.transaction.created_at).getTime() - new Date(left.transaction.created_at).getTime()
+            );
+    }, [payments]);
+
+    const paymentSummary = useMemo(() => {
+        // Every figure below is drawn from the payments that still stand. A
+        // reversed payment is money the SACCO does not have.
+        const liveRows = paymentRows.filter((row) => !row.reversed);
+        const reversedRows = paymentRows.filter((row) => row.reversed);
+        const collected = liveRows.reduce((sum, row) => sum + Number(row.transaction.amount || 0), 0);
+        const principal = liveRows.reduce((sum, row) => sum + row.principal, 0);
+        const interest = liveRows.reduce((sum, row) => sum + row.interest, 0);
+        const payingMembers = new Set(liveRows.map((row) => row.transaction.member_id)).size;
+        const payingLoans = new Set(liveRows.map((row) => row.transaction.loan_id)).size;
+        const correctedCount = liveRows.filter((row) => row.corrected).length;
+
+        // Grouped on the rendered (local) date so the busiest day named here is
+        // the same date the rows in the table show.
+        const byDay = new Map<string, number>();
+        liveRows.forEach((row) => {
+            const day = toDateInputValue(new Date(row.transaction.created_at));
+            byDay.set(day, (byDay.get(day) || 0) + Number(row.transaction.amount || 0));
+        });
+        const busiestDay = [...byDay.entries()].sort((left, right) => right[1] - left[1])[0] || null;
+
+        return {
+            collected,
+            principal,
+            interest,
+            payingMembers,
+            payingLoans,
+            correctedCount,
+            count: liveRows.length,
+            reversedCount: reversedRows.length,
+            reversedAmount: reversedRows.reduce((sum, row) => sum + Number(row.transaction.amount || 0), 0),
+            averageTicket: liveRows.length ? collected / liveRows.length : 0,
+            activeDays: byDay.size,
+            busiestDay: busiestDay ? { date: busiestDay[0], amount: busiestDay[1] } : null,
+            latestAt: liveRows[0]?.transaction.created_at || null
+        };
+    }, [paymentRows]);
+
+    const paymentTotalPages = Math.max(1, Math.ceil(paymentRows.length / paymentPageSize));
+    const paginatedPayments = useMemo(
+        () => paymentRows.slice((paymentPage - 1) * paymentPageSize, paymentPage * paymentPageSize),
+        [paymentRows, paymentPage, paymentPageSize]
+    );
+
+    const applyPaymentPreset = (preset: PaymentRangePreset) => {
+        setPaymentPreset(preset);
+        if (preset === "custom") {
+            return;
+        }
+
+        const range = resolvePaymentPresetRange(preset);
+        setPaymentFrom(range.from);
+        setPaymentTo(range.to);
+    };
+
+    // Reversal is the same maker-checker as every other correction path: the
+    // teller who keyed the payment cannot take it back.
+    const canReversePayments = ["branch_manager", "super_admin"].includes(role);
+
+    const openReversalDialog = (row: LoanPaymentRow) => {
+        setReversalTarget(row);
+        setReversalReason("");
+    };
+
+    const submitPaymentReversal = async () => {
+        if (!reversalTarget || reversalReason.trim().length < 3) {
+            return;
+        }
+
+        setReversing(true);
+        try {
+            const { data } = await api.post<ApiEnvelope<ReverseLoanRepaymentResult>>(
+                endpoints.finance.reverseLoanRepayment(reversalTarget.transaction.id),
+                { tenant_id: selectedTenantId || undefined, reason: reversalReason.trim() }
+            );
+            const result = data.data;
+
+            pushToast({
+                type: "success",
+                title: "Payment reversed",
+                message: `${formatCurrency(reversalTarget.transaction.amount)} was taken back off ${reversalTarget.transaction.loan_number || "the loan"}.`
+                    + (result?.loan_reopened ? " The loan was reopened — it had been settled by this payment." : "")
+            });
+
+            setReversalTarget(null);
+            setReversalReason("");
+            // The loan balance, its status and the schedules were all restated,
+            // so every view of this workspace is now stale, not just the tab.
+            setPaymentsRefreshToken((token) => token + 1);
+            await loadWorkspace();
+            if (activityLoaded) {
+                await loadActivityData({ silent: true, force: true });
+            }
+            if (creditRiskLoaded) {
+                await loadCreditRiskData({ silent: true, force: true });
+            }
+        } catch (error) {
+            pushToast({
+                type: "error",
+                title: "Unable to reverse payment",
+                message: getApiErrorMessage(error)
+            });
+        } finally {
+            setReversing(false);
+        }
+    };
+
+    const exportPaymentsCsv = () => {
+        if (!paymentRows.length) {
+            return;
+        }
+
+        // Quote every field: member names carry commas, and a reference could
+        // too. A doubled quote is the CSV escape for a literal one.
+        const escape = (value: string | number | null | undefined) =>
+            `"${String(value ?? "").replace(/"/g, "\"\"")}"`;
+        // Reversed rows are exported too, with their own column: a spreadsheet
+        // that silently omitted them would not reconcile against a report run
+        // before the reversal, and the reader could not see why.
+        const header = ["Date", "Member No", "Member", "Loan Number", "Amount", "Principal", "Interest", "Split Corrected", "Reversed", "Reversal Reason", "Reference"];
+        const lines = [
+            header.map(escape).join(","),
+            ...paymentRows.map((row) => [
+                toDateInputValue(new Date(row.transaction.created_at)),
+                row.transaction.member_no || "",
+                row.transaction.member_name || "",
+                row.transaction.loan_number || "",
+                Number(row.transaction.amount || 0).toFixed(2),
+                row.principal.toFixed(2),
+                row.interest.toFixed(2),
+                row.corrected ? "yes" : "no",
+                row.reversed ? "yes" : "no",
+                row.reversed ? row.transaction.reversal_reason || "" : "",
+                row.transaction.reference || ""
+            ].map(escape).join(","))
+        ];
+
+        downloadFile(
+            // The BOM keeps Excel from mangling member names on open.
+            new Blob([`﻿${lines.join("\r\n")}\r\n`], { type: "text/csv;charset=utf-8" }),
+            `loan-payments-${paymentFrom}-to-${paymentTo}.csv`
+        );
+    };
+
     const workspaceTabs = useMemo(
         () =>
             ["loan_officer", "branch_manager"].includes(role)
                 ? [
                     { value: "applications" as const, label: "Applications", count: applicationTotal },
                     { value: "portfolio" as const, label: "Portfolio", count: portfolioTotal },
+                    { value: "payments" as const, label: "Payments", count: paymentSummary.count },
                     { value: "collections" as const, label: "Collections", count: openDefaultCaseCount || overdueScheduleCount },
                     { value: "activity" as const, label: "Activity", count: transactions.length }
                 ]
                 : [
                     { value: "applications" as const, label: "Applications", count: applicationTotal },
                     { value: "portfolio" as const, label: "Portfolio", count: portfolioTotal },
+                    { value: "payments" as const, label: "Payments", count: paymentSummary.count },
                     { value: "activity" as const, label: "Activity", count: transactions.length }
                 ],
-        [applicationTotal, portfolioTotal, openDefaultCaseCount, overdueScheduleCount, role, transactions.length]
+        [applicationTotal, portfolioTotal, paymentSummary.count, openDefaultCaseCount, overdueScheduleCount, role, transactions.length]
     );
 
     const paginatedApplications = applications;
@@ -1783,6 +2154,13 @@ export function LoansPage() {
         ? filteredLoans.slice((loanPage - 1) * loanPageSize, loanPage * loanPageSize)
         : filteredLoans;
     const loanTotalPages = Math.max(1, Math.ceil((effectiveLoanTotal || 0) / loanPageSize));
+    // The arrears view is a collections worklist, so it should add up: this is
+    // the total of the Overdue Balance column across the whole filtered set,
+    // not just the visible page.
+    const filteredOverdueTotal = useMemo(
+        () => filteredLoans.reduce((sum, loan) => sum + (overdueBalanceByLoan.get(loan.id) || 0), 0),
+        [filteredLoans, overdueBalanceByLoan]
+    );
 
     useEffect(() => {
         if (!workspaceTabs.some((tab) => tab.value === activeTab)) {
@@ -2322,6 +2700,9 @@ export function LoansPage() {
                 });
                 setShowRepayModal(false);
                 repayForm.reset();
+                // The payment just posted belongs in any window that includes
+                // today; the token is a dep of the payments fetch effect.
+                setPaymentsRefreshToken((token) => token + 1);
             }
 
             setPendingMoneyAction(null);
@@ -2961,6 +3342,145 @@ export function LoansPage() {
         }
     ];
 
+    // A reversed row stays in the list but reads as struck out and muted, so a
+    // month that has been reported on still shows what was in it and why the
+    // total no longer matches.
+    const reversedTextSx = { textDecoration: "line-through", opacity: 0.6 } as const;
+
+    const paymentColumns: Column<LoanPaymentRow>[] = [
+        {
+            key: "date",
+            header: "Date",
+            render: (row) => (
+                <Typography variant="body2" sx={{ fontWeight: 700, ...(row.reversed ? reversedTextSx : {}) }}>
+                    {formatDate(row.transaction.created_at)}
+                </Typography>
+            )
+        },
+        {
+            key: "member",
+            header: "Member",
+            render: (row) => (
+                <Stack spacing={0.2} sx={row.reversed ? { opacity: 0.6 } : undefined}>
+                    <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                        {row.transaction.member_name || "Unknown member"}
+                    </Typography>
+                    {row.transaction.member_no ? (
+                        <Typography variant="caption" color="text.secondary">{row.transaction.member_no}</Typography>
+                    ) : null}
+                </Stack>
+            )
+        },
+        {
+            key: "loan",
+            header: "Loan",
+            render: (row) => (
+                <Button
+                    variant="text"
+                    color="inherit"
+                    onClick={() => navigate(`/loans/${row.transaction.loan_id}`)}
+                    sx={{
+                        p: 0,
+                        minWidth: 0,
+                        justifyContent: "flex-start",
+                        fontWeight: 700,
+                        textTransform: "none",
+                        ...(row.reversed ? { opacity: 0.6 } : {})
+                    }}
+                >
+                    {row.transaction.loan_number || `Loan ${row.transaction.loan_id.slice(0, 8)}`}
+                </Button>
+            )
+        },
+        {
+            key: "amount",
+            header: "Amount",
+            render: (row) => (
+                <Stack spacing={0.2}>
+                    <Typography
+                        variant="body2"
+                        sx={{
+                            fontWeight: 700,
+                            color: row.reversed ? "text.secondary" : "success.main",
+                            ...(row.reversed ? reversedTextSx : {})
+                        }}
+                    >
+                        {formatCurrency(row.transaction.amount)}
+                    </Typography>
+                    {row.reversed ? (
+                        <Chip size="small" color="error" variant="outlined" label="Reversed" sx={{ alignSelf: "flex-start" }} />
+                    ) : null}
+                </Stack>
+            )
+        },
+        {
+            key: "split",
+            header: "Split",
+            render: (row) => (
+                <Stack spacing={0.1} sx={row.reversed ? { opacity: 0.6 } : undefined}>
+                    <Typography variant="caption" color="text.secondary" sx={row.reversed ? reversedTextSx : undefined}>
+                        Principal {formatCurrency(row.principal)}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={row.reversed ? reversedTextSx : undefined}>
+                        Interest {formatCurrency(row.interest)}
+                    </Typography>
+                    {row.corrected && !row.reversed ? (
+                        <Chip size="small" variant="outlined" color="info" label="Split corrected" sx={{ mt: 0.35, alignSelf: "flex-start" }} />
+                    ) : null}
+                    {row.reversed && row.transaction.reversal_reason ? (
+                        <Typography variant="caption" color="error.main" sx={{ mt: 0.35 }}>
+                            {row.transaction.reversal_reason}
+                        </Typography>
+                    ) : null}
+                </Stack>
+            )
+        },
+        {
+            key: "reference",
+            header: "Reference",
+            render: (row) => row.transaction.reference ? (
+                <Chip
+                    size="small"
+                    variant="outlined"
+                    label={row.transaction.reference}
+                    sx={row.reversed ? { opacity: 0.6 } : darkAccentChipSx}
+                />
+            ) : (
+                <Typography variant="caption" color="text.secondary">N/A</Typography>
+            )
+        },
+        {
+            key: "actions",
+            header: "",
+            render: (row) => {
+                if (!canReversePayments) {
+                    return null;
+                }
+
+                if (row.reversed) {
+                    return (
+                        <Typography variant="caption" color="text.secondary">
+                            {row.transaction.reversed_at ? `Reversed ${formatDate(row.transaction.reversed_at)}` : "Reversed"}
+                        </Typography>
+                    );
+                }
+
+                return (
+                    <Button
+                        size="small"
+                        variant="outlined"
+                        color="error"
+                        startIcon={<UndoRoundedIcon fontSize="small" />}
+                        onClick={() => openReversalDialog(row)}
+                        sx={{ textTransform: "none", whiteSpace: "nowrap" }}
+                    >
+                        Reverse
+                    </Button>
+                );
+            }
+        }
+    ];
+
     const pendingRepaymentLoan =
         pendingMoneyAction?.type === "repay"
             ? loans.find((loan) => loan.id === pendingMoneyAction.values.loan_id) || null
@@ -3537,9 +4057,17 @@ export function LoansPage() {
                                     spacing={1.5}
                                     sx={{ mb: 2 }}
                                 >
-                                    <Stack direction="row" spacing={1.25} alignItems="center">
+                                    <Stack direction="row" spacing={1.25} alignItems="center" flexWrap="wrap" useFlexGap>
                                         <Typography variant="h6">Loan Portfolio</Typography>
                                         <Chip size="small" label={`${effectiveLoanTotal} loan(s)`} variant="outlined" />
+                                        {arrearsView && filteredOverdueTotal > 0 ? (
+                                            <Chip
+                                                size="small"
+                                                color="error"
+                                                variant="outlined"
+                                                label={`${formatCurrency(filteredOverdueTotal)} overdue`}
+                                            />
+                                        ) : null}
                                     </Stack>
                                     <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25} sx={{ width: { xs: "100%", md: "auto" } }}>
                                         <TextField
@@ -3669,6 +4197,214 @@ export function LoansPage() {
                         </MotionCard>
                     </Grid>
                 </Grid>
+            ) : null}
+
+            {activeTab === "payments" ? (
+                <Stack spacing={2}>
+                    <Grid container spacing={2}>
+                        <Grid size={{ xs: 12, sm: 6, xl: 3 }}>
+                            <MetricCard
+                                title="Collected"
+                                value={formatCurrency(paymentSummary.collected)}
+                                helper={`${paymentSummary.count} payment(s) from ${paymentSummary.payingMembers} member(s).`}
+                                icon={<PaymentsRoundedIcon fontSize="small" />}
+                            />
+                        </Grid>
+                        <Grid size={{ xs: 12, sm: 6, xl: 3 }}>
+                            <MetricCard
+                                title="Principal Recovered"
+                                value={formatCurrency(paymentSummary.principal)}
+                                helper={`Across ${paymentSummary.payingLoans} loan account(s).`}
+                                icon={<AccountBalanceRoundedIcon fontSize="small" />}
+                            />
+                        </Grid>
+                        <Grid size={{ xs: 12, sm: 6, xl: 3 }}>
+                            <MetricCard
+                                title="Interest Earned"
+                                value={formatCurrency(paymentSummary.interest)}
+                                helper={paymentSummary.collected
+                                    ? `${((paymentSummary.interest / paymentSummary.collected) * 100).toFixed(1)}% of the cash collected.`
+                                    : "No cash collected in this range."}
+                                icon={<CreditScoreRoundedIcon fontSize="small" />}
+                            />
+                        </Grid>
+                        <Grid size={{ xs: 12, sm: 6, xl: 3 }}>
+                            <MetricCard
+                                title="Average Payment"
+                                value={formatCurrency(paymentSummary.averageTicket)}
+                                helper={paymentSummary.busiestDay
+                                    ? `Busiest day ${formatDate(paymentSummary.busiestDay.date)} · ${formatCurrency(paymentSummary.busiestDay.amount)}.`
+                                    : "No payments in this range yet."}
+                                icon={<PendingActionsRoundedIcon fontSize="small" />}
+                            />
+                        </Grid>
+                    </Grid>
+
+                    <MotionCard variant="outlined">
+                        <CardContent>
+                            <Stack
+                                direction={{ xs: "column", lg: "row" }}
+                                justifyContent="space-between"
+                                alignItems={{ xs: "stretch", lg: "flex-end" }}
+                                spacing={1.5}
+                                sx={{ mb: 2 }}
+                            >
+                                <Box>
+                                    <Typography variant="h6">Loan Payments</Typography>
+                                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                                        Every repayment received between {formatDate(paymentFrom)} and {formatDate(paymentTo)}.
+                                    </Typography>
+                                </Box>
+                                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                                    <ToggleButtonGroup
+                                        exclusive
+                                        size="small"
+                                        value={paymentPreset}
+                                        onChange={(_, value: PaymentRangePreset | null) => {
+                                            if (value) {
+                                                applyPaymentPreset(value);
+                                            }
+                                        }}
+                                    >
+                                        <ToggleButton value="this_month" sx={{ textTransform: "none" }}>This month</ToggleButton>
+                                        <ToggleButton value="last_month" sx={{ textTransform: "none" }}>Last month</ToggleButton>
+                                        <ToggleButton value="last_30_days" sx={{ textTransform: "none" }}>Last 30 days</ToggleButton>
+                                        <ToggleButton value="year_to_date" sx={{ textTransform: "none" }}>Year to date</ToggleButton>
+                                    </ToggleButtonGroup>
+                                </Stack>
+                            </Stack>
+
+                            <Stack
+                                direction={{ xs: "column", md: "row" }}
+                                spacing={1.25}
+                                alignItems={{ xs: "stretch", md: "center" }}
+                                sx={{ mb: 2 }}
+                            >
+                                <TextField
+                                    type="date"
+                                    size="small"
+                                    label="From"
+                                    value={paymentFrom}
+                                    onChange={(event) => {
+                                        setPaymentFrom(event.target.value);
+                                        setPaymentPreset("custom");
+                                    }}
+                                    slotProps={{ inputLabel: { shrink: true } }}
+                                    sx={{ width: { xs: "100%", md: 170 } }}
+                                />
+                                <TextField
+                                    type="date"
+                                    size="small"
+                                    label="To"
+                                    value={paymentTo}
+                                    onChange={(event) => {
+                                        setPaymentTo(event.target.value);
+                                        setPaymentPreset("custom");
+                                    }}
+                                    slotProps={{ inputLabel: { shrink: true } }}
+                                    sx={{ width: { xs: "100%", md: 170 } }}
+                                />
+                                <Box sx={{ width: { xs: "100%", md: 300 } }}>
+                                    <SearchableSelect
+                                        size="small"
+                                        value={paymentMemberFilter}
+                                        options={memberOptions}
+                                        placeholder="All members"
+                                        loading={referencesLoading}
+                                        onChange={(value) => setPaymentMemberFilter(value)}
+                                    />
+                                </Box>
+                                <Box sx={{ flex: 1 }} />
+                                <Button
+                                    variant="outlined"
+                                    onClick={exportPaymentsCsv}
+                                    disabled={!paymentRows.length}
+                                    sx={darkAccentOutlinedSx}
+                                >
+                                    Export CSV
+                                </Button>
+                            </Stack>
+
+                            {paymentFrom > paymentTo ? (
+                                <Alert severity="warning" variant="outlined" sx={{ mb: 2 }}>
+                                    The start date is after the end date, so nothing was fetched. Swap them to see payments.
+                                </Alert>
+                            ) : null}
+
+                            {paymentsTruncated ? (
+                                <Alert severity="warning" variant="outlined" sx={{ mb: 2 }}>
+                                    This range holds more than 3,000 payments. Only the most recent 3,000 are shown, so the
+                                    totals above understate the period — narrow the dates to get a figure you can rely on.
+                                </Alert>
+                            ) : null}
+
+                            {paymentSummary.correctedCount ? (
+                                <Alert severity="info" variant="outlined" sx={{ ...darkAccentInfoAlertSx, mb: 2 }}>
+                                    {paymentSummary.correctedCount} payment(s) had their interest/principal split corrected after
+                                    posting. The split shown is the corrected one; the cash amount never changed.
+                                </Alert>
+                            ) : null}
+
+                            {paymentSummary.reversedCount ? (
+                                <Alert severity="warning" variant="outlined" sx={{ mb: 2 }}>
+                                    {paymentSummary.reversedCount} payment(s) worth {formatCurrency(paymentSummary.reversedAmount)} were
+                                    reversed in this range. They are listed struck through and are excluded from every figure above —
+                                    a report run before the reversal will not match this one.
+                                </Alert>
+                            ) : null}
+
+                            {paymentsLoading ? <LinearProgress sx={{ mb: 2 }} /> : null}
+
+                            <DataTable
+                                rows={paginatedPayments}
+                                columns={paymentColumns}
+                                emptyMessage={paymentsLoading
+                                    ? "Loading payments..."
+                                    : paymentMemberFilter
+                                        ? "No payments from this member in the selected range."
+                                        : "No loan payments in the selected range."}
+                            />
+
+                            <Stack
+                                direction={{ xs: "column", sm: "row" }}
+                                justifyContent="space-between"
+                                alignItems="center"
+                                spacing={1.5}
+                                sx={{ mt: 2 }}
+                            >
+                                <Stack direction="row" spacing={1.5} alignItems="center">
+                                    <TextField
+                                        select
+                                        size="small"
+                                        label="Per page"
+                                        value={paymentPageSize}
+                                        onChange={(event) => {
+                                            setPaymentPageSize(Number(event.target.value));
+                                            setPaymentPage(1);
+                                        }}
+                                        sx={{ width: 104 }}
+                                    >
+                                        {[10, 25, 50, 100].map((size) => (
+                                            <MenuItem key={size} value={size}>{size}</MenuItem>
+                                        ))}
+                                    </TextField>
+                                    <Typography variant="body2" color="text.secondary">
+                                        Showing {paymentRows.length ? (paymentPage - 1) * paymentPageSize + 1 : 0}-
+                                        {Math.min(paymentPage * paymentPageSize, paymentRows.length)} of {paymentRows.length}
+                                        {paymentSummary.activeDays ? ` · ${paymentSummary.activeDays} day(s) with collections` : ""}
+                                    </Typography>
+                                </Stack>
+                                <Pagination
+                                    page={paymentPage}
+                                    count={paymentTotalPages}
+                                    onChange={(_, value) => setPaymentPage(value)}
+                                    color="primary"
+                                    sx={darkAccentPaginationSx}
+                                />
+                            </Stack>
+                        </CardContent>
+                    </MotionCard>
+                </Stack>
             ) : null}
 
             {activeTab === "collections" && ["loan_officer", "branch_manager"].includes(role) ? (
@@ -5314,6 +6050,86 @@ export function LoansPage() {
                 onCancel={() => setPendingMoneyAction(null)}
                 onConfirm={() => void confirmMoneyAction()}
             />
+
+            <MotionModal
+                open={Boolean(reversalTarget)}
+                onClose={reversing ? undefined : () => setReversalTarget(null)}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle>Reverse Loan Payment</DialogTitle>
+                <DialogContent dividers>
+                    <Stack spacing={2}>
+                        <Alert severity="warning" variant="outlined">
+                            This takes the payment back out of the ledger and rebuilds the loan without it — the balance,
+                            the status and the repayment schedule are all restated. The payment stays on record, struck
+                            through, with a reversing journal entry against it. It cannot be undone from here.
+                        </Alert>
+
+                        {reversalTarget ? (
+                            <Stack spacing={1.1}>
+                                <Stack direction="row" justifyContent="space-between">
+                                    <Typography variant="body2" color="text.secondary">Member</Typography>
+                                    <Typography variant="body2">{reversalTarget.transaction.member_name || "Unknown member"}</Typography>
+                                </Stack>
+                                <Stack direction="row" justifyContent="space-between">
+                                    <Typography variant="body2" color="text.secondary">Loan</Typography>
+                                    <Typography variant="body2">{reversalTarget.transaction.loan_number || "Unknown loan"}</Typography>
+                                </Stack>
+                                <Stack direction="row" justifyContent="space-between">
+                                    <Typography variant="body2" color="text.secondary">Paid on</Typography>
+                                    <Typography variant="body2">{formatDate(reversalTarget.transaction.created_at)}</Typography>
+                                </Stack>
+                                <Stack direction="row" justifyContent="space-between">
+                                    <Typography variant="body2" color="text.secondary">Amount</Typography>
+                                    <Typography variant="body2" sx={{ fontWeight: 700 }}>{formatCurrency(reversalTarget.transaction.amount)}</Typography>
+                                </Stack>
+                                <Stack direction="row" justifyContent="space-between">
+                                    <Typography variant="body2" color="text.secondary">Split</Typography>
+                                    <Typography variant="body2">
+                                        Principal {formatCurrency(reversalTarget.principal)} · Interest {formatCurrency(reversalTarget.interest)}
+                                    </Typography>
+                                </Stack>
+                                <Stack direction="row" justifyContent="space-between">
+                                    <Typography variant="body2" color="text.secondary">Reference</Typography>
+                                    <Typography variant="body2">{reversalTarget.transaction.reference || "N/A"}</Typography>
+                                </Stack>
+                            </Stack>
+                        ) : null}
+
+                        {reversalTarget?.corrected ? (
+                            <Alert severity="info" variant="outlined" sx={darkAccentInfoAlertSx}>
+                                This payment had its interest split corrected. That correction is reversed with it — it
+                                restates a payment that will no longer stand.
+                            </Alert>
+                        ) : null}
+
+                        <TextField
+                            label="Reason"
+                            value={reversalReason}
+                            onChange={(event) => setReversalReason(event.target.value)}
+                            multiline
+                            minRows={2}
+                            fullWidth
+                            required
+                            disabled={reversing}
+                            placeholder="e.g. Posted against the wrong member"
+                            helperText="Recorded on the reversal and in the audit trail. At least 3 characters."
+                        />
+                    </Stack>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setReversalTarget(null)} disabled={reversing}>Cancel</Button>
+                    <Button
+                        variant="contained"
+                        color="error"
+                        onClick={() => void submitPaymentReversal()}
+                        disabled={reversing || reversalReason.trim().length < 3}
+                    >
+                        {reversing ? "Reversing..." : "Reverse Payment"}
+                    </Button>
+                </DialogActions>
+            </MotionModal>
 
             <TwoFactorStepUpDialog
                 open={stepUpOpen}

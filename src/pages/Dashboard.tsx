@@ -2036,9 +2036,24 @@ export function DashboardPage() {
         const branchWithdrawalOutflow = branchYearStatements
             .filter((entry) => entry.direction === "out" && !isShareBranchActivity(entry))
             .reduce((sum, entry) => sum + entry.amount, 0);
-        const branchOverdueOutstanding = branchLoans
+        // Two different questions, two different figures — they were one before
+        // and the arrears cards were reporting the PAR number.
+        //
+        // At-risk outstanding is the WHOLE balance of every loan carrying
+        // arrears. That is what Portfolio at Risk is defined as, so PAR keeps
+        // using it.
+        //
+        // Overdue balance is how far those borrowers are actually behind, the
+        // same figure the Loan Portfolio table prints in its Overdue Balance
+        // column. That is what a collections card should say: quoting the full
+        // balance of five loans as "exposed in arrears" overstates what is owed
+        // today roughly fourfold, and did not reconcile with the loan book.
+        const branchAtRiskOutstanding = branchLoans
             .filter(isGenuinelyOverdue)
             .reduce((sum, loan) => sum + loan.outstanding_principal + loan.accrued_interest, 0);
+        const branchOverdueBalance = branchLoans
+            .filter(isGenuinelyOverdue)
+            .reduce((sum, loan) => sum + computeLoanOverdueBalance(loan), 0);
         const today = new Date().toISOString().slice(0, 10);
         const branchInflowsToday = branchStatements
             .filter((entry) => entry.transaction_date === today && entry.direction === "in")
@@ -2081,7 +2096,8 @@ export function DashboardPage() {
             branchAccruedInterest: branchLoans.reduce((sum, loan) => sum + loan.accrued_interest, 0),
             branchOverdueLoans: branchLoans.filter(isGenuinelyOverdue).length,
             branchOverdueSchedules: branchSchedules.filter((schedule) => schedule.status === "overdue").length,
-            branchOverdueOutstanding,
+            branchAtRiskOutstanding,
+            branchOverdueBalance,
             branchInflowsToday,
             branchOutflowsToday,
             branchNetToday,
@@ -2316,8 +2332,10 @@ export function DashboardPage() {
     // imported loans with a backdated single installment and no repayment history all
     // read as "overdue" and produce a misleading 90%+ PAR that contradicts the rest of
     // the dashboard. Once default-detection flags a loan in_arrears, it counts here.
+    // PAR measures the share of the book that is at risk, so the numerator is
+    // the full balance of the loans in arrears, not the amount they are behind.
     const par30Percent = metrics.branchOutstanding > 0
-        ? (metrics.branchOverdueOutstanding / metrics.branchOutstanding) * 100
+        ? (metrics.branchAtRiskOutstanding / metrics.branchOutstanding) * 100
         : 0;
     const branchRiskStrip = [
         {
@@ -2331,7 +2349,7 @@ export function DashboardPage() {
             id: "overdue-loans",
             label: "Overdue Loans",
             value: String(metrics.branchOverdueLoans),
-            helper: `${formatCurrency(metrics.branchOverdueOutstanding)} exposed in arrears.`,
+            helper: `${formatCurrency(metrics.branchOverdueBalance)} overdue across them.`,
             tone: metrics.branchOverdueLoans >= 5 ? "red" : metrics.branchOverdueLoans >= 2 ? "yellow" : "green"
         },
         {
@@ -2364,9 +2382,9 @@ export function DashboardPage() {
         {
             id: "officer-overdue-value",
             label: "Overdue Exposure",
-            value: formatCurrency(metrics.branchOverdueOutstanding),
+            value: formatCurrency(metrics.branchOverdueBalance),
             helper: `${metrics.branchOverdueLoans} loan(s) currently in arrears.`,
-            tone: metrics.branchOverdueOutstanding > 0 ? "yellow" : "green"
+            tone: metrics.branchOverdueBalance > 0 ? "yellow" : "green"
         },
         {
             id: "officer-approvals",
@@ -3194,9 +3212,9 @@ export function DashboardPage() {
                         <Grid size={{ xs: 12, sm: 6, xl: 3 }}>
                             <BranchManagerTopCard
                                 label="Repayment Pressure"
-                                value={formatCurrencyCompact(metrics.branchOverdueOutstanding)}
-                                valueTooltip={formatCurrency(metrics.branchOverdueOutstanding)}
-                                helper="Outstanding from loans formally in arrears that need collection."
+                                value={formatCurrencyCompact(metrics.branchOverdueBalance)}
+                                valueTooltip={formatCurrency(metrics.branchOverdueBalance)}
+                                helper="How far loans in arrears are behind their schedule — the amount to collect now."
                                 status={`${overdueScheduleCount} loan(s) in arrears`}
                                 tone={overdueScheduleCount > 0 ? "negative" : "positive"}
                                 icon={<PieChartRoundedIcon fontSize="small" />}
@@ -3618,7 +3636,7 @@ export function DashboardPage() {
                                         <Stack spacing={1.1}>
                                             <Stack direction="row" justifyContent="space-between">
                                                 <Typography variant="body2" color="text.secondary">Overdue exposure</Typography>
-                                                <Typography variant="subtitle2">{formatCurrency(metrics.branchOverdueOutstanding)}</Typography>
+                                                <Typography variant="subtitle2">{formatCurrency(metrics.branchOverdueBalance)}</Typography>
                                             </Stack>
                                             <Stack direction="row" justifyContent="space-between">
                                                 <Typography variant="body2" color="text.secondary">Pending appraisals</Typography>
