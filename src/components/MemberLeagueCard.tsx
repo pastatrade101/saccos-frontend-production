@@ -449,6 +449,43 @@ export function MemberLeagueCard({ tenantId, savingsSeries = [] }: MemberLeagueC
                             </Stack>
                         ) : null}
 
+                        {tiers.length ? (
+                            <Box>
+                                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.75, letterSpacing: "0.08em", textTransform: "uppercase", fontWeight: 700 }}>
+                                    Leagues at a glance
+                                </Typography>
+                                <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", sm: "repeat(3, 1fr)", md: "repeat(4, 1fr)" }, gap: 1 }}>
+                                    {tiers.map((band) => {
+                                        const bandColor = band.color || FALLBACK_TIER_COLOR;
+                                        const isOwn = band.name === tier.name;
+                                        return (
+                                            <Box
+                                                key={band.name}
+                                                sx={{
+                                                    p: 1,
+                                                    borderRadius: 1.5,
+                                                    border: `1px solid ${alpha(bandColor, isOwn ? 0.9 : 0.35)}`,
+                                                    bgcolor: alpha(bandColor, isOwn ? 0.12 : 0.05)
+                                                }}
+                                            >
+                                                <Typography variant="caption" sx={{ fontWeight: 800, color: bandColor, letterSpacing: "0.04em", display: "block" }}>
+                                                    {band.name.toUpperCase()}
+                                                </Typography>
+                                                <Typography sx={{ fontWeight: 800, fontSize: "1.05rem", lineHeight: 1.3 }}>
+                                                    {band.member_count ?? 0}
+                                                </Typography>
+                                                <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.3 }}>
+                                                    {band.max_amount != null
+                                                        ? `${compactMoney.format(band.min_amount)} – ${compactMoney.format(band.max_amount)}`
+                                                        : `${compactMoney.format(band.min_amount)}+`}
+                                                </Typography>
+                                            </Box>
+                                        );
+                                    })}
+                                </Box>
+                            </Box>
+                        ) : null}
+
                         <Button
                             variant="text"
                             startIcon={<LeaderboardRoundedIcon />}

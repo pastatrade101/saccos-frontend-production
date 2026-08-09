@@ -1285,6 +1285,19 @@ export function MemberPortalPage() {
             income: { date: string; type: string; description: string | null; amount: number }[];
             totals: { invested: number; income: number; grand_total: number };
         } | null;
+        operations: {
+            rows: {
+                month: string;
+                opening: number;
+                income: number;
+                expenses: number;
+                net: number;
+                closing: number;
+                income_lines: { date: string | null; label: string; amount: number }[];
+                expense_lines: { date: string | null; label: string; amount: number }[];
+            }[];
+            totals: { income: number; expenses: number; balance: number };
+        } | null;
         loans: {
             rows: {
                 loan_number: string;
@@ -1307,6 +1320,9 @@ export function MemberPortalPage() {
     const [myReports, setMyReports] = useState<MyReportsData | null>(null);
     const [myReportsLoading, setMyReportsLoading] = useState(false);
     const [expandedLoanNumber, setExpandedLoanNumber] = useState<string | null>(null);
+    // Clicked month on the Operation Account card — the dialog lists the
+    // entries behind the incomes or expenditures figure.
+    const [operationsDetail, setOperationsDetail] = useState<{ title: string; lines: { date: string | null; label: string; amount: number }[]; total: number } | null>(null);
 
     // Lazy-load the member's self-scoped reports when they open My Reports.
     // The first three endpoints resolve the member from the session server-side;
@@ -1322,16 +1338,18 @@ export function MemberPortalPage() {
             api.get<{ data: MyReportsData["statement"] }>(endpoints.allReports.myStatement()),
             api.get<{ data: MyReportsData["monthly"] }>(endpoints.allReports.myMonthly()),
             api.get<{ data: NonNullable<MyReportsData["utt"]> }>(endpoints.allReports.uttInvestments()).catch(() => null),
-            api.get<{ data: NonNullable<MyReportsData["loans"]> }>(endpoints.allReports.myLoans()).catch(() => null)
+            api.get<{ data: NonNullable<MyReportsData["loans"]> }>(endpoints.allReports.myLoans()).catch(() => null),
+            api.get<{ data: NonNullable<MyReportsData["operations"]> }>(endpoints.allReports.operationsStatement()).catch(() => null)
         ])
-            .then(([positionRes, statementRes, monthlyRes, uttRes, loansRes]) => {
+            .then(([positionRes, statementRes, monthlyRes, uttRes, loansRes, operationsRes]) => {
                 if (active) {
                     setMyReports({
                         position: positionRes.data.data,
                         statement: statementRes.data.data,
                         monthly: monthlyRes.data.data,
                         utt: uttRes?.data.data ?? null,
-                        loans: loansRes?.data.data ?? null
+                        loans: loansRes?.data.data ?? null,
+                        operations: operationsRes?.data.data ?? null
                     });
                 }
             })
@@ -8927,6 +8945,119 @@ export function MemberPortalPage() {
                                 </CardContent>
                             </MotionCard>
                         ) : null}
+
+                        {myReports.operations ? (
+                            <MotionCard variant="outlined" sx={contentCardSx}>
+                                <CardContent sx={{ p: { xs: 2.25, md: 2.75 } }}>
+                                    <Typography variant="h6" sx={{ fontWeight: 800, mb: 0.5 }}>Operation Account</Typography>
+                                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                        The cooperative&apos;s running-cost fund — opening and closing balance each month. Click an amount to see the entries behind it.
+                                    </Typography>
+                                    <Grid container spacing={2} sx={{ mb: 2 }}>
+                                        {[
+                                            { label: "Current Balance", value: tzsFull(myReports.operations.totals.balance) },
+                                            { label: "Total Incomes", value: tzsFull(myReports.operations.totals.income) },
+                                            { label: "Total Expenditures", value: tzsFull(myReports.operations.totals.expenses) }
+                                        ].map((tile) => (
+                                            <Grid key={tile.label} size={{ xs: 12, sm: 4 }}>
+                                                <Card variant="outlined" sx={{ height: "100%" }}>
+                                                    <CardContent>
+                                                        <Typography variant="caption" color="text.secondary">{tile.label}</Typography>
+                                                        <Typography variant="h6" sx={{ fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{tile.value}</Typography>
+                                                    </CardContent>
+                                                </Card>
+                                            </Grid>
+                                        ))}
+                                    </Grid>
+                                    <TableContainer sx={{ maxHeight: 360 }}>
+                                        <Table size="small" stickyHeader>
+                                            <TableHead>
+                                                <TableRow>
+                                                    <TableCell>Month</TableCell>
+                                                    <TableCell align="right">Opening</TableCell>
+                                                    <TableCell align="right">Incomes</TableCell>
+                                                    <TableCell align="right">Expenditures</TableCell>
+                                                    <TableCell align="right">Closing</TableCell>
+                                                </TableRow>
+                                            </TableHead>
+                                            <TableBody>
+                                                {myReports.operations.rows.map((row) => (
+                                                    <TableRow key={row.month} hover>
+                                                        <TableCell sx={{ whiteSpace: "nowrap" }}>{monthName(row.month)}</TableCell>
+                                                        <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums" }}>{tzsFull(row.opening)}</TableCell>
+                                                        <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums" }}>
+                                                            {row.income ? (
+                                                                <Typography
+                                                                    component="button"
+                                                                    variant="body2"
+                                                                    onClick={() => setOperationsDetail({ title: `${monthName(row.month)} — Incomes`, lines: row.income_lines, total: row.income })}
+                                                                    sx={{ fontVariantNumeric: "tabular-nums", cursor: "pointer", border: 0, background: "none", p: 0, color: "primary.main", textDecoration: "underline", fontWeight: 600 }}
+                                                                >
+                                                                    {tzsFull(row.income)}
+                                                                </Typography>
+                                                            ) : tzsFull(0)}
+                                                        </TableCell>
+                                                        <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums" }}>
+                                                            {row.expenses ? (
+                                                                <Typography
+                                                                    component="button"
+                                                                    variant="body2"
+                                                                    onClick={() => setOperationsDetail({ title: `${monthName(row.month)} — Expenditures`, lines: row.expense_lines, total: row.expenses })}
+                                                                    sx={{ fontVariantNumeric: "tabular-nums", cursor: "pointer", border: 0, background: "none", p: 0, color: "error.main", textDecoration: "underline", fontWeight: 600 }}
+                                                                >
+                                                                    ({tzsFull(row.expenses)})
+                                                                </Typography>
+                                                            ) : tzsFull(0)}
+                                                        </TableCell>
+                                                        <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>{tzsFull(row.closing)}</TableCell>
+                                                    </TableRow>
+                                                ))}
+                                                <TableRow>
+                                                    <TableCell sx={{ fontWeight: 800 }}>TOTAL</TableCell>
+                                                    <TableCell />
+                                                    <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums", fontWeight: 800 }}>{tzsFull(myReports.operations.totals.income)}</TableCell>
+                                                    <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums", fontWeight: 800, color: "error.main" }}>({tzsFull(myReports.operations.totals.expenses)})</TableCell>
+                                                    <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums", fontWeight: 800 }}>{tzsFull(myReports.operations.totals.balance)}</TableCell>
+                                                </TableRow>
+                                            </TableBody>
+                                        </Table>
+                                    </TableContainer>
+                                </CardContent>
+                            </MotionCard>
+                        ) : null}
+
+                        <Dialog open={Boolean(operationsDetail)} onClose={() => setOperationsDetail(null)} maxWidth="sm" fullWidth>
+                            <DialogTitle sx={{ fontWeight: 800 }}>{operationsDetail?.title}</DialogTitle>
+                            <DialogContent>
+                                <TableContainer sx={{ maxHeight: 420, border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
+                                    <Table size="small" stickyHeader>
+                                        <TableHead>
+                                            <TableRow>
+                                                <TableCell>Date</TableCell>
+                                                <TableCell>Description</TableCell>
+                                                <TableCell align="right">Amount</TableCell>
+                                            </TableRow>
+                                        </TableHead>
+                                        <TableBody>
+                                            {(operationsDetail?.lines || []).map((line, index) => (
+                                                <TableRow key={`${line.label}-${index}`} hover>
+                                                    <TableCell sx={{ whiteSpace: "nowrap" }}>{line.date ? formatDate(line.date) : "—"}</TableCell>
+                                                    <TableCell>{line.label}</TableCell>
+                                                    <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums" }}>{tzsFull(line.amount)}</TableCell>
+                                                </TableRow>
+                                            ))}
+                                            <TableRow>
+                                                <TableCell colSpan={2} sx={{ fontWeight: 800 }}>TOTAL</TableCell>
+                                                <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums", fontWeight: 800 }}>{tzsFull(operationsDetail?.total || 0)}</TableCell>
+                                            </TableRow>
+                                        </TableBody>
+                                    </Table>
+                                </TableContainer>
+                            </DialogContent>
+                            <DialogActions sx={{ px: 3, pb: 2 }}>
+                                <Button color="inherit" onClick={() => setOperationsDetail(null)}>Close</Button>
+                            </DialogActions>
+                        </Dialog>
                     </>
                 ) : (
                     <Typography variant="body2" color="text.secondary">

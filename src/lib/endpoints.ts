@@ -6,6 +6,7 @@ import type {
     Loan,
     LoanSchedule,
     LoanTransaction,
+    LoanTransactionWithContext,
     Member,
     StatementRow,
     Tenant,
@@ -372,6 +373,10 @@ const routeMap = {
         loans: "/all-reports/loans",
         loanIncome: "/all-reports/loan-income",
         operationsFund: "/all-reports/operations-fund",
+        fundsPosition: "/all-reports/funds-position",
+        fundsPositionFigures: "/all-reports/funds-position/figures",
+        operationsStatement: "/all-reports/operations-statement",
+        gawioSummary: "/all-reports/gawio-summary",
         myStatement: "/all-reports/my-statement",
         myMonthly: "/all-reports/my-monthly",
         myPosition: "/all-reports/my-position",
@@ -569,6 +574,7 @@ export const endpoints = {
         updateBankMeta: (transactionId: string) => `/transactions/${transactionId}/bank-meta`,
         reverseTransaction: (transactionId: string) => `/transactions/${transactionId}/reverse`,
         correctLoanInterest: (transactionId: string) => `/loan/transactions/${transactionId}/correct-interest`,
+        reverseLoanRepayment: (transactionId: string) => `/loan/transactions/${transactionId}/reverse`,
         correctTransactionDate: (transactionId: string) => `/transactions/${transactionId}/value-date`,
         nplReclassStatus: () => routeMap.finance.nplReclassStatus,
         nplReclassRun: () => routeMap.finance.nplReclassRun
@@ -703,6 +709,10 @@ export const endpoints = {
         loans: () => routeMap.allReports.loans,
         loanIncome: () => routeMap.allReports.loanIncome,
         operationsFund: () => routeMap.allReports.operationsFund,
+        fundsPosition: () => routeMap.allReports.fundsPosition,
+        fundsPositionFigures: () => routeMap.allReports.fundsPositionFigures,
+        operationsStatement: () => routeMap.allReports.operationsStatement,
+        gawioSummary: () => routeMap.allReports.gawioSummary,
         myStatement: () => routeMap.allReports.myStatement,
         myMonthly: () => routeMap.allReports.myMonthly,
         myPosition: () => routeMap.allReports.myPosition,
@@ -1268,6 +1278,7 @@ export type BranchFundPoolResponse = ApiEnvelope<BranchFundPool>;
 export type LoanCapacityDashboardResponse = ApiEnvelope<LoanCapacityDashboard>;
 export type LoanSchedulesResponse = ApiEnvelope<LoanSchedule[]>;
 export type LoanTransactionsResponse = ApiEnvelope<LoanTransaction[]>;
+export type LoanTransactionsWithContextResponse = ApiEnvelope<LoanTransactionWithContext[]>;
 export type GuarantorRequestsResponse = ApiEnvelope<GuarantorRequestItem[]>;
 export type TellerSessionsResponse = ApiEnvelope<TellerSession[]>;
 export type TellerSessionResponse = ApiEnvelope<TellerSession | null>;

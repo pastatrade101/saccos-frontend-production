@@ -44,9 +44,10 @@ import type { Member } from "../types/api";
 import { downloadFile } from "../utils/downloadFile";
 import { formatCurrency, formatDate } from "../utils/format";
 
-type ReportKey = "contributions" | "monthly" | "dividends" | "positions" | "member-statement" | "utt" | "performance-targets" | "commitments" | "summary-sorted" | "loans" | "loan-income" | "operations";
+type ReportKey = "funds-position" | "contributions" | "monthly" | "dividends" | "positions" | "member-statement" | "utt" | "performance-targets" | "commitments" | "summary-sorted" | "loans" | "loan-income" | "operations" | "operations-statement" | "gawio";
 
 const REPORTS: { key: ReportKey; label: string; description: string }[] = [
+    { key: "funds-position", label: "Summary Report", description: "The committee's SUMMARY REPORT sheet: bank, UTT and NMB-share investments, loans, dividends and charges — total amount available." },
     { key: "contributions", label: "Contributions Summary", description: "Per member: savings, shares and social contributions with withdrawals netted." },
     { key: "monthly", label: "Monthly Contributions", description: "Member-by-month contribution matrix for the selected period." },
     { key: "dividends", label: "Dividend Distributions", description: "Every distribution: date, source, pool and member allocations." },
@@ -58,7 +59,9 @@ const REPORTS: { key: ReportKey; label: string; description: string }[] = [
     { key: "summary-sorted", label: "Sorted Summary", description: "The full member schedule: entry fee, shares, monthly plan, needed to date, surplus/deficit and UTT flag — ranked by actual." },
     { key: "loans", label: "Loans (MIKOPO)", description: "Every loan: amount, interest, total due, repayment trail with running balance, guarantors, collateral and status." },
     { key: "loan-income", label: "Loan Income Reconciliation", description: "Interest the SACCO earned in a period, traced to the repayment that produced it — for checking against the monthly GAWIO sheet." },
-    { key: "operations", label: "Operations Fund", description: "Running-cost ledger: member operations fees by month, other income, expenses and the fund's net." }
+    { key: "operations", label: "Operations Fund", description: "Running-cost ledger: member operations fees by month, other income, expenses and the fund's net." },
+    { key: "operations-statement", label: "Operation Account (Monthly)", description: "Operation account statement: opening balance, incomes, expenditures and closing balance for every month. Visible to members." },
+    { key: "gawio", label: "Gawio Summary (Monthly)", description: "The monthly GAWIO sheet: every loan dividend numbered in sequence, the month's UTT dividend and total gawio." }
 ];
 
 interface ContributionsSummaryData {
@@ -261,6 +264,61 @@ interface UttInvestmentsData {
     position: { total_cost: number; current_market_value: number } | null;
     totals: { invested: number; income: number; grand_total: number };
     funding_sources: { source: string; amount: number }[];
+}
+
+interface OperationsStatementLine {
+    date: string | null;
+    label: string;
+    amount: number;
+}
+
+interface OperationsStatementData {
+    rows: {
+        month: string;
+        opening: number;
+        income: number;
+        expenses: number;
+        net: number;
+        closing: number;
+        income_lines: OperationsStatementLine[];
+        expense_lines: OperationsStatementLine[];
+    }[];
+    totals: { income: number; expenses: number; balance: number };
+}
+
+interface GawioSummaryData {
+    months: {
+        month: string;
+        loan_lines: { sequence: number; member_name: string; date: string; amount: number }[];
+        loan_total: number;
+        utt_lines: { label: string; date: string; amount: number }[];
+        utt_total: number;
+        total: number;
+    }[];
+    totals: { loan: number; utt: number; gawio: number };
+}
+
+interface FundsPositionData {
+    figures: { bank_balance: number | null; updated_at: string | null };
+    rows: {
+        bank_balance: number;
+        utt_invested: number;
+        shares_invested: number;
+        loans_outstanding: number;
+        interest_expected: number;
+        utt_dividends: number;
+        loan_interest_collected: number;
+        operation_account: number;
+        balance_charges: number;
+    };
+    total_available: number;
+}
+
+const FULL_MONTHS = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
+
+function fullMonthLabel(month: string) {
+    const [year, mm] = month.split("-");
+    return `${FULL_MONTHS[Number(mm) - 1]} ${year}`;
 }
 
 function exportCsv(filename: string, headers: string[], rows: (string | number | null)[][]) {
@@ -592,6 +650,12 @@ export function AllReportsPage() {
                 response = await api.get<{ data: LoanIncomeData }>(endpoints.allReports.loanIncome(), { params });
             } else if (activeKey === "operations") {
                 response = await api.get<{ data: OperationsFundData }>(endpoints.allReports.operationsFund());
+            } else if (activeKey === "funds-position") {
+                response = await api.get<{ data: FundsPositionData }>(endpoints.allReports.fundsPosition());
+            } else if (activeKey === "operations-statement") {
+                response = await api.get<{ data: OperationsStatementData }>(endpoints.allReports.operationsStatement());
+            } else if (activeKey === "gawio") {
+                response = await api.get<{ data: GawioSummaryData }>(endpoints.allReports.gawioSummary());
             } else {
                 response = await api.get<{ data: UttInvestmentsData }>(endpoints.allReports.uttInvestments());
             }
@@ -617,6 +681,50 @@ export function AllReportsPage() {
             .then((response) => setMembers(response.data.data || []))
             .catch(() => setMembers([]));
     }, [activeKey, members.length]);
+
+    // Clicked month on the Operation Account statement — the dialog lists the
+    // entries behind the incomes or expenditures figure.
+    const [opDetail, setOpDetail] = useState<{ title: string; lines: OperationsStatementLine[]; total: number } | null>(null);
+
+    // Treasurer-entered NMB bank balance — the only summary figure the system
+    // can't derive. A blank field clears the stored figure.
+    const [figuresOpen, setFiguresOpen] = useState(false);
+    const [figuresSaving, setFiguresSaving] = useState(false);
+    const [figuresForm, setFiguresForm] = useState({ bank: "" });
+
+    const openFiguresDialog = (figures: FundsPositionData["figures"]) => {
+        setFiguresForm({
+            bank: figures.bank_balance == null ? "" : String(figures.bank_balance)
+        });
+        setFiguresOpen(true);
+    };
+
+    const submitFigures = async () => {
+        const parse = (raw: string, label: string): number | null | undefined => {
+            if (!raw.trim()) return null;
+            const value = Number(raw.replace(/,/g, ""));
+            if (!Number.isFinite(value) || value < 0) {
+                pushToast({ type: "error", title: "Invalid amount", message: `${label} must be a positive amount.` });
+                return undefined;
+            }
+            return Math.round(value * 100) / 100;
+        };
+        const bank = parse(figuresForm.bank, "Bank balance");
+        if (bank === undefined) return;
+        setFiguresSaving(true);
+        try {
+            await api.patch(endpoints.allReports.fundsPositionFigures(), {
+                funds_bank_balance: bank
+            });
+            pushToast({ type: "success", title: "Figures saved", message: "The funds position has been updated." });
+            setFiguresOpen(false);
+            await load();
+        } catch (saveError) {
+            pushToast({ type: "error", title: "Could not save", message: getApiErrorMessage(saveError) });
+        } finally {
+            setFiguresSaving(false);
+        }
+    };
 
     // Restating a posted interest figure. The dialog carries the recorded value
     // and what the register rule would give, so the officer is choosing between
@@ -659,6 +767,50 @@ export function AllReportsPage() {
 
     const getExportData = (): { name: string; title: string; headers: string[]; rows: (string | number | null)[][] } | null => {
         if (!data) return null;
+        if (activeKey === "funds-position") {
+            const typed = data as FundsPositionData;
+            return {
+                name: "summary-report",
+                title: "SUMMARY REPORT",
+                headers: ["ITEM", "AMOUNT (TZS)"],
+                rows: [
+                    ["BANK - NMB", typed.rows.bank_balance],
+                    ["TOTAL INVESTED UTT", typed.rows.utt_invested],
+                    ["TOTAL AMOUNT INVESTED WITH NMB SHARES", typed.rows.shares_invested],
+                    ["TOTAL LOANS", typed.rows.loans_outstanding],
+                    ["INTEREST EXPECTED -LOAN", typed.rows.interest_expected],
+                    ["TOTAL UTT DIVIDENTS", typed.rows.utt_dividends],
+                    ["TOTAL LOANS DIVIDENTS", typed.rows.loan_interest_collected],
+                    ["OPERATION ACCOUNT", typed.rows.operation_account],
+                    ["BALANCE CHARGES", -typed.rows.balance_charges],
+                    ["TOTAL AMOUNT AVAILABLE", typed.total_available]
+                ]
+            };
+        }
+        if (activeKey === "gawio") {
+            const typed = data as GawioSummaryData;
+            const rows: (string | number | null)[][] = [];
+            typed.months.forEach((entry) => {
+                rows.push([`DIVIDENDS ${fullMonthLabel(entry.month)}`, null]);
+                entry.loan_lines.forEach((line) => rows.push([`DIVIDEND ${line.sequence} - ${line.member_name} ${line.date}`, line.amount]));
+                rows.push(["TOTAL LOAN DIVIDEND", entry.loan_total]);
+                entry.utt_lines.forEach((line) => rows.push([`${line.label} - ${line.date}`, line.amount]));
+                rows.push([`TOTAL GAWIO FOR ${fullMonthLabel(entry.month)}`, entry.total]);
+            });
+            return { name: "gawio-summary", title: "GAWIO SUMMARY", headers: ["ITEM", "AMOUNT"], rows };
+        }
+        if (activeKey === "operations-statement") {
+            const typed = data as OperationsStatementData;
+            return {
+                name: "operation-account-monthly",
+                title: "Operation Account — Monthly Statement",
+                headers: ["Month", "Opening Balance", "Incomes", "Expenditures", "Closing Balance"],
+                rows: [
+                    ...typed.rows.map((row) => [row.month, row.opening, row.income, row.expenses, row.closing] as (string | number | null)[]),
+                    ["TOTAL", null, typed.totals.income, typed.totals.expenses, typed.totals.balance]
+                ]
+            };
+        }
         if (activeKey === "contributions") {
             const typed = data as ContributionsSummaryData;
             return {
@@ -1836,6 +1988,252 @@ export function AllReportsPage() {
             );
         }
 
+        if (activeKey === "operations-statement") {
+            const typed = data as OperationsStatementData;
+            return (
+                <Stack spacing={2}>
+                    <StatTiles items={[
+                        { label: "Current balance", value: formatCurrency(typed.totals.balance) },
+                        { label: "Total incomes", value: formatCurrency(typed.totals.income) },
+                        { label: "Total expenditures", value: formatCurrency(typed.totals.expenses) }
+                    ]} />
+                    <TableContainer sx={{ maxHeight: 560, borderRadius: 1.5, border: `1px solid ${theme.palette.divider}`, maxWidth: 900 }}>
+                        <Table size="small" stickyHeader sx={zebraSx}>
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell sx={headCellSx}>Month</TableCell>
+                                    <TableCell align="right" sx={headCellSx}>Opening Balance</TableCell>
+                                    <TableCell align="right" sx={headCellSx}>Incomes</TableCell>
+                                    <TableCell align="right" sx={headCellSx}>Expenditures</TableCell>
+                                    <TableCell align="right" sx={headCellSx}>Closing Balance</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {typed.rows.map((row) => (
+                                    <TableRow key={row.month}>
+                                        <TableCell sx={{ whiteSpace: "nowrap", fontWeight: 600 }}>{monthLabel(row.month)}</TableCell>
+                                        <TableCell align="right"><Money value={row.opening} /></TableCell>
+                                        <TableCell align="right">
+                                            {row.income ? (
+                                                <Typography
+                                                    component="button"
+                                                    variant="body2"
+                                                    onClick={() => setOpDetail({ title: `${monthLabel(row.month)} — Incomes`, lines: row.income_lines, total: row.income })}
+                                                    sx={{ fontVariantNumeric: "tabular-nums", cursor: "pointer", border: 0, background: "none", p: 0, color: "primary.main", textDecoration: "underline", fontWeight: 600 }}
+                                                >
+                                                    {formatCurrency(row.income)}
+                                                </Typography>
+                                            ) : <Money value={0} />}
+                                        </TableCell>
+                                        <TableCell align="right">
+                                            {row.expenses ? (
+                                                <Typography
+                                                    component="button"
+                                                    variant="body2"
+                                                    onClick={() => setOpDetail({ title: `${monthLabel(row.month)} — Expenditures`, lines: row.expense_lines, total: row.expenses })}
+                                                    sx={{ fontVariantNumeric: "tabular-nums", cursor: "pointer", border: 0, background: "none", p: 0, color: "error.main", textDecoration: "underline", fontWeight: 600 }}
+                                                >
+                                                    ({formatCurrency(row.expenses)})
+                                                </Typography>
+                                            ) : <Money value={0} />}
+                                        </TableCell>
+                                        <TableCell align="right"><Money value={row.closing} bold /></TableCell>
+                                    </TableRow>
+                                ))}
+                                <TableRow sx={totalRowSx}>
+                                    <TableCell><Typography variant="body2" sx={{ fontWeight: 800 }}>TOTAL</Typography></TableCell>
+                                    <TableCell />
+                                    <TableCell align="right"><Money value={typed.totals.income} bold /></TableCell>
+                                    <TableCell align="right">
+                                        <Typography component="span" variant="body2" sx={{ fontVariantNumeric: "tabular-nums", fontWeight: 700, color: "error.main" }}>
+                                            ({formatCurrency(typed.totals.expenses)})
+                                        </Typography>
+                                    </TableCell>
+                                    <TableCell align="right"><Money value={typed.totals.balance} bold /></TableCell>
+                                </TableRow>
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                </Stack>
+            );
+        }
+
+        if (activeKey === "gawio") {
+            const typed = data as GawioSummaryData;
+            // The treasurer's GAWIO sheet palette, fixed in both themes.
+            const GAWIO = {
+                header: "#FBDCC9",
+                line: "#B7E1A1",
+                loanTotal: "#92D050",
+                utt: "#FFFF00",
+                total: "#8FAADC"
+            };
+            const amountText = (value: number) => Math.round(value).toLocaleString("en-US");
+            const cellSx = {
+                border: "2px solid #000",
+                color: "#000",
+                fontWeight: 700,
+                fontSize: { xs: "0.85rem", sm: "1rem" },
+                py: 1,
+                fontVariantNumeric: "tabular-nums" as const
+            };
+            return (
+                <Stack spacing={3}>
+                    {typed.months.map((entry) => (
+                        <TableContainer key={entry.month} sx={{ maxWidth: 900, bgcolor: "#fff", border: "2px solid #000", borderRadius: 0 }}>
+                            <Table size="small" sx={{ borderCollapse: "collapse", "& td": cellSx }}>
+                                <TableBody>
+                                    <TableRow>
+                                        <TableCell sx={{ bgcolor: GAWIO.header, fontWeight: 800 }}>DIVIDENDS {fullMonthLabel(entry.month)}</TableCell>
+                                        <TableCell align="right" sx={{ bgcolor: GAWIO.header, fontWeight: 800, width: "26%" }}>AMOUNT</TableCell>
+                                    </TableRow>
+                                    {entry.loan_lines.map((line) => (
+                                        <TableRow key={line.sequence}>
+                                            <TableCell sx={{ bgcolor: GAWIO.line }}>
+                                                DIVIDEND {line.sequence} — {line.member_name} · {formatDate(line.date)}
+                                            </TableCell>
+                                            <TableCell align="right" sx={{ bgcolor: GAWIO.line }}>{amountText(line.amount)}</TableCell>
+                                        </TableRow>
+                                    ))}
+                                    <TableRow>
+                                        <TableCell sx={{ bgcolor: GAWIO.loanTotal, fontWeight: 800 }}>TOTAL LOAN DIVIDEND</TableCell>
+                                        <TableCell align="right" sx={{ bgcolor: GAWIO.loanTotal, fontWeight: 800 }}>{amountText(entry.loan_total)}</TableCell>
+                                    </TableRow>
+                                    {entry.utt_lines.map((line, index) => (
+                                        <TableRow key={`${line.date}-${index}`}>
+                                            <TableCell sx={{ bgcolor: GAWIO.utt }}>
+                                                {line.label} · {formatDate(line.date)}
+                                            </TableCell>
+                                            <TableCell align="right" sx={{ bgcolor: GAWIO.utt }}>{amountText(line.amount)}</TableCell>
+                                        </TableRow>
+                                    ))}
+                                    <TableRow>
+                                        <TableCell sx={{ bgcolor: GAWIO.total, fontWeight: 800 }}>TOTAL GAWIO FOR {fullMonthLabel(entry.month)}</TableCell>
+                                        <TableCell align="right" sx={{ bgcolor: GAWIO.total, fontWeight: 800 }}>{amountText(entry.total)}</TableCell>
+                                    </TableRow>
+                                </TableBody>
+                            </Table>
+                        </TableContainer>
+                    ))}
+                    <Typography variant="caption" color="text.secondary">
+                        All-time totals — loan dividends {formatCurrency(typed.totals.loan)}, UTT dividends {formatCurrency(typed.totals.utt)}, gawio {formatCurrency(typed.totals.gawio)}. Months follow the actual payment date, so figures can differ from hand-compiled sheets that cut off mid-month.
+                    </Typography>
+                </Stack>
+            );
+        }
+
+        if (activeKey === "funds-position") {
+            const typed = data as FundsPositionData;
+            // The committee's printed Excel sheet, reproduced exactly — fixed
+            // palette and black grid in both themes, blank cells where the
+            // sheet leaves blanks.
+            const SHEET = {
+                violet: "#EAC6EA",
+                peach: "#FBDCC9",
+                yellow: "#FFFF00",
+                green: "#B7E1A1",
+                orange: "#E8926F",
+                blue: "#7ED0F0"
+            };
+            const amountText = (value: number) => (value ? Math.round(value).toLocaleString("en-US") : "");
+            const missingFigures = typed.figures.bank_balance == null;
+            return (
+                <Stack spacing={2}>
+                    <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }} justifyContent="space-between">
+                        <Typography variant="body2" color="text.secondary">
+                            {typed.figures.updated_at
+                                ? `Bank figures last updated ${formatDate(typed.figures.updated_at)}.`
+                                : "Bank figures have not been entered yet."}
+                        </Typography>
+                        {canManageOperations ? (
+                            <Button variant="outlined" size="small" onClick={() => openFiguresDialog(typed.figures)}>
+                                Edit bank figures
+                            </Button>
+                        ) : null}
+                    </Stack>
+                    {missingFigures && canManageOperations ? (
+                        <Alert severity="info" variant="outlined">
+                            Enter the NMB bank balance so the total reflects the full position.
+                        </Alert>
+                    ) : null}
+                    <Typography sx={{ fontWeight: 800, letterSpacing: "0.04em", fontSize: "1.1rem" }}>
+                        SUMMARY REPORT
+                    </Typography>
+                    <TableContainer sx={{ maxWidth: 900, bgcolor: "#fff", border: "2px solid #000", borderRadius: 0 }}>
+                        <Table
+                            size="small"
+                            sx={{
+                                borderCollapse: "collapse",
+                                "& td": {
+                                    border: "2px solid #000",
+                                    color: "#000",
+                                    fontWeight: 700,
+                                    fontSize: { xs: "0.85rem", sm: "1rem" },
+                                    py: 1.2,
+                                    whiteSpace: "nowrap",
+                                    fontVariantNumeric: "tabular-nums"
+                                }
+                            }}
+                        >
+                            <TableBody>
+                                <TableRow>
+                                    <TableCell colSpan={2} sx={{ bgcolor: SHEET.violet }}>BANK - NMB</TableCell>
+                                    <TableCell align="right" sx={{ bgcolor: SHEET.violet, width: "30%" }}>{amountText(typed.rows.bank_balance)}</TableCell>
+                                </TableRow>
+                                <TableRow>
+                                    <TableCell colSpan={2} sx={{ bgcolor: SHEET.peach, fontWeight: 800 }}>TOTAL INVESTED UTT</TableCell>
+                                    <TableCell align="right" sx={{ bgcolor: SHEET.peach, fontWeight: 800 }}>{amountText(typed.rows.utt_invested)}</TableCell>
+                                </TableRow>
+                                <TableRow>
+                                    <TableCell colSpan={2} sx={{ bgcolor: SHEET.peach, fontWeight: 800, whiteSpace: "normal" }}>TOTAL AMOUNT INVESTED WITH NMB SHARES</TableCell>
+                                    <TableCell align="right" sx={{ bgcolor: SHEET.peach, fontWeight: 800 }}>{amountText(typed.rows.shares_invested)}</TableCell>
+                                </TableRow>
+                                <TableRow>
+                                    <TableCell colSpan={2} sx={{ bgcolor: SHEET.peach }}>TOTAL LOANS</TableCell>
+                                    <TableCell align="right" sx={{ bgcolor: SHEET.peach }}>{amountText(typed.rows.loans_outstanding)}</TableCell>
+                                </TableRow>
+                                <TableRow>
+                                    <TableCell sx={{ bgcolor: SHEET.yellow, width: "30%" }}>INTEREST EXPECTED</TableCell>
+                                    <TableCell sx={{ bgcolor: SHEET.yellow }}>-LOAN</TableCell>
+                                    <TableCell align="right" sx={{ bgcolor: SHEET.yellow }}>{amountText(typed.rows.interest_expected)}</TableCell>
+                                </TableRow>
+                                <TableRow>
+                                    <TableCell colSpan={2} sx={{ bgcolor: SHEET.green, py: 1.4 }} />
+                                    <TableCell sx={{ bgcolor: SHEET.green }} />
+                                </TableRow>
+                                <TableRow>
+                                    <TableCell sx={{ bgcolor: SHEET.peach }}>TOTAL UTT DIVIDENTS</TableCell>
+                                    <TableCell sx={{ bgcolor: SHEET.peach }} />
+                                    <TableCell align="right" sx={{ bgcolor: SHEET.peach }}>{amountText(typed.rows.utt_dividends)}</TableCell>
+                                </TableRow>
+                                <TableRow>
+                                    <TableCell colSpan={2} sx={{ bgcolor: SHEET.peach }}>TOTAL LOANS DIVIDENTS</TableCell>
+                                    <TableCell align="right" sx={{ bgcolor: SHEET.peach }}>{amountText(typed.rows.loan_interest_collected)}</TableCell>
+                                </TableRow>
+                                <TableRow>
+                                    <TableCell sx={{ bgcolor: SHEET.orange }}>OPERATION ACCOUNT</TableCell>
+                                    <TableCell sx={{ bgcolor: SHEET.peach }} />
+                                    <TableCell align="right" sx={{ bgcolor: SHEET.peach }}>{amountText(typed.rows.operation_account)}</TableCell>
+                                </TableRow>
+                                <TableRow>
+                                    <TableCell colSpan={2} sx={{ bgcolor: SHEET.peach }}>BALANCE CHARGES</TableCell>
+                                    <TableCell align="right" sx={{ bgcolor: SHEET.peach }}>
+                                        {typed.rows.balance_charges ? `(${amountText(typed.rows.balance_charges)})` : ""}
+                                    </TableCell>
+                                </TableRow>
+                                <TableRow>
+                                    <TableCell colSpan={2} sx={{ bgcolor: "#fff", fontWeight: 800, py: 1.6 }}>TOTAL AMOUNT AVAILABLE</TableCell>
+                                    <TableCell align="right" sx={{ bgcolor: SHEET.blue, fontWeight: 800, fontSize: { xs: "0.95rem", sm: "1.1rem" } }}>
+                                        {Math.round(typed.total_available).toLocaleString("en-US")}
+                                    </TableCell>
+                                </TableRow>
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                </Stack>
+            );
+        }
+
         const typed = data as UttInvestmentsData;
         return (
             <Stack spacing={2}>
@@ -2029,6 +2427,62 @@ export function AllReportsPage() {
                     </Stack>
                 </CardContent>
             </Card>
+
+            <Dialog open={Boolean(opDetail)} onClose={() => setOpDetail(null)} maxWidth="sm" fullWidth>
+                <DialogTitle sx={{ fontWeight: 800 }}>{opDetail?.title}</DialogTitle>
+                <DialogContent>
+                    <TableContainer sx={{ maxHeight: 420, border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
+                        <Table size="small" stickyHeader>
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell>Date</TableCell>
+                                    <TableCell>Description</TableCell>
+                                    <TableCell align="right">Amount</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {(opDetail?.lines || []).map((line, index) => (
+                                    <TableRow key={`${line.label}-${index}`} hover>
+                                        <TableCell sx={{ whiteSpace: "nowrap" }}>{line.date ? formatDate(line.date) : "—"}</TableCell>
+                                        <TableCell>{line.label}</TableCell>
+                                        <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums" }}>{formatCurrency(line.amount)}</TableCell>
+                                    </TableRow>
+                                ))}
+                                <TableRow>
+                                    <TableCell colSpan={2} sx={{ fontWeight: 800 }}>TOTAL</TableCell>
+                                    <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums", fontWeight: 800 }}>{formatCurrency(opDetail?.total || 0)}</TableCell>
+                                </TableRow>
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                </DialogContent>
+                <DialogActions sx={{ px: 3, pb: 2 }}>
+                    <Button color="inherit" onClick={() => setOpDetail(null)}>Close</Button>
+                </DialogActions>
+            </Dialog>
+
+            <Dialog open={figuresOpen} onClose={() => !figuresSaving && setFiguresOpen(false)} maxWidth="xs" fullWidth>
+                <DialogTitle sx={{ fontWeight: 800 }}>Bank figures</DialogTitle>
+                <DialogContent>
+                    <Stack spacing={2} sx={{ mt: 0.5 }}>
+                        <Typography variant="body2" color="text.secondary">
+                            The NMB balance comes from the bank statement — the other rows are computed by the system. Leave blank to clear.
+                        </Typography>
+                        <TextField
+                            label="Bank — NMB balance (TZS)"
+                            size="small"
+                            value={figuresForm.bank}
+                            onChange={(event) => setFiguresForm((current) => ({ ...current, bank: event.target.value }))}
+                        />
+                    </Stack>
+                </DialogContent>
+                <DialogActions sx={{ px: 3, pb: 2 }}>
+                    <Button color="inherit" onClick={() => setFiguresOpen(false)} disabled={figuresSaving}>Cancel</Button>
+                    <Button variant="contained" onClick={() => void submitFigures()} disabled={figuresSaving}>
+                        {figuresSaving ? "Saving…" : "Save figures"}
+                    </Button>
+                </DialogActions>
+            </Dialog>
 
             <Dialog open={transferOpen} onClose={() => !transferSubmitting && setTransferOpen(false)} maxWidth="sm" fullWidth>
                 <DialogTitle sx={{ fontWeight: 800 }}>Transfer from Savings → Operations Fund</DialogTitle>
