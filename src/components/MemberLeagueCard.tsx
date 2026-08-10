@@ -18,13 +18,14 @@ import {
     TableRow,
     Typography
 } from "@mui/material";
-import { alpha, useTheme } from "@mui/material/styles";
+import { alpha, darken, lighten, useTheme } from "@mui/material/styles";
 import ArrowUpwardRoundedIcon from "@mui/icons-material/ArrowUpwardRounded";
 import ArrowDownwardRoundedIcon from "@mui/icons-material/ArrowDownwardRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 import EmojiEventsRoundedIcon from "@mui/icons-material/EmojiEventsRounded";
 import LeaderboardRoundedIcon from "@mui/icons-material/LeaderboardRounded";
+import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
 import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
 import TrendingDownRoundedIcon from "@mui/icons-material/TrendingDownRounded";
 import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
@@ -458,14 +459,23 @@ export function MemberLeagueCard({ tenantId, savingsSeries = [] }: MemberLeagueC
                                     {tiers.map((band) => {
                                         const bandColor = band.color || FALLBACK_TIER_COLOR;
                                         const isOwn = band.name === tier.name;
+                                        // Saphire and Diamond are pale enough that a label in the raw
+                                        // band colour is barely readable on the card tint, so the
+                                        // marker keeps the hue but is pushed to a legible shade.
+                                        const markerColor = isDark ? lighten(bandColor, 0.35) : darken(bandColor, 0.35);
                                         return (
                                             <Box
                                                 key={band.name}
+                                                // The member's own band used to differ only by a slightly
+                                                // stronger tint, which nobody could pick out of twelve
+                                                // coloured cards — so it now carries a ring and says so.
+                                                aria-current={isOwn ? "true" : undefined}
                                                 sx={{
                                                     p: 1,
                                                     borderRadius: 1.5,
-                                                    border: `1px solid ${alpha(bandColor, isOwn ? 0.9 : 0.35)}`,
-                                                    bgcolor: alpha(bandColor, isOwn ? 0.12 : 0.05)
+                                                    border: `${isOwn ? 2 : 1}px solid ${alpha(bandColor, isOwn ? 1 : 0.35)}`,
+                                                    bgcolor: alpha(bandColor, isOwn ? 0.18 : 0.05),
+                                                    boxShadow: isOwn ? `0 0 0 3px ${alpha(bandColor, 0.18)}` : "none"
                                                 }}
                                             >
                                                 <Typography variant="caption" sx={{ fontWeight: 800, color: bandColor, letterSpacing: "0.04em", display: "block" }}>
@@ -479,6 +489,17 @@ export function MemberLeagueCard({ tenantId, savingsSeries = [] }: MemberLeagueC
                                                         ? `${compactMoney.format(band.min_amount)} – ${compactMoney.format(band.max_amount)}`
                                                         : `${compactMoney.format(band.min_amount)}+`}
                                                 </Typography>
+                                                {isOwn ? (
+                                                    <Stack direction="row" spacing={0.35} alignItems="center" sx={{ mt: 0.6 }}>
+                                                        <PlaceRoundedIcon sx={{ fontSize: 14, color: markerColor }} />
+                                                        <Typography
+                                                            variant="caption"
+                                                            sx={{ fontWeight: 800, color: markerColor, lineHeight: 1, letterSpacing: "0.02em" }}
+                                                        >
+                                                            You&apos;re here
+                                                        </Typography>
+                                                    </Stack>
+                                                ) : null}
                                             </Box>
                                         );
                                     })}
