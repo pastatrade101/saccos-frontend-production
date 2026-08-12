@@ -11,12 +11,24 @@ export function AppThemeProvider({ children }: PropsWithChildren) {
     const muiTheme = createTheme({
         palette: {
             mode: theme,
-            primary: {
-                light: brandColors.primary[300],
-                main: brandColors.primary[900],
-                dark: brandColors.primary[700],
-                contrastText: "#ffffff"
-            },
+            // The brand navy is near-black, which is unreadable as text or as a
+            // chip fill on a dark background. Dark mode therefore promotes the
+            // lighter tint to `main`; contained buttons keep the navy fill via
+            // the `containedPrimary` override below, with white text set
+            // explicitly so they do not follow `contrastText`.
+            primary: isLight
+                ? {
+                    light: brandColors.primary[300],
+                    main: brandColors.primary[900],
+                    dark: brandColors.primary[700],
+                    contrastText: "#ffffff"
+                }
+                : {
+                    light: brandColors.primary[100],
+                    main: brandColors.primary[300],
+                    dark: brandColors.primary[500],
+                    contrastText: "#06102A"
+                },
             secondary: {
                 light: brandColors.accent[300],
                 main: brandColors.accent[500],
@@ -96,6 +108,9 @@ export function AppThemeProvider({ children }: PropsWithChildren) {
                     },
                     containedPrimary: {
                         backgroundColor: brandColors.primary[900],
+                        // Explicit: in dark mode `contrastText` is dark, which
+                        // would otherwise put dark text on this navy fill.
+                        color: "#ffffff",
                         "&:hover": {
                             backgroundColor: brandColors.primary[700]
                         }
