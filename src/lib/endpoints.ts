@@ -340,7 +340,9 @@ const routeMap = {
         performanceTarget: "/sacco-settings/performance-target",
         manualImports: "/sacco-settings/manual-imports",
         leagues: "/sacco-settings/leagues",
-        guarantorPolicy: "/sacco-settings/guarantor-policy"
+        guarantorPolicy: "/sacco-settings/guarantor-policy",
+        loanMultiplier: "/sacco-settings/loan-multiplier",
+        shareCapital: "/sacco-settings/share-capital"
     },
     leagues: {
         standings: "/leagues/standings",
@@ -670,7 +672,11 @@ export const endpoints = {
         performanceTarget: () => routeMap.saccoSettings.performanceTarget,
         manualImports: () => routeMap.saccoSettings.manualImports,
         leagues: () => routeMap.saccoSettings.leagues,
-        guarantorPolicy: () => routeMap.saccoSettings.guarantorPolicy
+        guarantorPolicy: () => routeMap.saccoSettings.guarantorPolicy,
+        loanMultiplier: () => routeMap.saccoSettings.loanMultiplier,
+        shareCapital: () => routeMap.saccoSettings.shareCapital,
+        shareCapitalPrice: (priceId: string) =>
+            `${routeMap.saccoSettings.shareCapital}/${priceId}`
     },
     leagues: {
         standings: () => routeMap.leagues.standings,
@@ -1483,6 +1489,89 @@ export interface UpdateGuarantorPolicyRequest {
     max_guarantors_per_application?: number;
     guarantor_release_mode?: "on_close" | "proportional";
     guarantor_block_encumbered_withdrawals?: boolean;
+}
+
+export interface LoanMultiplierProduct {
+    id: string;
+    code: string;
+    name: string;
+    status: string;
+    catalog_multiplier: number;
+    /** Null when the product has no capacity-policy row, so the catalog figure applies. */
+    policy_multiplier: number | null;
+    effective_multiplier: number;
+}
+
+export interface LoanMultiplierSettings {
+    tenant_id: string;
+    /** Null when active products disagree — there is no single SACCO rule to show. */
+    multiplier: number | null;
+    is_uniform: boolean;
+    product_count: number;
+    active_product_count: number;
+    products: LoanMultiplierProduct[];
+}
+
+export type LoanMultiplierSettingsResponse = ApiEnvelope<LoanMultiplierSettings>;
+
+export interface UpdateLoanMultiplierRequest {
+    tenant_id?: string;
+    multiplier: number;
+}
+
+export interface SharePrice {
+    id: string;
+    price_per_share: number;
+    required_shares: number;
+    /** price_per_share × required_shares, computed server-side so it cannot disagree. */
+    total_required: number;
+    effective_from: string;
+    note: string | null;
+    created_at: string;
+}
+
+/**
+ * What this member in particular is held to: the price in force on the day
+ * they joined, not today's. Returned only when a member is asking.
+ *
+ * 150 of ILBORU's 151 members joined under the old price, so quoting the
+ * current one to all of them would overstate their requirement by two million
+ * each.
+ */
+export interface MemberShareRequirement {
+    member_id: string;
+    joined_on: string | null;
+    price_per_share: number;
+    required_shares: number;
+    total_required: number;
+    effective_from: string;
+    /** True when their price is no longer the SACCOS's current one. */
+    is_historic_price: boolean;
+}
+
+export interface ShareCapitalSettings {
+    tenant_id: string;
+    member_requirement?: MemberShareRequirement | null;
+    /** The price in force today. Null only when nothing has been recorded yet. */
+    current: SharePrice | null;
+    last_change: {
+        from_price: number;
+        to_price: number;
+        effective_from: string;
+    } | null;
+    /** Decided but not yet in force — a rise the board has already approved. */
+    upcoming: SharePrice[];
+    history: SharePrice[];
+}
+
+export type ShareCapitalSettingsResponse = ApiEnvelope<ShareCapitalSettings>;
+
+export interface AddSharePriceRequest {
+    tenant_id?: string;
+    price_per_share: number;
+    required_shares: number;
+    effective_from: string;
+    note?: string;
 }
 
 export interface GuarantorRequestItem {

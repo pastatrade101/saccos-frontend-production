@@ -1,6 +1,8 @@
 import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
 import Diversity3RoundedIcon from "@mui/icons-material/Diversity3Rounded";
 import TrackChangesRoundedIcon from "@mui/icons-material/TrackChangesRounded";
+import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
+import PieChartRoundedIcon from "@mui/icons-material/PieChartRounded";
 import LockRoundedIcon from "@mui/icons-material/LockRounded";
 import UploadFileRoundedIcon from "@mui/icons-material/UploadFileRounded";
 import {
@@ -34,7 +36,13 @@ import {
     type UpdateSaccoManualImportsSettingsRequest,
     type GuarantorPolicySettings,
     type GuarantorPolicySettingsResponse,
-    type UpdateGuarantorPolicyRequest
+    type UpdateGuarantorPolicyRequest,
+    type LoanMultiplierSettings,
+    type LoanMultiplierSettingsResponse,
+    type UpdateLoanMultiplierRequest,
+    type ShareCapitalSettings,
+    type ShareCapitalSettingsResponse,
+    type AddSharePriceRequest
 } from "../lib/endpoints";
 import type { SaccoFinancialYearSettings, SaccoManualImportsSettings, SaccoPerformanceTargetSettings } from "../types/api";
 import { MotionCard } from "../ui/motion";
@@ -62,6 +70,10 @@ const performanceMemberTargetSourceOptions = [
     { value: "member_field_annualized", label: "Imported or monthly x 12", helper: "Uses imported member target first, then annualizes monthly commitment." },
     { value: "tenant_default", label: "Imported or tenant default", helper: "Uses imported member target first; members without one use the tenant default." }
 ] as const;
+
+// A round figure to make the multiple concrete on screen. Nothing reads it back;
+// it only illustrates the number being typed.
+const LOAN_MULTIPLIER_EXAMPLE_SAVINGS = 1_000_000;
 
 export function SaccoSettingsPage() {
     const { profile, selectedTenantId, selectedTenantName } = useAuth();
@@ -93,6 +105,17 @@ export function SaccoSettingsPage() {
         guarantor_block_encumbered_withdrawals: true
     });
     const [savingGuarantorPolicy, setSavingGuarantorPolicy] = useState(false);
+    const [loanMultiplier, setLoanMultiplier] = useState<LoanMultiplierSettings | null>(null);
+    const [loanMultiplierDraft, setLoanMultiplierDraft] = useState("");
+    const [savingLoanMultiplier, setSavingLoanMultiplier] = useState(false);
+    const [shareCapital, setShareCapital] = useState<ShareCapitalSettings | null>(null);
+    const [shareDraft, setShareDraft] = useState({
+        price_per_share: "",
+        required_shares: "",
+        effective_from: "",
+        note: ""
+    });
+    const [savingSharePrice, setSavingSharePrice] = useState(false);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [savingPerformance, setSavingPerformance] = useState(false);
@@ -104,6 +127,23 @@ export function SaccoSettingsPage() {
     const canSetFinancialYear = profile?.role === "super_admin" && !settings.locked;
     const canSetPerformanceTarget = profile?.role === "super_admin" || profile?.role === "branch_manager";
     const canSetManualImports = profile?.role === "super_admin";
+    // Rewrites the borrowing limit on every product at once, so it stays with
+    // the super admin even though a branch manager may set guarantor policy.
+    const canSetLoanMultiplier = profile?.role === "super_admin";
+    const canSetShareCapital = profile?.role === "super_admin";
+    const sharePreview = useMemo(() => {
+        const price = Number(shareDraft.price_per_share);
+        const shares = Number(shareDraft.required_shares);
+        return Number.isFinite(price) && price > 0 && Number.isInteger(shares) && shares > 0
+            ? price * shares
+            : null;
+    }, [shareDraft.price_per_share, shareDraft.required_shares]);
+    const loanMultiplierPreview = useMemo(() => {
+        const parsed = Number(loanMultiplierDraft);
+        return loanMultiplierDraft.trim() && Number.isFinite(parsed) && parsed >= 0
+            ? parsed * LOAN_MULTIPLIER_EXAMPLE_SAVINGS
+            : null;
+    }, [loanMultiplierDraft]);
     const period = useMemo(() => resolveFinancialYearPeriod(settings), [settings]);
     const draftSettings = useMemo(
         () => normalizeSaccoFinancialYearSettings({
@@ -128,7 +168,14 @@ export function SaccoSettingsPage() {
             setError(null);
 
             try {
-                const [financialYearResult, performanceTargetResult, manualImportsResult, guarantorPolicyResult] = await Promise.all([
+                const [
+                    financialYearResult,
+                    performanceTargetResult,
+                    manualImportsResult,
+                    guarantorPolicyResult,
+                    loanMultiplierResult,
+                    shareCapitalResult
+                ] = await Promise.all([
                     api.get<SaccoFinancialYearSettingsResponse>(endpoints.saccoSettings.financialYear(), {
                         params: { tenant_id: selectedTenantId }
                     }),
@@ -139,6 +186,12 @@ export function SaccoSettingsPage() {
                         params: { tenant_id: selectedTenantId }
                     }).catch(() => null),
                     api.get<GuarantorPolicySettingsResponse>(endpoints.saccoSettings.guarantorPolicy(), {
+                        params: { tenant_id: selectedTenantId }
+                    }).catch(() => null),
+                    api.get<LoanMultiplierSettingsResponse>(endpoints.saccoSettings.loanMultiplier(), {
+                        params: { tenant_id: selectedTenantId }
+                    }).catch(() => null),
+                    api.get<ShareCapitalSettingsResponse>(endpoints.saccoSettings.shareCapital(), {
                         params: { tenant_id: selectedTenantId }
                     }).catch(() => null)
                 ]);
@@ -165,6 +218,29 @@ export function SaccoSettingsPage() {
                         max_guarantors_per_application: policyData.max_guarantors_per_application,
                         guarantor_release_mode: policyData.guarantor_release_mode,
                         guarantor_block_encumbered_withdrawals: policyData.guarantor_block_encumbered_withdrawals
+                    });
+                }
+                if (loanMultiplierResult?.data?.data) {
+                    const multiplierData = loanMultiplierResult.data.data;
+                    setLoanMultiplier(multiplierData);
+                    // Left blank when products disagree, so the admin has to type
+                    // the number they mean rather than accept a prefilled guess.
+                    setLoanMultiplierDraft(multiplierData.multiplier === null ? "" : String(multiplierData.multiplier));
+                }
+                if (shareCapitalResult?.data?.data) {
+                    const shareData = shareCapitalResult.data.data;
+                    setShareCapital(shareData);
+                    // The share count carries over — a price rise rarely changes
+                    // how many shares a member must hold — but the price and the
+                    // date are what the board is here to decide, so they start
+                    // blank rather than pre-filled with what is being replaced.
+                    setShareDraft({
+                        price_per_share: "",
+                        required_shares: shareData.current
+                            ? String(shareData.current.required_shares)
+                            : "",
+                        effective_from: "",
+                        note: ""
                     });
                 }
                 setDraft({
@@ -332,6 +408,114 @@ export function SaccoSettingsPage() {
             setError(getApiErrorMessage(saveError));
         } finally {
             setSavingGuarantorPolicy(false);
+        }
+    };
+
+    const saveLoanMultiplier = async () => {
+        if (!selectedTenantId) {
+            setError("Select a tenant before saving SACCO settings.");
+            return;
+        }
+
+        const parsed = Number(loanMultiplierDraft);
+        if (!loanMultiplierDraft.trim() || !Number.isFinite(parsed) || parsed < 0 || parsed > 20) {
+            setError("Enter a borrowing multiple between 0 and 20.");
+            return;
+        }
+
+        setSavingLoanMultiplier(true);
+        setError(null);
+
+        try {
+            const payload: UpdateLoanMultiplierRequest = { tenant_id: selectedTenantId, multiplier: parsed };
+            const { data } = await api.patch<LoanMultiplierSettingsResponse>(endpoints.saccoSettings.loanMultiplier(), payload);
+            setLoanMultiplier(data.data);
+            setLoanMultiplierDraft(data.data.multiplier === null ? "" : String(data.data.multiplier));
+            pushToast({
+                type: "success",
+                title: "Borrowing multiple saved",
+                message: `Members can borrow up to ${parsed}× their savings, across ${data.data.product_count} loan product${data.data.product_count === 1 ? "" : "s"}.`
+            });
+        } catch (saveError) {
+            setError(getApiErrorMessage(saveError));
+        } finally {
+            setSavingLoanMultiplier(false);
+        }
+    };
+
+    const addSharePrice = async () => {
+        if (!selectedTenantId) {
+            setError("Select a tenant before saving SACCO settings.");
+            return;
+        }
+
+        const price = Number(shareDraft.price_per_share);
+        const shares = Number(shareDraft.required_shares);
+
+        if (!Number.isFinite(price) || price <= 0) {
+            setError("Enter the price of one share.");
+            return;
+        }
+        if (!Number.isInteger(shares) || shares < 0) {
+            setError("Enter how many whole shares a member must hold.");
+            return;
+        }
+        if (!shareDraft.effective_from) {
+            setError("Enter the date this price takes effect.");
+            return;
+        }
+
+        setSavingSharePrice(true);
+        setError(null);
+
+        try {
+            const payload: AddSharePriceRequest = {
+                tenant_id: selectedTenantId,
+                price_per_share: price,
+                required_shares: shares,
+                effective_from: shareDraft.effective_from,
+                note: shareDraft.note.trim() || undefined
+            };
+            const { data } = await api.post<ShareCapitalSettingsResponse>(
+                endpoints.saccoSettings.shareCapital(),
+                payload
+            );
+            setShareCapital(data.data);
+            setShareDraft({
+                price_per_share: "",
+                required_shares: String(shares),
+                effective_from: "",
+                note: ""
+            });
+            pushToast({
+                type: "success",
+                title: "Share price recorded",
+                message: `${formatCurrency(price)} per share × ${shares} = ${formatCurrency(price * shares)} per member, from ${formatDate(shareDraft.effective_from)}.`
+            });
+        } catch (saveError) {
+            setError(getApiErrorMessage(saveError));
+        } finally {
+            setSavingSharePrice(false);
+        }
+    };
+
+    const removeSharePrice = async (priceId: string) => {
+        if (!selectedTenantId) return;
+
+        setSavingSharePrice(true);
+        setError(null);
+
+        try {
+            const { data } = await api.delete<ShareCapitalSettingsResponse>(
+                endpoints.saccoSettings.shareCapitalPrice(priceId),
+                { params: { tenant_id: selectedTenantId } }
+            );
+            setShareCapital(data.data);
+            pushToast({ type: "success", title: "Share price removed", message: "The history has been updated." });
+        } catch (saveError) {
+            setError(getApiErrorMessage(saveError));
+        } finally {
+            setSavingSharePrice(false);
         }
     };
 
@@ -810,6 +994,269 @@ export function SaccoSettingsPage() {
                                 </Alert>
                             ) : null}
                         </Stack>
+                    </Stack>
+                </CardContent>
+            </MotionCard>
+
+            <MotionCard variant="outlined" inView>
+                <CardContent>
+                    <Stack spacing={2}>
+                        <Stack spacing={0.75}>
+                            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                                <PieChartRoundedIcon color="primary" />
+                                <Typography variant="h5">Share Capital</Typography>
+                                <Chip
+                                    label={shareCapital?.current
+                                        ? `${formatCurrency(shareCapital.current.total_required)} per member`
+                                        : "Not set"}
+                                    color={shareCapital?.current ? "success" : "warning"}
+                                    variant="outlined"
+                                />
+                            </Stack>
+                            <Typography variant="body2" color="text.secondary">
+                                What one share costs and how many a member must hold. Recorded as a dated history, so a member who joined under an older price can still be shown the price that applied to them.
+                            </Typography>
+                        </Stack>
+
+                        {shareCapital?.current ? (
+                            <Box sx={{ p: 1.5, border: "1px solid", borderColor: "divider", borderRadius: 1.5 }}>
+                                <Typography variant="subtitle2" gutterBottom>
+                                    In force since {formatDate(shareCapital.current.effective_from)}
+                                </Typography>
+                                <Typography variant="body2">
+                                    {formatCurrency(shareCapital.current.price_per_share)} per share
+                                    {" × "}
+                                    {shareCapital.current.required_shares} shares
+                                    {" = "}
+                                    <strong>{formatCurrency(shareCapital.current.total_required)}</strong> per member
+                                </Typography>
+                                {shareCapital.last_change ? (
+                                    <Typography variant="caption" color="text.secondary">
+                                        Rose from {formatCurrency(shareCapital.last_change.from_price)} to {formatCurrency(shareCapital.last_change.to_price)} per share on {formatDate(shareCapital.last_change.effective_from)}.
+                                    </Typography>
+                                ) : null}
+                            </Box>
+                        ) : (
+                            <Alert severity="warning" variant="outlined">
+                                No share price has been recorded, so nothing can quote what a member owes in share capital. Add the current price below.
+                            </Alert>
+                        )}
+
+                        {shareCapital && shareCapital.upcoming.length > 0 ? (
+                            <Alert severity="info" variant="outlined">
+                                {shareCapital.upcoming.map((row) => (
+                                    <div key={row.id}>
+                                        From {formatDate(row.effective_from)}: {formatCurrency(row.price_per_share)} per share × {row.required_shares} = {formatCurrency(row.total_required)} per member.
+                                    </div>
+                                ))}
+                            </Alert>
+                        ) : null}
+
+                        {shareCapital && shareCapital.history.length > 0 ? (
+                            <Box>
+                                <Typography variant="subtitle2" gutterBottom>
+                                    How the price has moved
+                                </Typography>
+                                <Stack spacing={0.5}>
+                                    {shareCapital.history.map((row) => (
+                                        <Stack
+                                            key={row.id}
+                                            direction="row"
+                                            spacing={1}
+                                            alignItems="center"
+                                            flexWrap="wrap"
+                                            useFlexGap
+                                            sx={{ py: 0.5, borderBottom: "1px dashed", borderColor: "divider" }}
+                                        >
+                                            <Typography variant="body2" sx={{ minWidth: 110 }}>
+                                                {formatDate(row.effective_from)}
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ flexGrow: 1 }}>
+                                                {formatCurrency(row.price_per_share)} × {row.required_shares}
+                                                {" = "}
+                                                <strong>{formatCurrency(row.total_required)}</strong>
+                                                {row.note ? ` — ${row.note}` : ""}
+                                            </Typography>
+                                            {canSetShareCapital && shareCapital.history.length > 1 ? (
+                                                <Button
+                                                    size="small"
+                                                    color="error"
+                                                    disabled={savingSharePrice}
+                                                    onClick={() => removeSharePrice(row.id)}
+                                                >
+                                                    Remove
+                                                </Button>
+                                            ) : null}
+                                        </Stack>
+                                    ))}
+                                </Stack>
+                            </Box>
+                        ) : null}
+
+                        <Typography variant="subtitle2">Raise the price</Typography>
+                        <Grid container spacing={1.5}>
+                            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                                <TextField
+                                    fullWidth
+                                    type="number"
+                                    label="Price per share"
+                                    value={shareDraft.price_per_share}
+                                    onChange={(event) => setShareDraft((prev) => ({
+                                        ...prev,
+                                        price_per_share: event.target.value
+                                    }))}
+                                    disabled={!canSetShareCapital || savingSharePrice}
+                                    helperText="e.g. 150000"
+                                />
+                            </Grid>
+                            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                                <TextField
+                                    fullWidth
+                                    type="number"
+                                    label="Shares required"
+                                    value={shareDraft.required_shares}
+                                    onChange={(event) => setShareDraft((prev) => ({
+                                        ...prev,
+                                        required_shares: event.target.value
+                                    }))}
+                                    disabled={!canSetShareCapital || savingSharePrice}
+                                    helperText={sharePreview === null ? "Whole shares only" : `= ${formatCurrency(sharePreview)} per member`}
+                                />
+                            </Grid>
+                            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                                <TextField
+                                    fullWidth
+                                    type="date"
+                                    label="Takes effect from"
+                                    value={shareDraft.effective_from}
+                                    onChange={(event) => setShareDraft((prev) => ({
+                                        ...prev,
+                                        effective_from: event.target.value
+                                    }))}
+                                    disabled={!canSetShareCapital || savingSharePrice}
+                                    slotProps={{ inputLabel: { shrink: true } }}
+                                    helperText="A future date schedules the rise"
+                                />
+                            </Grid>
+                            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                                <TextField
+                                    fullWidth
+                                    label="Note (optional)"
+                                    value={shareDraft.note}
+                                    onChange={(event) => setShareDraft((prev) => ({
+                                        ...prev,
+                                        note: event.target.value
+                                    }))}
+                                    disabled={!canSetShareCapital || savingSharePrice}
+                                    helperText="e.g. AGM resolution"
+                                />
+                            </Grid>
+                        </Grid>
+
+                        <Button
+                            variant="contained"
+                            onClick={addSharePrice}
+                            disabled={!canSetShareCapital || savingSharePrice}
+                            sx={{ width: { xs: "100%", sm: "fit-content" } }}
+                        >
+                            {savingSharePrice ? "Saving..." : "Record Share Price"}
+                        </Button>
+                        {!canSetShareCapital ? (
+                            <Alert severity="info" variant="outlined" sx={{ py: 0.25 }}>
+                                This setting is read-only for your role.
+                            </Alert>
+                        ) : null}
+                    </Stack>
+                </CardContent>
+            </MotionCard>
+
+            <MotionCard variant="outlined" inView>
+                <CardContent>
+                    <Stack spacing={2}>
+                        <Stack spacing={0.75}>
+                            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                                <TrendingUpRoundedIcon color="primary" />
+                                <Typography variant="h5">Borrowing Multiple</Typography>
+                                <Chip
+                                    label={loanMultiplier?.multiplier != null
+                                        ? `${loanMultiplier.multiplier}× savings`
+                                        : "Products vary"}
+                                    color={loanMultiplier?.multiplier != null ? "success" : "warning"}
+                                    variant="outlined"
+                                />
+                            </Stack>
+                            <Typography variant="body2" color="text.secondary">
+                                How many times their savings a member may owe. Saving applies the number to every loan product at once, so the limit the engine enforces and the one the member portal quotes stay the same figure.
+                            </Typography>
+                        </Stack>
+
+                        <Grid container spacing={1.5} alignItems="flex-start">
+                            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                                <TextField
+                                    fullWidth
+                                    type="number"
+                                    label="Times savings"
+                                    value={loanMultiplierDraft}
+                                    onChange={(event) => setLoanMultiplierDraft(event.target.value)}
+                                    disabled={!canSetLoanMultiplier || savingLoanMultiplier}
+                                    helperText="e.g. 3 = borrow up to three times savings"
+                                />
+                            </Grid>
+                            <Grid size={{ xs: 12, sm: 6, md: 9 }}>
+                                <Box sx={{ p: 1.5, border: "1px solid", borderColor: "divider", borderRadius: 1.5 }}>
+                                    <Typography variant="subtitle2" gutterBottom>
+                                        What this means for a member
+                                    </Typography>
+                                    <Typography variant="body2" color="text.secondary">
+                                        {loanMultiplierPreview === null
+                                            ? "Enter a number to see the limit it produces."
+                                            : `A member with ${formatCurrency(LOAN_MULTIPLIER_EXAMPLE_SAVINGS)} in savings could owe up to ${formatCurrency(loanMultiplierPreview)} in total.`}
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary">
+                                        Savings pledged to guarantee other members are deducted first, and the cap covers everything a member already owes — not each loan separately. Product maximums and branch liquidity can still bring the figure down.
+                                    </Typography>
+                                </Box>
+                            </Grid>
+                        </Grid>
+
+                        {loanMultiplier && !loanMultiplier.is_uniform ? (
+                            <Alert severity="warning" variant="outlined">
+                                Active loan products currently disagree, so there is no single SACCO rule in force. Saving below sets them all to the same number.
+                            </Alert>
+                        ) : null}
+
+                        {loanMultiplier && loanMultiplier.products.length > 0 ? (
+                            <Box>
+                                <Typography variant="subtitle2" gutterBottom>
+                                    Applies to {loanMultiplier.product_count} loan product{loanMultiplier.product_count === 1 ? "" : "s"}
+                                </Typography>
+                                <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+                                    {loanMultiplier.products.map((product) => (
+                                        <Chip
+                                            key={product.id}
+                                            size="small"
+                                            variant="outlined"
+                                            color={product.status === "active" ? "default" : "warning"}
+                                            label={`${product.name} · ${product.effective_multiplier}×`}
+                                        />
+                                    ))}
+                                </Stack>
+                            </Box>
+                        ) : null}
+
+                        <Button
+                            variant="contained"
+                            onClick={saveLoanMultiplier}
+                            disabled={!canSetLoanMultiplier || savingLoanMultiplier || !loanMultiplier}
+                            sx={{ width: { xs: "100%", sm: "fit-content" } }}
+                        >
+                            {savingLoanMultiplier ? "Saving..." : "Save Borrowing Multiple"}
+                        </Button>
+                        {!canSetLoanMultiplier ? (
+                            <Alert severity="info" variant="outlined" sx={{ py: 0.25 }}>
+                                This setting is read-only for your role.
+                            </Alert>
+                        ) : null}
                     </Stack>
                 </CardContent>
             </MotionCard>
