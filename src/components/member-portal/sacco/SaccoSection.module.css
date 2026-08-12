@@ -1,0 +1,258 @@
+/* SACCOS overview — cooperative-wide position, deployment split and milestones. */
+
+.hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--m-radius-hero);
+  background: linear-gradient(150deg, #0b1b3f 0%, #132c63 55%, #0b1b3f 100%);
+  box-shadow: var(--m-shadow-hero);
+  padding: clamp(18px, 2.2vw, 26px) clamp(18px, 2.4vw, 30px);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.heroGlow {
+  position: absolute;
+  top: -110px;
+  right: -90px;
+  width: 320px;
+  height: 320px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(201, 162, 39, 0.28), transparent 68%);
+  pointer-events: none;
+}
+
+.heroLabel {
+  font-size: var(--m-fs-label);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--m-gold);
+}
+
+.heroFigure {
+  margin: 0;
+  position: relative;
+  font-size: var(--m-fs-hero);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+
+.heroNote {
+  position: relative;
+  margin: 0;
+  font-size: var(--m-fs-secondary);
+  color: #b8c0cf;
+  line-height: 1.55;
+  max-width: 640px;
+}
+
+.heroStats {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.heroStat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.heroStatValue {
+  font-size: var(--m-fs-tile);
+  font-weight: 800;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.heroStatGold {
+  color: var(--m-gold);
+}
+
+.heroStatLabel {
+  font-size: var(--m-fs-label);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: #8fa0c4;
+}
+
+/* ---------- deployment ---------- */
+
+.stackedBar {
+  display: flex;
+  height: 16px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--m-line2);
+  margin-bottom: 16px;
+}
+
+.stackedSegment {
+  height: 100%;
+}
+
+.legendCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 13px 14px;
+  border-radius: var(--m-radius-box);
+  background: var(--m-soft);
+  border: 1px solid var(--m-line);
+  border-top: 3px solid currentColor;
+  min-width: 0;
+}
+
+.legendHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.legendSwatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: 0 0 9px;
+}
+
+.legendName {
+  font-size: var(--m-fs-secondary);
+  font-weight: 700;
+  color: var(--m-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.legendValue {
+  font-size: var(--m-fs-tile);
+  font-weight: 800;
+  color: var(--m-ink);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.legendShare {
+  font-size: var(--m-fs-secondary);
+  color: var(--m-muted2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- milestones ---------- */
+
+.milestoneHero {
+  border-radius: var(--m-radius-section);
+  background: var(--m-gold-soft);
+  border: 1px solid var(--m-gold-line);
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.milestoneHeadRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.milestonePercent {
+  font-size: var(--m-fs-figure-lg);
+  font-weight: 800;
+  color: var(--m-gold-ink);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.milestoneBar {
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(201, 162, 39, 0.18);
+  overflow: hidden;
+}
+
+.milestoneBarFill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--m-grad-gold);
+}
+
+.milestoneRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 13px;
+  border-radius: var(--m-radius-box);
+  border: 1px solid var(--m-line);
+  background: var(--m-surface);
+  min-width: 0;
+}
+
+.milestoneRowCurrent {
+  background: var(--m-gold-soft);
+  border-color: var(--m-gold-line);
+}
+
+.milestoneBadge {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 800;
+  background: var(--m-ok-soft);
+  color: var(--m-ok-ink);
+}
+
+.milestoneBadgeUpcoming {
+  background: var(--m-gold-soft);
+  color: var(--m-gold-ink);
+}
+
+.milestoneText {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.milestoneTitle {
+  font-size: var(--m-fs-body);
+  font-weight: 700;
+  color: var(--m-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.milestoneMeta {
+  font-size: var(--m-fs-secondary);
+  color: var(--m-muted2);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 640px) {
+  .hero,
+  .milestoneHero {
+    padding: 16px;
+  }
+}

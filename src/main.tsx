@@ -7,6 +7,7 @@ import { AuthProvider } from "./auth/AuthProvider";
 import { ToastProvider } from "./components/Toast";
 import { registerServiceWorker } from "./pwa/registerServiceWorker";
 import { AppThemeProvider } from "./ui/AppThemeProvider";
+import { LanguageProvider } from "./ui/LanguageProvider";
 import { UIProvider } from "./ui/UIProvider";
 import "./styles.css";
 
@@ -14,13 +15,15 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
         <BrowserRouter>
             <UIProvider>
-                <AppThemeProvider>
-                    <AuthProvider>
-                        <ToastProvider>
-                            <App />
-                        </ToastProvider>
-                    </AuthProvider>
-                </AppThemeProvider>
+                <LanguageProvider>
+                    <AppThemeProvider>
+                        <AuthProvider>
+                            <ToastProvider>
+                                <App />
+                            </ToastProvider>
+                        </AuthProvider>
+                    </AppThemeProvider>
+                </LanguageProvider>
             </UIProvider>
         </BrowserRouter>
     </React.StrictMode>

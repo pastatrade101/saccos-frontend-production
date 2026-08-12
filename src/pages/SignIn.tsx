@@ -10,18 +10,18 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Link as RouterLink, useNavigate } from "react-router-dom";
+import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import DarkModeRoundedIcon from "@mui/icons-material/DarkModeRounded";
 import LightModeRoundedIcon from "@mui/icons-material/LightModeRounded";
-import VisibilityOffRoundedIcon from "@mui/icons-material/VisibilityOffRounded";
-import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 
 import { useAuth } from "../auth/AuthContext";
-import { FormField } from "../components/FormField";
+import { isSessionRemembered, setRememberSession } from "../auth/rememberSession";
 import { useToast } from "../components/Toast";
 import { api, getApiErrorMessage } from "../lib/api";
 import { endpoints, type PasswordSetupLinkSendResponse } from "../lib/endpoints";
+import { useLanguage } from "../ui/LanguageProvider";
 import { useUI } from "../ui/UIProvider";
-import pageStyles from "./Pages.module.css";
+import styles from "./SignIn.module.css";
 
 // Members log in with a SACCO email account. Accept either the full email or
 // just the username (firstname.surname); the domain is appended before submit.
@@ -52,32 +52,75 @@ interface AuthFlowError extends Error {
     details?: unknown;
 }
 
-// Slides for the right-hand visual panel. Drop more images into /public and add
-// entries here to extend the carousel.
+// Slides for the right-hand brand panel. The panel is a navy gradient rather
+// than photography, so slides carry copy only. Each string is [EN, SW].
 const AUTH_SLIDES = [
     {
-        image: "/13321.jpg",
-        eyebrow: "Savings & Shares",
-        title: "Grow your wealth, together",
-        copy: "Track your savings, shares and dividends in one secure place — always up to date."
+        id: "savings",
+        eyebrow: ["Savings & shares", "Akiba na hisa"],
+        title: ["Grow your wealth, together", "Kukuza mali, kwa pamoja"],
+        copy: [
+            "Track your savings, shares and dividends in one secure place — always up to date.",
+            "Fuatilia akiba, hisa na gawio lako mahali pamoja salama — taarifa za wakati halisi."
+        ]
     },
     {
-        image: "/bk.jpg",
-        eyebrow: "Digital SACCOS",
-        title: "Banking that moves with you",
-        copy: "Apply for loans, follow repayments and manage your account anytime, anywhere."
+        id: "borrowing",
+        eyebrow: ["Borrowing", "Mikopo"],
+        title: ["Borrow up to three times your savings", "Kopa hadi mara tatu ya akiba yako"],
+        copy: [
+            "See your limit before you apply, with the rate and repayment terms stated up front.",
+            "Ona kikomo chako kabla ya kuomba, pamoja na riba na masharti ya marejesho."
+        ]
+    },
+    {
+        id: "transparency",
+        eyebrow: ["Transparency", "Uwazi"],
+        title: ["Every shilling accounted for", "Kila shilingi inaonekana"],
+        copy: [
+            "The cooperative position, milestones and dividend allocations are open to every member.",
+            "Hali ya ushirika, hatua na mgawanyo wa gawio ziko wazi kwa kila mwanachama."
+        ]
     }
 ] as const;
 
 const AUTH_SLIDE_INTERVAL_MS = 6000;
+
+// Cooperative figures shown on the brand panel. These are static: the sign-in
+// screen is unauthenticated and there is no public stats endpoint. Update here,
+// or replace with a public read-only endpoint if the SACCO is comfortable
+// publishing live totals. The figures themselves never translate.
+const SACCO_STATS = [
+    { key: "members", label: ["Members", "Wanachama"], value: "151" },
+    { key: "savings", label: ["Member savings", "Akiba ya wanachama"], value: "TZS 1.67B" },
+    { key: "dividends", label: ["Dividends shared", "Gawio lililogawiwa"], value: "TZS 56.9M" }
+] as const;
+
+const SUPPORT_EMAIL = "support@ias.co.tz";
+
+// Deliberately does not say whether the username exists.
+const SIGN_IN_ERROR = [
+    "We could not match those details. Check your username, or reset your password.",
+    "Hatukuweza kuthibitisha taarifa hizo. Angalia jina la mtumiaji au weka upya nywila."
+] as const;
+
+const LANGUAGES = ["EN", "SW"] as const;
 
 export function SignInPage() {
     const navigate = useNavigate();
     const { pushToast } = useToast();
     const { signIn } = useAuth();
     const { theme, toggleTheme } = useUI();
+    const { lang, setLang, t } = useLanguage();
+    // Slide and stat copy are stored as [EN, SW] tuples.
+    const langIndex = lang === "SW" ? 1 : 0;
     const [submitting, setSubmitting] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
+    const [remember, setRemember] = useState(isSessionRemembered);
+    // Shown in the notice block under the button. Sign-in failures surface here
+    // rather than as a toast, so the recovery route sits next to the form. Held
+    // as a flag, not a message, so the copy follows a language switch.
+    const [signInFailed, setSignInFailed] = useState(false);
     const [showFirstTimeSetup, setShowFirstTimeSetup] = useState(false);
     const [setupEmail, setSetupEmail] = useState("");
     const [sendingSetupLink, setSendingSetupLink] = useState(false);
@@ -310,6 +353,8 @@ export function SignInPage() {
 
     const onSubmit = form.handleSubmit(async (values) => {
         setSubmitting(true);
+        setSignInFailed(false);
+        setRememberSession(remember);
 
         try {
             await signIn(values.email, values.password);
@@ -333,11 +378,7 @@ export function SignInPage() {
                 return;
             }
 
-            pushToast({
-                type: "error",
-                title: "Sign in failed",
-                message: error instanceof Error ? error.message : "Unable to sign in."
-            });
+            setSignInFailed(true);
         } finally {
             setSubmitting(false);
         }
@@ -414,190 +455,290 @@ export function SignInPage() {
     }, [showRecoveryCode, twoFactorModalOpen]);
 
     return (
-        <div className={pageStyles.authShell}>
-            <div className={`${pageStyles.authFrame} ${pageStyles.authFrameSplit}`}>
-                <section className={`${pageStyles.authPanel} ${pageStyles.authPanelForm}`}>
-                    <div className={pageStyles.authBrandRowSplit}>
-                        <div className={pageStyles.authBrandIdentity}>
-                            <img
-                                src="/icon-ilboru.png"
-                                alt="ILBORU-ALUMNI logo"
-                                className={pageStyles.authBrandLogo}
-                            />
-                            <div>
-                                <span className={pageStyles.authBrandText}>ILBORU ALUMNI SACCOS LTD</span>
-                                <span className={pageStyles.authBrandMotto}>Further Together</span>
-                            </div>
+        <div className={`member-surface ${styles.shell}`}>
+            <div className={styles.card}>
+                <section className={styles.formPanel}>
+                    <div className={styles.brandRow}>
+                        <div className={styles.brandIdentity}>
+                            <span className={styles.brandLogo}>
+                                <img src="/icon-ilboru.png" alt="" />
+                            </span>
+                            <span className={styles.brandNames}>
+                                <span className={styles.brandName}>ILBORU ALUMNI SACCOS LTD</span>
+                                <span className={styles.brandMotto}>Further together</span>
+                            </span>
                         </div>
-                        <button
-                            type="button"
-                            className={pageStyles.authThemeToggle}
-                            aria-label="Toggle color mode"
-                            onClick={toggleTheme}
-                        >
-                            {theme === "dark" ? <LightModeRoundedIcon fontSize="small" /> : <DarkModeRoundedIcon fontSize="small" />}
-                        </button>
+                        <div className={styles.headerControls}>
+                            <div className={styles.langPill} role="group" aria-label="Language">
+                                {LANGUAGES.map((option) => (
+                                    <button
+                                        key={option}
+                                        type="button"
+                                        className={`${styles.langOption} ${lang === option ? styles.langOptionActive : ""}`}
+                                        aria-pressed={lang === option}
+                                        onClick={() => setLang(option)}
+                                    >
+                                        {option}
+                                    </button>
+                                ))}
+                            </div>
+                            <button
+                                type="button"
+                                className={styles.themeToggle}
+                                aria-label={t("Toggle colour mode", "Badilisha mwonekano")}
+                                onClick={toggleTheme}
+                            >
+                                {theme === "dark" ? <LightModeRoundedIcon fontSize="small" /> : <DarkModeRoundedIcon fontSize="small" />}
+                            </button>
+                        </div>
                     </div>
 
-                    <div className={pageStyles.authIntro}>
-                        <h1 className={pageStyles.authHeading}>Welcome back</h1>
-                        <p className={pageStyles.authSubcopy}>Sign in to your member account.</p>
+                    <div className={styles.intro}>
+                        <h1 className={styles.heading}>{t("Welcome back", "Karibu tena")}</h1>
+                        <p className={styles.subcopy}>
+                            {t("Sign in to your member account.", "Ingia kwenye akaunti yako ya uanachama.")}
+                        </p>
                     </div>
 
-                    <form className={pageStyles.form} onSubmit={onSubmit}>
-                        <FormField label="Username or email" error={form.formState.errors.email?.message}>
+                    <form className={styles.form} onSubmit={onSubmit}>
+                        <div className={styles.field}>
+                            <label className={styles.label} htmlFor="signin-username">
+                                {t("Username or email", "Jina la mtumiaji au barua pepe")}
+                            </label>
                             <input
+                                id="signin-username"
+                                className={styles.input}
                                 type="text"
                                 autoComplete="username"
+                                placeholder="firstname.surname"
                                 {...form.register("email")}
-                                placeholder={`firstname.surname (@${LOGIN_EMAIL_DOMAIN} added automatically)`}
                             />
-                        </FormField>
-                        <FormField label="Password" error={form.formState.errors.password?.message}>
-                            <div className={pageStyles.passwordField}>
-                                <input
-                                    type={showPassword ? "text" : "password"}
-                                    {...form.register("password")}
-                                    placeholder="Enter your password"
-                                />
+                            <span className={styles.hint}>
+                                {t(
+                                    `@${LOGIN_EMAIL_DOMAIN} is added automatically.`,
+                                    `@${LOGIN_EMAIL_DOMAIN} huongezwa kiotomatiki.`
+                                )}
+                            </span>
+                            {form.formState.errors.email?.message ? (
+                                <span className={styles.fieldError}>{form.formState.errors.email.message}</span>
+                            ) : null}
+                        </div>
+
+                        <div className={styles.field}>
+                            <div className={styles.labelRow}>
+                                <label className={styles.label} htmlFor="signin-password">
+                                    {t("Password", "Nywila")}
+                                </label>
                                 <button
                                     type="button"
-                                    className={pageStyles.passwordToggle}
+                                    className={styles.showToggle}
                                     onClick={() => setShowPassword((current) => !current)}
-                                    aria-label={showPassword ? "Hide password" : "Show password"}
                                     aria-pressed={showPassword}
                                 >
-                                    {showPassword ? <VisibilityOffRoundedIcon fontSize="small" /> : <VisibilityRoundedIcon fontSize="small" />}
+                                    {showPassword ? t("Hide", "Ficha") : t("Show", "Onyesha")}
                                 </button>
                             </div>
-                        </FormField>
-                        <button
-                            className={`primary-button ${pageStyles.authSubmit}`}
-                            disabled={submitting}
-                            type="submit"
-                        >
-                            {submitting ? "Signing in..." : "Sign in"}
+                            <input
+                                id="signin-password"
+                                className={styles.input}
+                                type={showPassword ? "text" : "password"}
+                                autoComplete="current-password"
+                                placeholder="••••••••"
+                                {...form.register("password")}
+                            />
+                            {form.formState.errors.password?.message ? (
+                                <span className={styles.fieldError}>{form.formState.errors.password.message}</span>
+                            ) : null}
+                        </div>
+
+                        <div className={styles.optionsRow}>
+                            <label className={styles.remember}>
+                                <input
+                                    type="checkbox"
+                                    checked={remember}
+                                    onChange={(event) => {
+                                        setRemember(event.target.checked);
+                                        setRememberSession(event.target.checked);
+                                    }}
+                                />
+                                <span className={styles.checkbox} aria-hidden="true">
+                                    <CheckRoundedIcon />
+                                </span>
+                                {t("Keep me signed in", "Nikumbuke")}
+                            </label>
+                            <button
+                                className={styles.linkButton}
+                                type="button"
+                                onClick={() => {
+                                    setForgotEmail(form.getValues("email") || "");
+                                    setShowForgotPassword(true);
+                                }}
+                            >
+                                {t("Forgot password?", "Umesahau nywila?")}
+                            </button>
+                        </div>
+
+                        <button className={styles.submit} disabled={submitting} type="submit">
+                            {submitting ? t("Signing in…", "Inaingia…") : t("Sign in", "Ingia")}
                         </button>
+
+                        {submitting ? (
+                            <div className={`${styles.notice} ${styles.noticeLoading}`} role="status">
+                                {t("Checking your details…", "Tunahakiki taarifa zako…")}
+                            </div>
+                        ) : signInFailed ? (
+                            <div className={`${styles.notice} ${styles.noticeError}`} role="alert">
+                                {SIGN_IN_ERROR[langIndex]}
+                            </div>
+                        ) : null}
                     </form>
 
-                    <div className={pageStyles.authLoginLinks}>
+                    <div className={styles.secondaryActions}>
                         <button
-                            className={pageStyles.authForgotLink}
-                            type="button"
-                            onClick={() => {
-                                setForgotEmail(form.getValues("email") || "");
-                                setShowForgotPassword(true);
-                            }}
-                        >
-                            Forgot password?
-                        </button>
-                        <button
-                            className={pageStyles.authForgotLink}
+                            className={styles.secondaryCard}
                             type="button"
                             onClick={() => {
                                 setSetupEmail(form.getValues("email") || "");
                                 setShowFirstTimeSetup(true);
                             }}
                         >
-                            First-time user without password?
+                            <span className={styles.secondaryCardTitle}>
+                                {t("First-time user?", "Mara ya kwanza?")}
+                            </span>
+                            <span className={styles.secondaryCardCopy}>
+                                {t(
+                                    "Set a password with your member number.",
+                                    "Weka nywila kwa namba ya uanachama."
+                                )}
+                            </span>
                         </button>
                         {registrationEnabled ? (
-                            <RouterLink className={pageStyles.authForgotLink} to="/signup">
-                                Apply for membership
+                            <RouterLink className={styles.secondaryCard} to="/signup">
+                                <span className={styles.secondaryCardTitle}>
+                                    {t("Apply for membership", "Omba uanachama")}
+                                </span>
+                                <span className={styles.secondaryCardCopy}>
+                                    {t("Open to Ilboru alumni.", "Kwa wahitimu wa Ilboru.")}
+                                </span>
                             </RouterLink>
                         ) : null}
                     </div>
 
-                    <p className={pageStyles.authLegal}>
-                        <RouterLink className={pageStyles.authLegalLink} to="/privacy-policy">
-                            Privacy Policy
-                        </RouterLink>{" "}
-                        <span aria-hidden="true">/</span>{" "}
-                        <RouterLink className={pageStyles.authLegalLink} to="/terms-and-agreement">
-                            Terms & Agreement
-                        </RouterLink>
-                    </p>
+                    <div className={styles.footer}>
+                        <p className={styles.footerLinks}>
+                            <RouterLink className={styles.footerLink} to="/privacy-policy">
+                                Privacy Policy
+                            </RouterLink>
+                            <span aria-hidden="true">·</span>
+                            <RouterLink className={styles.footerLink} to="/terms-and-agreement">
+                                Terms &amp; Agreement
+                            </RouterLink>
+                            <span aria-hidden="true">·</span>
+                            <span>
+                                {t("Need help?", "Msaada?")}{" "}
+                                <a className={styles.footerLink} href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>
+                            </span>
+                        </p>
+                        <p className={styles.footerCredit}>
+                            Powered by <strong>Makutano Digital</strong>
+                        </p>
+                    </div>
                 </section>
 
-                <aside className={pageStyles.authVisual}>
-                    {AUTH_SLIDES.map((slide, index) => (
-                        <div
-                            key={slide.image}
-                            className={`${pageStyles.authSlide} ${index === activeSlide ? pageStyles.authSlideActive : ""}`}
-                            style={{ backgroundImage: `url(${slide.image})` }}
-                            aria-hidden="true"
-                        />
-                    ))}
-                    <div className={pageStyles.authVisualOverlay} aria-hidden="true" />
-                    <div className={pageStyles.authVisualTexture} aria-hidden="true" />
-                    <div className={pageStyles.authVisualContent}>
-                        <span className={pageStyles.authVisualMotto}>Member portal</span>
-                        <div className={pageStyles.authVisualCaption} key={activeSlide}>
-                            <span className={pageStyles.authVisualEyebrow}>{AUTH_SLIDES[activeSlide].eyebrow}</span>
-                            <h2 className={pageStyles.authVisualTitle}>{AUTH_SLIDES[activeSlide].title}</h2>
-                            <p className={pageStyles.authVisualCopy}>{AUTH_SLIDES[activeSlide].copy}</p>
-                            {AUTH_SLIDES.length > 1 ? (
-                                <div className={pageStyles.authSliderDots} role="tablist" aria-label="Slides">
-                                    {AUTH_SLIDES.map((slide, index) => (
-                                        <button
-                                            key={slide.image}
-                                            type="button"
-                                            role="tab"
-                                            aria-selected={index === activeSlide}
-                                            aria-label={`Show slide ${index + 1}`}
-                                            className={`${pageStyles.authSliderDot} ${index === activeSlide ? pageStyles.authSliderDotActive : ""}`}
-                                            onClick={() => setActiveSlide(index)}
-                                        />
-                                    ))}
-                                </div>
-                            ) : null}
+                <aside className={styles.visual}>
+                    <div className={styles.visualGrid} aria-hidden="true" />
+                    <div className={styles.visualGlow} aria-hidden="true" />
+
+                    <div className={styles.visualTop}>
+                        <span className={styles.visualLabel}>Member portal</span>
+                    </div>
+
+                    <div className={styles.visualBody}>
+                        <div className={styles.slideCaption} key={`${activeSlide}-${lang}`}>
+                            <span className={styles.slideKicker}>{AUTH_SLIDES[activeSlide].eyebrow[langIndex]}</span>
+                            <h2 className={styles.slideTitle}>{AUTH_SLIDES[activeSlide].title[langIndex]}</h2>
+                            <p className={styles.slideCopy}>{AUTH_SLIDES[activeSlide].copy[langIndex]}</p>
                         </div>
+                        <div className={styles.dots} role="tablist" aria-label={t("Highlights", "Vivutio")}>
+                            {AUTH_SLIDES.map((slide, index) => (
+                                <button
+                                    key={slide.id}
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={index === activeSlide}
+                                    aria-label={slide.title[langIndex]}
+                                    className={`${styles.dot} ${index === activeSlide ? styles.dotActive : ""}`}
+                                    onClick={() => setActiveSlide(index)}
+                                />
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className={styles.visualStats}>
+                        {SACCO_STATS.map((stat) => (
+                            <div className={styles.visualStat} key={stat.key}>
+                                <span className={styles.visualStatValue}>{stat.value}</span>
+                                <span className={styles.visualStatLabel}>{stat.label[langIndex]}</span>
+                            </div>
+                        ))}
                     </div>
                 </aside>
             </div>
 
             {showFirstTimeSetup ? (
-                <div className={pageStyles.setupModalBackdrop} onClick={() => setShowFirstTimeSetup(false)}>
+                <div className={styles.modalBackdrop} onClick={() => setShowFirstTimeSetup(false)}>
                     <div
-                        className={pageStyles.setupModalCard}
+                        className={styles.modalCard}
                         role="dialog"
                         aria-modal="true"
                         aria-label="First-time account setup"
                         onClick={(event) => event.stopPropagation()}
                     >
-                        <div className={pageStyles.setupModalHeader}>
-                            <h3>First-time account setup</h3>
+                        <div className={styles.modalHeader}>
+                            <h3>{t("First-time account setup", "Usanidi wa akaunti kwa mara ya kwanza")}</h3>
                             <p>
-                                Enter your work email. If your member account exists with a registered phone,
-                                we will send a one-time setup link by SMS.
+                                {t(
+                                    "Enter your work email. If your member account exists with a registered phone, we will send a one-time setup link by SMS.",
+                                    "Weka barua pepe yako ya kazi. Kama akaunti yako ya uanachama ipo na namba ya simu iliyosajiliwa, tutatuma kiungo cha usanidi kwa SMS."
+                                )}
                             </p>
                         </div>
-                        <FormField label="Work email">
+                        <div className={styles.field}>
+                            <label className={styles.label} htmlFor="setup-email">
+                                {t("Work email", "Barua pepe ya kazi")}
+                            </label>
                             <input
+                                id="setup-email"
+                                className={styles.input}
                                 type="email"
-                                placeholder="name@saccos.local"
+                                placeholder="firstname.surname"
                                 value={setupEmail}
                                 onChange={(event) => setSetupEmail(event.target.value)}
                             />
-                        </FormField>
-                        <span className={pageStyles.firstLoginHint}>
-                            The destination phone must already be registered on your profile.
-                        </span>
-                        <div className={pageStyles.setupModalActions}>
+                            <span className={styles.hint}>
+                                {t(
+                                    "The destination phone must already be registered on your profile.",
+                                    "Namba ya simu inayopokea lazima iwe tayari imesajiliwa kwenye wasifu wako."
+                                )}
+                            </span>
+                        </div>
+                        <div className={styles.modalActions}>
                             <button
-                                className={pageStyles.otpModalLink}
+                                className={styles.modalGhost}
                                 type="button"
                                 onClick={() => setShowFirstTimeSetup(false)}
                             >
-                                Cancel
+                                {t("Cancel", "Ghairi")}
                             </button>
                             <button
-                                className="secondary-button"
+                                className={styles.modalPrimary}
                                 type="button"
                                 disabled={sendingSetupLink}
                                 onClick={() => void handleSendSetupLink()}
                             >
-                                {sendingSetupLink ? "Sending link..." : "Send setup link"}
+                                {sendingSetupLink
+                                    ? t("Sending link…", "Inatuma kiungo…")
+                                    : t("Send setup link", "Tuma kiungo cha usanidi")}
                             </button>
                         </div>
                     </div>
@@ -605,48 +746,59 @@ export function SignInPage() {
             ) : null}
 
             {showForgotPassword ? (
-                <div className={pageStyles.setupModalBackdrop} onClick={() => setShowForgotPassword(false)}>
+                <div className={styles.modalBackdrop} onClick={() => setShowForgotPassword(false)}>
                     <div
-                        className={pageStyles.setupModalCard}
+                        className={styles.modalCard}
                         role="dialog"
                         aria-modal="true"
                         aria-label="Reset your password"
                         onClick={(event) => event.stopPropagation()}
                     >
-                        <div className={pageStyles.setupModalHeader}>
-                            <h3>Reset your password</h3>
+                        <div className={styles.modalHeader}>
+                            <h3>{t("Reset your password", "Weka upya nywila yako")}</h3>
                             <p>
-                                Enter your username or the email address registered on your account.
-                                We will send a password reset link to your personal email
-                                (SACCO, Gmail, or Yahoo accounts are all supported).
+                                {t(
+                                    "Enter your username or the email address registered on your account. We will send a password reset link to your personal email (SACCO, Gmail, or Yahoo accounts are all supported).",
+                                    "Weka jina lako la mtumiaji au barua pepe iliyosajiliwa kwenye akaunti yako. Tutatuma kiungo cha kuweka upya nywila kwenye barua pepe yako binafsi (SACCO, Gmail au Yahoo zote zinakubalika)."
+                                )}
                             </p>
                         </div>
-                        <FormField label="Username or email">
+                        <div className={styles.field}>
+                            <label className={styles.label} htmlFor="forgot-email">
+                                {t("Username or email", "Jina la mtumiaji au barua pepe")}
+                            </label>
                             <input
+                                id="forgot-email"
+                                className={styles.input}
                                 type="text"
                                 placeholder="username or name@example.com"
                                 value={forgotEmail}
                                 onChange={(event) => setForgotEmail(event.target.value)}
                             />
-                        </FormField>
-                        <span className={pageStyles.firstLoginHint}>
-                            The link opens a page where you choose a new password. It expires after a short time.
-                        </span>
-                        <div className={pageStyles.setupModalActions}>
+                            <span className={styles.hint}>
+                                {t(
+                                    "The link opens a page where you choose a new password. It expires after a short time.",
+                                    "Kiungo hufungua ukurasa wa kuchagua nywila mpya. Muda wake huisha baada ya kitambo."
+                                )}
+                            </span>
+                        </div>
+                        <div className={styles.modalActions}>
                             <button
-                                className={pageStyles.otpModalLink}
+                                className={styles.modalGhost}
                                 type="button"
                                 onClick={() => setShowForgotPassword(false)}
                             >
-                                Cancel
+                                {t("Cancel", "Ghairi")}
                             </button>
                             <button
-                                className="secondary-button"
+                                className={styles.modalPrimary}
                                 type="button"
                                 disabled={sendingResetEmail}
                                 onClick={() => void handleSendResetEmail()}
                             >
-                                {sendingResetEmail ? "Sending link..." : "Send reset link"}
+                                {sendingResetEmail
+                                    ? t("Sending link…", "Inatuma kiungo…")
+                                    : t("Send reset link", "Tuma kiungo")}
                             </button>
                         </div>
                     </div>
@@ -654,39 +806,54 @@ export function SignInPage() {
             ) : null}
 
             {twoFactorModalOpen ? (
-                <div className={pageStyles.otpModalBackdrop}>
-                    <div className={pageStyles.otpModalCard} role="dialog" aria-modal="true" aria-label="Two-factor verification">
-                        <div className={pageStyles.otpModalHeader}>
-                            <h3>{showRecoveryCode ? "Use backup recovery code" : "Verify authenticator code"}</h3>
+                <div className={styles.modalBackdrop}>
+                    <div className={styles.modalCard} role="dialog" aria-modal="true" aria-label="Two-factor verification">
+                        <div className={styles.modalHeader}>
+                            <h3>
+                                {showRecoveryCode
+                                    ? t("Use backup recovery code", "Tumia msimbo wa dharura")
+                                    : t("Verify authenticator code", "Thibitisha msimbo wa uthibitishaji")}
+                            </h3>
                             <p>
                                 {showRecoveryCode
-                                    ? "Enter one unused backup code to recover access if your authenticator device is unavailable."
-                                    : "Open your authenticator app and enter the current 6-digit TOTP code to complete sign in."}
+                                    ? t(
+                                        "Enter one unused backup code to recover access if your authenticator device is unavailable.",
+                                        "Weka msimbo mmoja wa dharura ambao haujatumika ikiwa kifaa chako cha uthibitishaji hakipatikani."
+                                    )
+                                    : t(
+                                        "Open your authenticator app and enter the current 6-digit TOTP code to complete sign in.",
+                                        "Fungua programu yako ya uthibitishaji na weka msimbo wa tarakimu 6 ili kukamilisha kuingia."
+                                    )}
                             </p>
                         </div>
 
                         {showRecoveryCode ? (
-                            <FormField label="Backup recovery code">
+                            <div className={styles.field}>
+                                <label className={styles.label} htmlFor="recovery-code">
+                                    {t("Backup recovery code", "Msimbo wa dharura")}
+                                </label>
                                 <input
+                                    id="recovery-code"
+                                    className={styles.input}
                                     type="text"
                                     placeholder="8F4K-3P92"
                                     value={recoveryCode}
                                     onChange={(event) => setRecoveryCode(event.target.value.toUpperCase())}
                                 />
-                            </FormField>
+                            </div>
                         ) : (
-                            <FormField
-                                label="Authenticator code"
-                                error={totpCode && !/^\d{6}$/.test(totpCode) ? "Enter a valid 6-digit code." : undefined}
-                            >
-                                <div className={pageStyles.otpDigitsRow}>
+                            <div className={styles.field}>
+                                <span className={styles.label}>
+                                    {t("Authenticator code", "Msimbo wa uthibitishaji")}
+                                </span>
+                                <div className={styles.otpRow}>
                                     {otpDigits.map((digit, index) => (
                                         <input
                                             key={index}
                                             ref={(element) => {
                                                 otpInputRefs.current[index] = element;
                                             }}
-                                            className={pageStyles.otpDigitBox}
+                                            className={styles.otpBox}
                                             type="text"
                                             inputMode="numeric"
                                             pattern="[0-9]*"
@@ -700,46 +867,66 @@ export function SignInPage() {
                                         />
                                     ))}
                                 </div>
-                            </FormField>
+                                {totpCode && !/^\d{6}$/.test(totpCode) ? (
+                                    <span className={styles.fieldError}>
+                                        {t("Enter a valid 6-digit code.", "Weka msimbo sahihi wa tarakimu 6.")}
+                                    </span>
+                                ) : null}
+                            </div>
                         )}
 
-                        <p className={pageStyles.authCopy}>
+                        <p className={styles.modalNote}>
                             {showRecoveryCode
-                                ? "Backup codes are single-use. A used code cannot be used again."
+                                ? t(
+                                    "Backup codes are single-use. A used code cannot be used again.",
+                                    "Misimbo ya dharura hutumika mara moja tu. Msimbo uliotumika hauwezi kutumika tena."
+                                )
                                 : verifyingTwoFactor
-                                    ? "Verifying automatically as soon as the 6-digit code is complete."
-                                    : "Authenticator apps supported: Google Authenticator, Microsoft Authenticator, Authy, Bitwarden, and 1Password."}
+                                    ? t(
+                                        "Verifying automatically as soon as the 6-digit code is complete.",
+                                        "Uthibitishaji hufanyika mara tu tarakimu 6 zinapokamilika."
+                                    )
+                                    : t(
+                                        "Authenticator apps supported: Google Authenticator, Microsoft Authenticator, Authy, Bitwarden, and 1Password.",
+                                        "Programu zinazokubalika: Google Authenticator, Microsoft Authenticator, Authy, Bitwarden na 1Password."
+                                    )}
                         </p>
 
-                        <div className={pageStyles.otpModalActions}>
+                        <div className={styles.modalActions}>
+                            <button
+                                className={styles.modalGhost}
+                                type="button"
+                                onClick={closeTwoFactorModal}
+                            >
+                                {t("Change credentials", "Badilisha taarifa")}
+                            </button>
+                            <button
+                                className={styles.modalGhost}
+                                type="button"
+                                onClick={() => setShowRecoveryCode((current) => !current)}
+                            >
+                                {showRecoveryCode
+                                    ? t("Use authenticator code instead", "Tumia msimbo wa programu badala yake")
+                                    : t("Use backup recovery code", "Tumia msimbo wa dharura")}
+                            </button>
                             {showRecoveryCode ? (
                                 <button
-                                    className="secondary-button"
+                                    className={styles.modalPrimary}
                                     disabled={verifyingTwoFactor}
                                     type="button"
                                     onClick={() => void handleVerifyTwoFactor()}
                                 >
-                                    {verifyingTwoFactor ? "Verifying..." : "Verify & Sign In"}
+                                    {verifyingTwoFactor
+                                        ? t("Verifying…", "Inathibitisha…")
+                                        : t("Verify & sign in", "Thibitisha na uingie")}
                                 </button>
                             ) : (
-                                <span className={pageStyles.authAssistLabel}>
-                                    {verifyingTwoFactor ? "Verifying code..." : "Code submits automatically."}
+                                <span className={styles.modalNote}>
+                                    {verifyingTwoFactor
+                                        ? t("Verifying code…", "Inathibitisha msimbo…")
+                                        : t("Code submits automatically.", "Msimbo hutumwa kiotomatiki.")}
                                 </span>
                             )}
-                            <button
-                                className={pageStyles.otpModalLink}
-                                type="button"
-                                onClick={() => setShowRecoveryCode((current) => !current)}
-                            >
-                                {showRecoveryCode ? "Use authenticator code instead" : "Use backup recovery code"}
-                            </button>
-                            <button
-                                className={pageStyles.otpModalLink}
-                                type="button"
-                                onClick={closeTwoFactorModal}
-                            >
-                                Change credentials
-                            </button>
                         </div>
                     </div>
                 </div>

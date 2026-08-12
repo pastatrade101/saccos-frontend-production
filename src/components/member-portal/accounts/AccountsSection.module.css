@@ -1,0 +1,119 @@
+/* Accounts — account table, product rules, health tiles and dividend mapping. */
+
+.btnSmall {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--m-line3);
+  background: var(--m-surface);
+  color: var(--m-ink);
+  font-family: inherit;
+  font-size: var(--m-fs-secondary);
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.18s ease, color 0.18s ease;
+}
+
+.btnSmall:hover {
+  border-color: var(--m-gold);
+  color: var(--m-gold-ink);
+}
+
+.accountNumber {
+  display: block;
+  font-weight: 700;
+  color: var(--m-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.accountName {
+  display: block;
+  font-size: var(--m-fs-secondary);
+  color: var(--m-muted2);
+  margin-top: 2px;
+}
+
+.reference {
+  font-variant-numeric: tabular-nums;
+  color: var(--m-muted);
+  font-size: var(--m-fs-secondary);
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--m-line);
+}
+
+.pagerControls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pagerButton {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid var(--m-line3);
+  background: var(--m-surface);
+  color: var(--m-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.18s ease, color 0.18s ease;
+}
+
+.pagerButton:hover:not(:disabled) {
+  border-color: var(--m-gold);
+  color: var(--m-gold);
+}
+
+.pagerButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.split {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+  min-width: 0;
+}
+
+.ruleRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ruleTick {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  margin-top: 1px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--m-ok-soft);
+  color: var(--m-ok-ink);
+  font-size: 13px;
+}
+
+.healthGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+  min-width: 0;
+}

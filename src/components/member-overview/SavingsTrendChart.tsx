@@ -17,6 +17,8 @@ interface SavingsTrendChartProps {
     series: SavingsTrendPoint[];
     fallbackLabels?: string[];
     fallbackValues?: number[];
+    /** Drop the card and title when the caller supplies its own section chrome. */
+    bare?: boolean;
 }
 
 const MODE_META: Record<TrendMode, { toggle: string; range: string; axis: string }> = {
@@ -105,7 +107,7 @@ function buildTrend(series: SavingsTrendPoint[], mode: TrendMode) {
     };
 }
 
-export function SavingsTrendChart({ series, fallbackLabels, fallbackValues }: SavingsTrendChartProps) {
+export function SavingsTrendChart({ series, fallbackLabels, fallbackValues, bare = false }: SavingsTrendChartProps) {
     const theme = useTheme();
     const isDarkMode = theme.palette.mode === "dark";
     const accent = isDarkMode ? "#D9B273" : brandColors.primary[700];
@@ -153,6 +155,7 @@ export function SavingsTrendChart({ series, fallbackLabels, fallbackValues }: Sa
 
     return (
         <ChartPanel
+            bare={bare}
             title="Savings Trend"
             subtitle={
                 hasData

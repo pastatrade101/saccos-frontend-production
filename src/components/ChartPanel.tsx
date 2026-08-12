@@ -17,6 +17,11 @@ interface ChartPanelProps {
     options?: ChartOptions<"line" | "bar" | "doughnut">;
     height?: number;
     actions?: ReactNode;
+    /**
+     * Render the chart without its card and title, for callers that already
+     * supply their own section chrome (the redesigned member portal sections).
+     */
+    bare?: boolean;
 }
 
 export function ChartPanel({
@@ -26,9 +31,31 @@ export function ChartPanel({
     data,
     options,
     height = 280,
-    actions
+    actions,
+    bare = false
 }: ChartPanelProps) {
     const theme = useTheme();
+
+    const chart = type === "bar" ? (
+        <Bar data={data as ChartData<"bar">} options={options as ChartOptions<"bar">} />
+    ) : type === "doughnut" ? (
+        <Doughnut data={data as ChartData<"doughnut">} options={options as ChartOptions<"doughnut">} />
+    ) : (
+        <Line data={data as ChartData<"line">} options={options as ChartOptions<"line">} />
+    );
+
+    if (bare) {
+        return (
+            <>
+                {actions ? (
+                    <Stack direction="row" justifyContent="flex-end" mb={1.25}>
+                        {actions}
+                    </Stack>
+                ) : null}
+                <div style={{ height }}>{chart}</div>
+            </>
+        );
+    }
 
     return (
         <MotionCard
@@ -50,15 +77,7 @@ export function ChartPanel({
                     </div>
                     {actions}
                 </Stack>
-                <div style={{ height }}>
-                    {type === "bar" ? (
-                        <Bar data={data as ChartData<"bar">} options={options as ChartOptions<"bar">} />
-                    ) : type === "doughnut" ? (
-                        <Doughnut data={data as ChartData<"doughnut">} options={options as ChartOptions<"doughnut">} />
-                    ) : (
-                        <Line data={data as ChartData<"line">} options={options as ChartOptions<"line">} />
-                    )}
-                </div>
+                <div style={{ height }}>{chart}</div>
             </CardContent>
         </MotionCard>
     );

@@ -1,0 +1,462 @@
+/* Shared content primitives for the member portal sections.
+ *
+ * These are the repeated shapes from the handoff — card, section head, label,
+ * figure, chip, tile, table — so each section composes them instead of
+ * restating spacing and colour. Tokens come from theme/memberTokens.css.
+ */
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  min-width: 0;
+}
+
+/* ---------- card ---------- */
+
+.card {
+  background: var(--m-surface);
+  border: 1px solid var(--m-line);
+  border-radius: var(--m-radius-card);
+  box-shadow: var(--m-shadow-card);
+  padding: 18px;
+  min-width: 0;
+  transition: box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.cardHover:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 18px 34px -20px rgba(16, 24, 40, 0.45);
+}
+
+.section {
+  background: var(--m-surface);
+  border: 1px solid var(--m-line);
+  border-radius: var(--m-radius-section);
+  box-shadow: var(--m-shadow-card);
+  padding: 22px;
+  min-width: 0;
+}
+
+.sectionHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-family: var(--m-font-display);
+  font-size: var(--m-fs-section);
+  font-weight: 500;
+  color: var(--m-ink);
+}
+
+.sectionNote {
+  margin: 4px 0 0;
+  font-size: var(--m-fs-secondary);
+  color: var(--m-muted2);
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: var(--m-fs-card);
+  font-weight: 700;
+  color: var(--m-ink);
+}
+
+/* ---------- text ---------- */
+
+.label {
+  font-size: var(--m-fs-label);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--m-muted2);
+}
+
+.labelGold {
+  composes: label;
+  color: var(--m-gold-ink);
+}
+
+.figure {
+  font-size: var(--m-fs-figure);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--m-ink);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+
+.figureLg {
+  composes: figure;
+  font-size: var(--m-fs-figure-lg);
+}
+
+.body {
+  font-size: var(--m-fs-body);
+  color: var(--m-ink2);
+  line-height: 1.5;
+}
+
+.secondary {
+  font-size: var(--m-fs-secondary);
+  color: var(--m-muted2);
+  line-height: 1.5;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- chips ---------- */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: var(--m-fs-micro);
+  font-weight: 700;
+  white-space: nowrap;
+  background: var(--m-soft);
+  color: var(--m-muted);
+}
+
+.chipInfo {
+  background: var(--m-info-soft);
+  color: var(--m-info-ink);
+}
+
+.chipOk {
+  background: var(--m-ok-soft);
+  color: var(--m-ok-ink);
+}
+
+.chipGold {
+  background: var(--m-gold-soft);
+  color: var(--m-gold-ink);
+}
+
+.chipDanger {
+  background: var(--m-danger-soft);
+  color: var(--m-danger-ink);
+}
+
+.chipWarn {
+  background: var(--m-warn-soft);
+  color: var(--m-warn-ink);
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: 0 0 7px;
+}
+
+/* Solid accent dots. Deliberately not the chip classes: those set a soft
+   background, which would paint over the dot's `currentColor` fill. */
+.dotInfo {
+  background: var(--m-info-ink);
+}
+
+.dotOk {
+  background: var(--m-ok-ink);
+}
+
+.dotGold {
+  background: var(--m-gold);
+}
+
+.dotDanger {
+  background: var(--m-danger-ink2);
+}
+
+/* ---------- buttons ---------- */
+
+.btnGold {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 18px;
+  border: none;
+  border-radius: var(--m-radius-box);
+  background: var(--m-grad-gold);
+  color: var(--m-navy);
+  font-family: inherit;
+  font-size: var(--m-fs-body);
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: filter 0.18s ease;
+}
+
+.btnGold:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.btnGold:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btnOutline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 18px;
+  border: 1px solid var(--m-line3);
+  border-radius: var(--m-radius-box);
+  background: var(--m-surface);
+  color: var(--m-ink);
+  font-family: inherit;
+  font-size: var(--m-fs-body);
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.18s ease, color 0.18s ease;
+}
+
+.btnOutline:hover {
+  border-color: var(--m-gold);
+  color: var(--m-gold-ink);
+}
+
+.btnGhostOnNavy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: var(--m-radius-box);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-family: inherit;
+  font-size: var(--m-fs-body);
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease;
+}
+
+.btnGhostOnNavy:hover {
+  border-color: var(--m-gold);
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.btnLink {
+  border: none;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: var(--m-fs-body);
+  font-weight: 700;
+  color: var(--m-info-ink);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btnLink:hover {
+  color: var(--m-gold);
+}
+
+.btnRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* ---------- grids and tiles ---------- */
+
+.grid4 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  min-width: 0;
+}
+
+.grid3 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  min-width: 0;
+}
+
+.tile {
+  padding: 13px 14px;
+  border-radius: var(--m-radius-box);
+  background: var(--m-soft);
+  border: 1px solid var(--m-line);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.tileGold {
+  background: var(--m-gold-soft);
+  border-color: var(--m-gold-line);
+}
+
+.tileLabel {
+  font-size: var(--m-fs-secondary);
+  color: var(--m-muted2);
+  font-weight: 600;
+}
+
+.tileValue {
+  font-size: var(--m-fs-tile);
+  font-weight: 800;
+  color: var(--m-ink);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.iconTile {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--m-info-soft);
+  color: var(--m-info-ink);
+}
+
+.iconTileGold {
+  background: var(--m-gold-soft);
+  color: var(--m-gold-ink);
+}
+
+.iconTileDanger {
+  background: var(--m-danger-soft);
+  color: var(--m-danger-ink);
+}
+
+/* Rows of label/value inside a detail card. */
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.rowLabel {
+  font-size: var(--m-fs-secondary);
+  color: var(--m-muted2);
+}
+
+.rowValue {
+  font-size: var(--m-fs-body);
+  font-weight: 700;
+  color: var(--m-ink);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* ---------- progress ---------- */
+
+.bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--m-line2);
+  overflow: hidden;
+}
+
+.barFill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--m-grad-gold);
+}
+
+/* ---------- table ---------- */
+
+.tableWrap {
+  overflow-x: auto;
+  min-width: 0;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--m-fs-body);
+}
+
+.table th {
+  text-align: left;
+  padding: 9px 12px;
+  font-size: var(--m-fs-label);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--m-muted2);
+  border-bottom: 1px solid var(--m-line);
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--m-line2);
+  color: var(--m-ink2);
+  white-space: nowrap;
+}
+
+.table tbody tr {
+  transition: background 0.12s ease;
+}
+
+.table tbody tr:hover {
+  background: var(--m-soft);
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.alignRight {
+  text-align: right;
+}
+
+.credit {
+  color: var(--m-ok-ink);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.debit {
+  color: var(--m-danger-ink2);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 640px) {
+  .stack {
+    gap: 16px;
+  }
+
+  .section,
+  .card {
+    padding: 16px;
+  }
+
+  .sectionTitle {
+    font-size: calc(var(--m-fs-section) - 1px);
+  }
+}

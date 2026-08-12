@@ -1,0 +1,205 @@
+/* My reports — contribution trend, standing, dividend statement,
+   the consistency heatmap, monthly chips, UTT registers and the
+   operation-account ledger. */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  background: var(--m-surface);
+  border: 1px solid var(--m-line);
+  border-radius: var(--m-radius-card);
+  box-shadow: var(--m-shadow-card);
+  padding: 14px 16px;
+}
+
+.btnSmall {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--m-line3);
+  background: var(--m-surface);
+  color: var(--m-ink);
+  font-family: inherit;
+  font-size: var(--m-fs-secondary);
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.18s ease, color 0.18s ease;
+}
+
+.btnSmall:hover {
+  border-color: var(--m-gold);
+  color: var(--m-gold-ink);
+}
+
+/* ---------- 2. trend and target ---------- */
+
+.trendSplit {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 16px;
+  min-width: 0;
+}
+
+.bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  height: 190px;
+  padding-top: 8px;
+}
+
+.barCol {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  height: 100%;
+  justify-content: flex-end;
+}
+
+.barTrack {
+  width: 100%;
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+}
+
+.bar {
+  width: 100%;
+  border-radius: 6px 6px 0 0;
+  background: var(--m-info-ink);
+  min-height: 3px;
+}
+
+.barLatest {
+  background: var(--m-ok-ink);
+}
+
+.barLabel {
+  font-size: var(--m-fs-label);
+  color: var(--m-muted2);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.targetBox {
+  margin-top: 14px;
+  padding: 14px 15px;
+  border-radius: var(--m-radius-box);
+  background: var(--m-gold-soft);
+  border: 1px solid var(--m-gold-line);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+/* ---------- 5. heatmap ---------- */
+
+.heatRow {
+  display: grid;
+  grid-template-columns: 44px repeat(12, minmax(0, 1fr));
+  gap: 5px;
+  align-items: center;
+  margin-bottom: 5px;
+}
+
+.heatYear {
+  font-size: var(--m-fs-label);
+  font-weight: 700;
+  color: var(--m-muted2);
+  font-variant-numeric: tabular-nums;
+}
+
+.heatCell {
+  height: 26px;
+  border-radius: 6px;
+  background: var(--m-line2);
+}
+
+.heatLegend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: var(--m-fs-secondary);
+  color: var(--m-muted2);
+}
+
+.heatSwatch {
+  width: 18px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+/* ---------- 6. monthly chips ---------- */
+
+.chipGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 9px;
+}
+
+.monthChip {
+  padding: 9px 11px;
+  border-radius: var(--m-radius-box);
+  border: 1px solid var(--m-line);
+  background: var(--m-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.monthChipCurrent {
+  background: var(--m-gold-soft);
+  border-color: var(--m-gold-line);
+}
+
+.monthChipLabel {
+  font-size: var(--m-fs-label);
+  font-weight: 700;
+  color: var(--m-muted2);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.monthChipValue {
+  font-size: var(--m-fs-body);
+  font-weight: 800;
+  color: var(--m-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 8. operation account ---------- */
+
+.totalRow td {
+  font-weight: 800;
+  color: var(--m-ink);
+  border-top: 2px solid var(--m-line3);
+}
+
+@media (max-width: 900px) {
+  .trendSplit {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .heatRow {
+    grid-template-columns: 34px repeat(12, minmax(0, 1fr));
+    gap: 3px;
+  }
+
+  .heatCell {
+    height: 18px;
+    border-radius: 4px;
+  }
+}

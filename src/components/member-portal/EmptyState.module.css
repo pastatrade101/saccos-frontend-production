@@ -1,0 +1,52 @@
+/* Illustrated empty state: icon, what belongs here, why it is empty, and the
+   one action that changes it. */
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  padding: 30px 20px;
+  border-radius: var(--m-radius-box);
+  border: 1px dashed var(--m-line3);
+  background: var(--m-soft);
+  text-align: center;
+}
+
+.icon {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--m-line2);
+  color: var(--m-muted2);
+  margin-bottom: 2px;
+}
+
+.iconInfo {
+  background: var(--m-info-soft);
+  color: var(--m-info-ink);
+}
+
+.iconGold {
+  background: var(--m-gold-soft);
+  color: var(--m-gold-ink);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--m-fs-card);
+  font-weight: 700;
+  color: var(--m-ink);
+}
+
+.body {
+  margin: 0 0 4px;
+  font-size: var(--m-fs-secondary);
+  line-height: 1.55;
+  color: var(--m-muted2);
+  max-width: 420px;
+}

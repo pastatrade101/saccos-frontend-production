@@ -1,0 +1,688 @@
+/* Member portal chrome — Ilboru handoff design.
+ *
+ * Resolves tokens from theme/memberTokens.css; the root element carries
+ * `member-surface`. The sidebar and footer are navy in both themes, so their
+ * colours are literal rather than tokenised.
+ */
+
+.shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  background: var(--m-canvas);
+  color: var(--m-ink);
+  font-family: var(--m-font-ui);
+}
+
+/* ---------- sidebar ---------- */
+
+/* Fixed and always fully visible — only the main column scrolls. Nothing here
+   overflows at normal viewport heights; the nav is the only part allowed to
+   scroll, and only on very short screens. */
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 30;
+  width: 262px;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--m-grad-sidebar);
+  padding: 20px 16px 18px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Only the nav flexes and scrolls, so the brand, member card, pay card and
+   footer stay on screen even on a short viewport. */
+.navScroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.navScroll::-webkit-scrollbar {
+  display: none;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+
+.brandLogo {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  /* Never themed: the logo's navy wave must read against the navy rail. */
+  background: #fff;
+  padding: 4px;
+  box-sizing: border-box;
+  flex: 0 0 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.brandLogo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.brandNames {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.brandName {
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.2;
+}
+
+.brandSub {
+  font-size: var(--m-fs-label);
+  color: #8fa0c4;
+  letter-spacing: 0.04em;
+}
+
+.memberCard {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.memberIdentity {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+
+.memberAvatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  flex: 0 0 40px;
+  background: var(--m-gold);
+  color: var(--m-navy);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 800;
+  overflow: hidden;
+}
+
+.memberAvatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.memberText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.memberName {
+  font-size: var(--m-fs-body);
+  font-weight: 700;
+  color: #fff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memberNo {
+  font-size: var(--m-fs-label);
+  color: #8fa0c4;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memberPills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pillGold {
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: var(--m-gold);
+  color: var(--m-navy);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.pillOk {
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: rgba(30, 138, 95, 0.22);
+  color: #5fd3a0;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.navLabel {
+  font-size: var(--m-fs-label);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: #6c7ea6;
+  padding: 0 4px;
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.navItem {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 9px 12px;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  color: #9aa3b4;
+  font-family: inherit;
+  font-size: var(--m-fs-nav);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.16s ease, color 0.16s ease;
+}
+
+.navItem:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+}
+
+.navItemActive,
+.navItemActive:hover {
+  background: linear-gradient(90deg, rgba(201, 162, 39, 0.2), rgba(255, 255, 255, 0.05));
+  color: #fff;
+  font-weight: 700;
+  box-shadow: inset 2px 0 0 var(--m-gold);
+}
+
+.navDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4a5b84;
+  flex: 0 0 6px;
+}
+
+.navItemActive .navDot {
+  background: var(--m-gold);
+}
+
+.payCard {
+  background: rgba(201, 162, 39, 0.12);
+  border: 1px solid rgba(201, 162, 39, 0.32);
+  border-radius: 12px;
+  padding: 11px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.payLabel {
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--m-gold);
+}
+
+.payNumber {
+  font-size: var(--m-fs-tile);
+  font-weight: 800;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  word-break: break-all;
+}
+
+.payLine {
+  font-size: var(--m-fs-label);
+  color: #8fa0c4;
+  line-height: 1.45;
+}
+
+.payCopy {
+  align-self: flex-start;
+  margin-top: 2px;
+  border: none;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: #f0d375;
+  cursor: pointer;
+}
+
+.payCopy:hover {
+  color: #fff;
+}
+
+.sidebarFooter {
+  padding-top: 11px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: center;
+}
+
+.sidebarFooterTitle {
+  font-size: var(--m-fs-label);
+  font-weight: 700;
+  color: #b8c0cf;
+}
+
+.sidebarFooterNote {
+  font-size: var(--m-fs-label);
+  color: #6c7ea6;
+}
+
+/* ---------- main column ---------- */
+
+.main {
+  flex: 1;
+  min-width: 0;
+  margin-left: 262px;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 16px clamp(16px, 3vw, 40px);
+  background: var(--m-surface);
+  border-bottom: 1px solid var(--m-line3);
+}
+
+.topbarLeft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.pageTitle {
+  margin: 0;
+  font-family: var(--m-font-display);
+  font-size: var(--m-fs-title);
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--m-ink);
+}
+
+.pageSubtitle {
+  margin: 2px 0 0;
+  font-size: var(--m-fs-secondary);
+  color: var(--m-muted3);
+}
+
+.topbarRight {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border-radius: 999px;
+  background: var(--m-soft);
+  border: 1px solid var(--m-line3);
+  min-width: 210px;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+
+.search:focus-within {
+  background: var(--m-surface);
+  border-color: var(--m-info-ink);
+}
+
+.search svg {
+  color: var(--m-muted2);
+  font-size: 18px;
+  flex: 0 0 auto;
+}
+
+input.searchInput {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  height: auto;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--m-ink);
+  font-family: inherit;
+  font-size: var(--m-fs-body);
+}
+
+input.searchInput:focus {
+  outline: none;
+  border: none;
+  box-shadow: none;
+  background: none;
+}
+
+input.searchInput::placeholder {
+  color: var(--m-muted2);
+}
+
+.iconButton {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  border-radius: 50%;
+  border: 1px solid var(--m-line3);
+  background: var(--m-surface);
+  color: var(--m-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.18s ease, color 0.18s ease;
+}
+
+.iconButton:hover {
+  border-color: var(--m-gold);
+  color: var(--m-gold);
+}
+
+/* Unread count on the bell. */
+.badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--m-danger-ink2);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 800;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.menuButton {
+  display: none;
+}
+
+.langPill {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  background: var(--m-soft);
+  border: 1px solid var(--m-line3);
+  border-radius: 999px;
+}
+
+.langOption {
+  padding: 6px 11px;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: var(--m-muted3);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.langOptionActive {
+  background: var(--m-navy);
+  color: #fff;
+}
+
+.avatarButton {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  border-radius: 50%;
+  border: 2px solid var(--m-gold);
+  background: var(--m-navy);
+  color: #fff;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  overflow: hidden;
+  padding: 0;
+}
+
+.avatarButton img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.content {
+  flex: 1;
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 32px clamp(16px, 3vw, 40px) 72px;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+/* Replayed on every section change so the swap reads as a transition. The two
+   identical keyframe names alternate, which is what restarts the animation. */
+.contentFadeA {
+  animation: mContentFadeA 0.26s ease-out;
+}
+
+.contentFadeB {
+  animation: mContentFadeB 0.26s ease-out;
+}
+
+@keyframes mContentFadeA {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes mContentFadeB {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---------- footer ---------- */
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 22px clamp(16px, 3vw, 40px);
+  background: var(--m-navy);
+  color: #b8c0cf;
+  font-size: var(--m-fs-secondary);
+}
+
+.footerBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.footerStrong {
+  color: #fff;
+  font-weight: 700;
+}
+
+.footerLinks {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.footerLink {
+  color: #b8c0cf;
+  text-decoration: none;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: var(--m-fs-secondary);
+  cursor: pointer;
+}
+
+.footerLink:hover {
+  color: var(--m-gold);
+}
+
+.footerRight {
+  text-align: right;
+}
+
+.footerCredit strong {
+  color: var(--m-gold);
+  font-weight: 700;
+}
+
+/* ---------- responsive ---------- */
+
+/* The handoff has no collapsed rail; below the desktop breakpoint the sidebar
+   becomes an off-canvas drawer instead, which is what the app already did. */
+@media (max-width: 1080px) {
+  .main {
+    margin-left: 0;
+  }
+
+  .sidebar {
+    z-index: 60;
+    transform: translateX(-100%);
+    transition: transform 0.24s ease;
+    box-shadow: none;
+  }
+
+  .sidebarOpen {
+    transform: none;
+    box-shadow: var(--m-shadow-dropdown);
+  }
+
+  .scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: rgba(11, 27, 63, 0.45);
+    border: none;
+    padding: 0;
+  }
+
+  .menuButton {
+    display: inline-flex;
+  }
+
+  .search {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .topbar {
+    padding: 12px 16px;
+    gap: 10px;
+  }
+
+  .pageTitle {
+    font-size: 20px;
+  }
+
+  .pageSubtitle {
+    display: none;
+  }
+
+  .content {
+    padding: 20px 14px 88px;
+  }
+
+  .langPill {
+    display: none;
+  }
+
+  .footer {
+    padding: 20px 16px;
+  }
+
+  .footerRight {
+    text-align: left;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar {
+    transition: none;
+  }
+
+  .contentFadeA,
+  .contentFadeB {
+    animation: none;
+  }
+}

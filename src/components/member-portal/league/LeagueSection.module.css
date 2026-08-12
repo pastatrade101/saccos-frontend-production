@@ -1,0 +1,379 @@
+/* Savings league — standing, the members around you, the tier ladder,
+   your rank movement and what it takes to climb. */
+
+.hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--m-radius-hero);
+  background: linear-gradient(150deg, #0b1b3f 0%, #132c63 55%, #0b1b3f 100%);
+  box-shadow: var(--m-shadow-hero);
+  padding: clamp(18px, 2.2vw, 26px) clamp(18px, 2.4vw, 30px);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.heroGlow {
+  position: absolute;
+  top: -110px;
+  right: -90px;
+  width: 320px;
+  height: 320px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(201, 162, 39, 0.28), transparent 68%);
+  pointer-events: none;
+}
+
+.heroTop {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.tierName {
+  margin: 0;
+  font-family: var(--m-font-display);
+  font-size: var(--m-fs-title);
+  font-weight: 500;
+}
+
+.heroFigure {
+  margin: 0;
+  position: relative;
+  font-size: var(--m-fs-hero);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+
+.heroChips {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.glassPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  font-size: var(--m-fs-secondary);
+  font-weight: 600;
+  color: #e6ebf7;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.pillUp {
+  background: rgba(30, 138, 95, 0.24);
+  border-color: rgba(95, 211, 160, 0.32);
+  color: #5fd3a0;
+}
+
+.pillDown {
+  background: rgba(192, 73, 47, 0.24);
+  border-color: rgba(240, 138, 114, 0.32);
+  color: #f08a72;
+}
+
+.progressBlock {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.progressLabels {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  font-size: var(--m-fs-secondary);
+  color: #b8c0cf;
+}
+
+.progressLabels strong {
+  color: #fff;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.progressTrack {
+  height: 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--m-grad-gold);
+}
+
+.guidance {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--m-fs-secondary);
+  color: #b8c0cf;
+  line-height: 1.55;
+}
+
+.guidance strong {
+  color: var(--m-gold);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- around you ---------- */
+
+.aroundRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--m-radius-box);
+  border: 1px solid var(--m-line);
+  background: var(--m-surface);
+  min-width: 0;
+}
+
+.aroundRowYou {
+  background: var(--m-gold-soft);
+  border-color: var(--m-gold-line);
+}
+
+.rankTile {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--m-soft);
+  color: var(--m-muted);
+  font-size: var(--m-fs-secondary);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.rankTileYou {
+  background: var(--m-gold);
+  color: var(--m-navy);
+}
+
+.aroundWho {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.aroundName {
+  font-size: var(--m-fs-body);
+  font-weight: 700;
+  color: var(--m-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.aroundGap {
+  font-size: var(--m-fs-secondary);
+  color: var(--m-muted2);
+  font-variant-numeric: tabular-nums;
+}
+
+.aroundAmount {
+  font-size: var(--m-fs-body);
+  font-weight: 800;
+  color: var(--m-ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---------- the ladder ---------- */
+
+.ladderRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  min-width: 0;
+}
+
+.ladderName {
+  flex: 0 0 108px;
+  font-size: var(--m-fs-body);
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ladderBand {
+  flex: 0 0 140px;
+  font-size: var(--m-fs-secondary);
+  color: var(--m-muted2);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ladderBarWrap {
+  flex: 1;
+  min-width: 0;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--m-line2);
+  overflow: hidden;
+}
+
+.ladderBar {
+  height: 100%;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.ladderCount {
+  flex: 0 0 44px;
+  text-align: right;
+  font-size: var(--m-fs-secondary);
+  font-weight: 700;
+  color: var(--m-ink2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Fixed width so every row's columns line up whether or not it carries the
+   "You are here" pill. */
+.ladderHerePlaceholder {
+  flex: 0 0 92px;
+}
+
+.ladderHere {
+  flex: 0 0 92px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--m-gold);
+  color: var(--m-navy);
+  font-size: var(--m-fs-label);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+/* ---------- your climb ---------- */
+
+.climbRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.climbLabel {
+  flex: 0 0 130px;
+  font-size: var(--m-fs-secondary);
+  color: var(--m-muted2);
+}
+
+.climbBarWrap {
+  flex: 1;
+  min-width: 0;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--m-line2);
+  overflow: hidden;
+}
+
+.climbBar {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--m-info-ink);
+}
+
+.climbRank {
+  flex: 0 0 62px;
+  text-align: right;
+  font-size: var(--m-fs-body);
+  font-weight: 800;
+  color: var(--m-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- how to climb ---------- */
+
+.climbCard {
+  border-radius: var(--m-radius-section);
+  background: var(--m-gold-soft);
+  border: 1px solid var(--m-gold-line);
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.climbGoals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+}
+
+.climbGoal {
+  padding: 13px 14px;
+  border-radius: var(--m-radius-box);
+  background: var(--m-surface);
+  border: 1px solid var(--m-gold-line);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .ladderBand {
+    display: none;
+  }
+
+  .ladderName {
+    flex-basis: 84px;
+  }
+
+  .ladderHere,
+  .ladderHerePlaceholder {
+    flex-basis: 62px;
+  }
+
+  .ladderHere {
+    font-size: 9.5px;
+    padding: 4px 6px;
+  }
+}
+
+@media (max-width: 640px) {
+  .hero,
+  .climbCard {
+    padding: 16px;
+  }
+
+  .climbLabel {
+    flex-basis: 92px;
+  }
+}

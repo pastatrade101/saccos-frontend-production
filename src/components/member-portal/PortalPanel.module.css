@@ -1,0 +1,348 @@
+/* Dropdown shell for the notification panel and the profile menu. */
+
+.panel {
+  position: absolute;
+  top: 52px;
+  right: 0;
+  z-index: 40;
+  width: 340px;
+  max-width: calc(100vw - 24px);
+  max-height: min(76vh, 620px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--m-surface);
+  border: 1px solid var(--m-line3);
+  border-radius: 18px;
+  box-shadow: var(--m-shadow-dropdown);
+  animation: mFadeUpA 0.16s ease-out;
+}
+
+@keyframes mFadeUpA {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 15px 16px;
+  border-bottom: 1px solid var(--m-line);
+}
+
+.headerTitle {
+  margin: 0;
+  font-size: var(--m-fs-card);
+  font-weight: 700;
+  color: var(--m-ink);
+}
+
+.headerNote {
+  margin: 2px 0 0;
+  font-size: var(--m-fs-secondary);
+  color: var(--m-muted2);
+}
+
+.headerAction {
+  border: none;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: var(--m-fs-secondary);
+  font-weight: 700;
+  color: var(--m-info-ink);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.headerAction:hover:not(:disabled) {
+  color: var(--m-gold);
+}
+
+.headerAction:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.footer {
+  padding: 12px 16px;
+  border-top: 1px solid var(--m-line);
+}
+
+.body {
+  padding: 8px;
+}
+
+.empty {
+  padding: 26px 16px;
+  text-align: center;
+  font-size: var(--m-fs-secondary);
+  color: var(--m-muted2);
+}
+
+/* ---------- notification rows ---------- */
+
+.row {
+  display: flex;
+  gap: 11px;
+  width: 100%;
+  padding: 12px 13px;
+  border: none;
+  border-radius: var(--m-radius-row);
+  background: none;
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.14s ease;
+}
+
+.row:hover {
+  background: var(--m-line2);
+}
+
+/* Unread rows sit on --soft so the dot is not the only signal. */
+.rowUnread {
+  background: var(--m-soft);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--m-line3);
+}
+
+.dotUnread {
+  background: var(--m-gold);
+}
+
+.rowText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rowTitle {
+  font-size: var(--m-fs-body);
+  font-weight: 700;
+  color: var(--m-ink);
+}
+
+.rowBody {
+  font-size: var(--m-fs-secondary);
+  color: var(--m-muted2);
+  line-height: 1.45;
+}
+
+.rowTime {
+  font-size: var(--m-fs-label);
+  color: var(--m-muted3);
+  margin-top: 2px;
+}
+
+/* ---------- profile menu ---------- */
+
+.profileHead {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding: 16px;
+  border-bottom: 1px solid var(--m-line);
+}
+
+.profileIdentity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.profileAvatar {
+  width: 52px;
+  height: 52px;
+  flex: 0 0 52px;
+  border-radius: 50%;
+  background: var(--m-navy);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 19px;
+  font-weight: 800;
+  overflow: hidden;
+}
+
+.profileAvatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.profileName {
+  font-size: var(--m-fs-card);
+  font-weight: 800;
+  color: var(--m-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profileEmail {
+  font-size: var(--m-fs-secondary);
+  color: var(--m-muted2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profilePills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.detailBlock {
+  margin: 12px;
+  padding: 12px 13px;
+  border-radius: var(--m-radius-box);
+  background: var(--m-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.detailRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.detailLabel {
+  font-size: var(--m-fs-secondary);
+  color: var(--m-muted2);
+}
+
+.detailValue {
+  font-size: var(--m-fs-secondary);
+  font-weight: 700;
+  color: var(--m-ink);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.actions {
+  padding: 0 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.action {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 11px 12px;
+  border: none;
+  border-radius: var(--m-radius-row);
+  background: none;
+  color: var(--m-ink2);
+  font-family: inherit;
+  font-size: var(--m-fs-body);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+
+.action:hover {
+  background: var(--m-soft);
+  color: var(--m-ink);
+}
+
+.action svg {
+  color: var(--m-muted2);
+  flex: 0 0 auto;
+}
+
+.actionLabel {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.actionNote {
+  font-size: var(--m-fs-label);
+  color: var(--m-muted3);
+  font-weight: 600;
+}
+
+.actionDanger {
+  color: var(--m-danger-ink2);
+}
+
+.actionDanger svg {
+  color: var(--m-danger-ink2);
+}
+
+.actionDanger:hover {
+  background: var(--m-danger-soft);
+  color: var(--m-danger-ink2);
+}
+
+.divider {
+  height: 1px;
+  margin: 7px 4px;
+  background: var(--m-line);
+}
+
+/* ---------- toggle ---------- */
+
+.toggle {
+  width: 44px;
+  height: 24px;
+  flex: 0 0 44px;
+  border-radius: 999px;
+  border: none;
+  padding: 3px;
+  background: var(--m-line3);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  cursor: pointer;
+  transition: background 0.18s ease;
+}
+
+.toggleOn {
+  background: #1e8a5f;
+  justify-content: flex-end;
+}
+
+.toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.toggleKnob {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}

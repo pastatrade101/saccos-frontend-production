@@ -1,0 +1,175 @@
+/* Loans — borrowing-capacity hero and the loan-status donut. */
+
+.hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--m-radius-hero);
+  background: linear-gradient(150deg, #0b1b3f 0%, #132c63 55%, #0b1b3f 100%);
+  box-shadow: var(--m-shadow-hero);
+  padding: clamp(18px, 2.2vw, 26px) clamp(18px, 2.4vw, 30px);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+.heroGlow {
+  position: absolute;
+  top: -110px;
+  right: -90px;
+  width: 320px;
+  height: 320px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(201, 162, 39, 0.28), transparent 68%);
+  pointer-events: none;
+}
+
+.heroLabel {
+  position: relative;
+  font-size: var(--m-fs-label);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--m-gold);
+}
+
+.heroFigure {
+  position: relative;
+  margin: 0;
+  font-size: var(--m-fs-hero);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+
+.heroNote {
+  position: relative;
+  margin: 0;
+  font-size: var(--m-fs-secondary);
+  color: #b8c0cf;
+  line-height: 1.55;
+  max-width: 620px;
+}
+
+.heroStats {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.heroStat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.heroStatValue {
+  font-size: var(--m-fs-tile);
+  font-weight: 800;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.heroStatLabel {
+  font-size: var(--m-fs-label);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: #8fa0c4;
+}
+
+/* ---------- status donut ---------- */
+
+.donutRow {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+  flex-wrap: wrap;
+}
+
+.donut {
+  position: relative;
+  width: 132px;
+  height: 132px;
+  flex: 0 0 132px;
+}
+
+.donutCentre {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+}
+
+.donutPercent {
+  font-size: var(--m-fs-figure);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--m-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.donutCaption {
+  font-size: var(--m-fs-label);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--m-muted2);
+}
+
+.donutLegend {
+  flex: 1 1 220px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.legendItem {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.legendItem > :nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+
+.legendSwatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex: 0 0 10px;
+  align-self: center;
+}
+
+@media (max-width: 640px) {
+  .hero {
+    padding: 16px;
+  }
+}
+
+/* Schedule beside the document vault. */
+.scheduleSplit {
+  display: grid;
+  grid-template-columns: 1.7fr 1fr;
+  gap: 16px;
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .scheduleSplit {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

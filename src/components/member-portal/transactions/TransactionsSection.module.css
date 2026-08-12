@@ -1,0 +1,209 @@
+/* Transactions — toolbar, KPI row, balance trend and the posted ledger. */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  background: var(--m-surface);
+  border: 1px solid var(--m-line);
+  border-radius: var(--m-radius-card);
+  box-shadow: var(--m-shadow-card);
+  padding: 14px 16px;
+}
+
+.filterPills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  min-width: 0;
+}
+
+.pill {
+  padding: 7px 13px;
+  border-radius: 999px;
+  border: 1px solid var(--m-line3);
+  background: var(--m-surface);
+  color: var(--m-muted);
+  font-family: inherit;
+  font-size: var(--m-fs-secondary);
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease;
+}
+
+.pill:hover {
+  border-color: var(--m-gold);
+  color: var(--m-gold-ink);
+}
+
+.pillActive,
+.pillActive:hover {
+  background: var(--m-navy);
+  border-color: var(--m-navy);
+  color: #fff;
+}
+
+.toolbarRight {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 13px;
+  border-radius: 999px;
+  background: var(--m-soft);
+  border: 1px solid var(--m-line3);
+  min-width: 190px;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+
+.search:focus-within {
+  background: var(--m-surface);
+  border-color: var(--m-info-ink);
+}
+
+.search svg {
+  color: var(--m-muted2);
+  flex: 0 0 auto;
+}
+
+input.searchInput {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  height: auto;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--m-ink);
+  font-family: inherit;
+  font-size: var(--m-fs-body);
+}
+
+input.searchInput:focus {
+  outline: none;
+  border: none;
+  box-shadow: none;
+  background: none;
+}
+
+input.searchInput::placeholder {
+  color: var(--m-muted2);
+}
+
+.btnSmall {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--m-line3);
+  background: var(--m-surface);
+  color: var(--m-ink);
+  font-family: inherit;
+  font-size: var(--m-fs-secondary);
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.18s ease, color 0.18s ease;
+}
+
+.btnSmall:hover {
+  border-color: var(--m-gold);
+  color: var(--m-gold-ink);
+}
+
+/* ---------- ledger ---------- */
+
+.flagButton {
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--m-line3);
+  background: var(--m-surface);
+  color: var(--m-muted);
+  font-family: inherit;
+  font-size: var(--m-fs-label);
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+}
+
+.flagButton:hover {
+  border-color: var(--m-gold);
+  color: var(--m-gold-ink);
+}
+
+.flagButtonOn,
+.flagButtonOn:hover {
+  background: var(--m-warn-soft);
+  border-color: var(--m-gold-line);
+  color: var(--m-warn-ink);
+}
+
+.reference {
+  font-variant-numeric: tabular-nums;
+  color: var(--m-muted);
+  font-size: var(--m-fs-secondary);
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--m-line);
+}
+
+.pagerControls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pagerButton {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid var(--m-line3);
+  background: var(--m-surface);
+  color: var(--m-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.18s ease, color 0.18s ease;
+}
+
+.pagerButton:hover:not(:disabled) {
+  border-color: var(--m-gold);
+  color: var(--m-gold);
+}
+
+.pagerButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  .toolbar {
+    padding: 12px;
+  }
+
+  .search {
+    min-width: 0;
+    flex: 1 1 140px;
+  }
+}

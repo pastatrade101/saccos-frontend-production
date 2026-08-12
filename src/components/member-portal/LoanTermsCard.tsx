@@ -27,6 +27,8 @@ import { formatMonthlyLoanRate } from "../../utils/loanInterest";
 
 interface LoanTermsCardProps {
     product: LoanProduct;
+    /** The tier the member's savings currently qualify them for. */
+    recommended?: boolean;
 }
 
 function titleCase(value: string) {
@@ -100,7 +102,7 @@ function TermRow({ icon, label, value }: { icon: ReactNode; label: string; value
     );
 }
 
-export function LoanTermsCard({ product }: LoanTermsCardProps) {
+export function LoanTermsCard({ product, recommended = false }: LoanTermsCardProps) {
     const theme = useTheme();
 
     const guarantorsLabel = product.required_guarantors_count > 0
@@ -109,10 +111,35 @@ export function LoanTermsCard({ product }: LoanTermsCardProps) {
     const latePenaltyLabel = penaltyLabel(product);
 
     return (
-        <Card variant="outlined" sx={{ borderColor: alpha(theme.palette.primary.main, 0.25), height: "100%" }}>
+        <Card
+            variant="outlined"
+            sx={{
+                height: "100%",
+                borderRadius: "var(--m-radius-card)",
+                borderColor: recommended ? "var(--m-gold)" : "var(--m-line3)",
+                borderWidth: recommended ? 2 : 1,
+                bgcolor: recommended ? "var(--m-gold-soft)" : "var(--m-surface)"
+            }}
+        >
             <CardContent sx={{ display: "grid", gap: 1.5 }}>
                 <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1} flexWrap="wrap" useFlexGap>
                     <Box sx={{ minWidth: 0 }}>
+                        {recommended ? (
+                            <Typography
+                                variant="caption"
+                                sx={{
+                                    display: "block",
+                                    mb: 0.5,
+                                    color: "var(--m-gold-ink)",
+                                    fontWeight: 700,
+                                    letterSpacing: "0.14em",
+                                    textTransform: "uppercase",
+                                    fontSize: "var(--m-fs-label)"
+                                }}
+                            >
+                                Best for you
+                            </Typography>
+                        ) : null}
                         <Typography variant="subtitle1" sx={{ fontWeight: 800, lineHeight: 1.15 }}>{product.name}</Typography>
                         {product.description ? (
                             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>{product.description}</Typography>

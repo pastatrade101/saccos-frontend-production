@@ -1,0 +1,382 @@
+/* Overview — the shapes unique to this section: the next-step banner, the navy
+   hero with its progress ring, the accent-topped KPI cards, and the
+   trend + rail split. Everything else composes MemberContent.module.css. */
+
+/* ---------- 1. your next step ---------- */
+
+.nextStep {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  background: var(--m-surface);
+  border: 1px solid var(--m-line);
+  border-left: 4px solid var(--m-gold);
+  border-radius: var(--m-radius-card);
+  box-shadow: var(--m-shadow-card);
+  padding: 18px 20px;
+}
+
+.nextStepText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.nextStepTitle {
+  margin: 0;
+  font-size: var(--m-fs-tile);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--m-ink);
+}
+
+/* ---------- 2. hero ---------- */
+
+.hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--m-radius-hero);
+  background: linear-gradient(150deg, #0b1b3f 0%, #132c63 55%, #0b1b3f 100%);
+  box-shadow: var(--m-shadow-hero);
+  padding: clamp(18px, 2.2vw, 26px) clamp(18px, 2.4vw, 30px);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.heroGlow {
+  position: absolute;
+  top: -110px;
+  right: -90px;
+  width: 340px;
+  height: 340px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(201, 162, 39, 0.3), transparent 68%);
+  pointer-events: none;
+}
+
+.heroLeft {
+  position: relative;
+  min-width: 0;
+  flex: 1 1 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.heroLabel {
+  font-size: var(--m-fs-label);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--m-gold);
+}
+
+.heroFigure {
+  margin: 0;
+  font-size: var(--m-fs-hero);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+
+.heroPills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.glassPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  font-size: var(--m-fs-secondary);
+  font-weight: 600;
+  color: #e6ebf7;
+  white-space: nowrap;
+}
+
+.glassPill strong {
+  font-weight: 800;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+.heroRight {
+  position: relative;
+  flex: 0 1 auto;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 22px;
+  min-width: 0;
+}
+
+.ring {
+  position: relative;
+  width: 112px;
+  height: 112px;
+  flex: 0 0 112px;
+}
+
+.ringCentre {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+}
+
+.ringPercent {
+  font-size: var(--m-fs-figure);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.ringCaption {
+  font-size: var(--m-fs-label);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #b8c0cf;
+  font-weight: 700;
+}
+
+.heroRows {
+  min-width: 190px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.heroRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  font-size: var(--m-fs-secondary);
+  color: #b8c0cf;
+}
+
+.heroRowValue {
+  font-weight: 800;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+.heroRowGold {
+  color: var(--m-gold);
+}
+
+/* ---------- 3. KPI row ---------- */
+
+.kpi {
+  position: relative;
+  background: var(--m-surface);
+  border: 1px solid var(--m-line);
+  border-top: 3px solid var(--m-info-ink);
+  border-radius: var(--m-radius-card);
+  box-shadow: var(--m-shadow-card);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  transition: box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.kpi:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 18px 34px -20px rgba(16, 24, 40, 0.45);
+}
+
+.kpiOk {
+  border-top-color: var(--m-ok-ink);
+}
+
+.kpiGold {
+  border-top-color: var(--m-gold);
+}
+
+.kpiDanger {
+  border-top-color: var(--m-danger-ink2);
+}
+
+.kpiHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.kpiLabelRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+/* ---------- 6. trend + rail ---------- */
+
+.trendSplit {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr;
+  gap: 16px;
+  min-width: 0;
+}
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.leagueCard {
+  border-radius: var(--m-radius-card);
+  background: linear-gradient(150deg, #0b1b3f 0%, #132c63 100%);
+  box-shadow: var(--m-shadow-hero);
+  padding: 18px;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  transition: transform 0.18s ease;
+}
+
+.leagueCard:hover {
+  transform: translateY(-1px);
+}
+
+.leagueRank {
+  font-size: var(--m-fs-figure);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.leagueNote {
+  font-size: var(--m-fs-secondary);
+  color: #b8c0cf;
+  line-height: 1.5;
+}
+
+.alertRow {
+  display: flex;
+  gap: 11px;
+  padding: 12px 13px;
+  border-radius: var(--m-radius-box);
+  background: var(--m-soft);
+  border: 1px solid var(--m-line);
+  min-width: 0;
+}
+
+.alertRowInfo {
+  background: var(--m-info-soft);
+  border-color: var(--m-info-line);
+}
+
+.alertRowGold {
+  background: var(--m-gold-soft);
+  border-color: var(--m-gold-line);
+}
+
+.alertRowDanger {
+  background: var(--m-danger-soft);
+  border-color: var(--m-danger-line);
+}
+
+.alertTitle {
+  font-size: var(--m-fs-body);
+  font-weight: 700;
+  color: var(--m-ink);
+}
+
+.alertBody {
+  font-size: var(--m-fs-secondary);
+  color: var(--m-muted2);
+  line-height: 1.45;
+  margin-top: 2px;
+}
+
+/* ---------- 8. SACCOS account ---------- */
+
+.payPanel {
+  border-radius: var(--m-radius-section);
+  background: var(--m-gold-soft);
+  border: 1px solid var(--m-gold-line);
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.payNumberBox {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  border-radius: var(--m-radius-box);
+  background: var(--m-surface);
+  border: 1px solid var(--m-gold-line);
+}
+
+.payNumber {
+  font-size: var(--m-fs-figure-lg);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--m-ink);
+  font-variant-numeric: tabular-nums;
+  word-break: break-all;
+}
+
+@media (max-width: 900px) {
+  .trendSplit {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .hero {
+    padding: 22px 18px;
+    gap: 22px;
+  }
+
+  .heroRight {
+    flex-basis: 100%;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  .heroRows {
+    min-width: 0;
+    flex: 1 1 160px;
+  }
+
+  .nextStep {
+    padding: 16px;
+  }
+
+  .payPanel {
+    padding: 16px;
+  }
+}

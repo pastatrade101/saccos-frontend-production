@@ -1,0 +1,129 @@
+/* Loan applications — status cards, with rejected ones carrying the reason
+   and the route back in. */
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  min-width: 0;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 16px;
+  border-radius: var(--m-radius-box);
+  border: 1px solid var(--m-line);
+  background: var(--m-soft);
+  min-width: 0;
+}
+
+/* A rejected application is the one the member has to act on, so it is tinted
+   rather than left to read as one card among equals. */
+.cardDanger {
+  background: var(--m-danger-soft);
+  border-color: var(--m-danger-line);
+}
+
+.cardHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.productName {
+  font-size: var(--m-fs-body);
+  font-weight: 700;
+  color: var(--m-ink);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.amount {
+  font-size: var(--m-fs-tile);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--m-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.updated {
+  font-size: var(--m-fs-label);
+  color: var(--m-muted3);
+  margin-top: 4px;
+}
+
+.reason {
+  margin-top: 10px;
+  padding: 11px 12px;
+  border-radius: var(--m-radius-row);
+  background: var(--m-surface);
+  border: 1px solid var(--m-danger-line);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.reasonText {
+  margin: 0;
+  font-size: var(--m-fs-secondary);
+  line-height: 1.5;
+  color: var(--m-danger-ink);
+}
+
+.reasonText strong {
+  font-weight: 800;
+}
+
+.reasonNote {
+  margin: 0;
+  font-size: var(--m-fs-secondary);
+  line-height: 1.5;
+  color: var(--m-muted2);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 12px;
+}
+
+.actions button {
+  padding: 9px 14px;
+  font-size: var(--m-fs-secondary);
+}
+
+.btnDanger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--m-radius-box);
+  border: 1px solid var(--m-danger-line);
+  background: var(--m-surface);
+  color: var(--m-danger-ink2);
+  font-family: inherit;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.18s ease;
+}
+
+.btnDanger:hover:not(:disabled) {
+  background: var(--m-danger-soft);
+}
+
+.btnDanger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.tableSlot {
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--m-line);
+}
