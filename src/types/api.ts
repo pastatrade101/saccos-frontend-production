@@ -926,6 +926,8 @@ export interface SaccoMilestoneBoard {
 
 export interface SaccoInvestmentHolding {
     id: string;
+    /// Lines the order up with its holding in `SaccoOverview.investments_by_asset`.
+    asset_id: string;
     asset_name: string;
     symbol: string | null;
     market: string | null;
@@ -937,6 +939,35 @@ export interface SaccoInvestmentHolding {
     fully_paid: boolean;
     order_date: string | null;
     completed: boolean;
+}
+
+// The cooperative's running-cost fund. Members are explicitly allowed on this
+// report: it carries only SACCO-wide monthly aggregates, and member fees are
+// summed into one line server-side so no per-member figure leaves the server.
+export interface OperationsStatementLine {
+    date: string | null;
+    label: string;
+    amount: number;
+}
+
+export interface OperationsStatementRow {
+    month: string;
+    opening: number;
+    income: number;
+    expenses: number;
+    net: number;
+    closing: number;
+    income_lines: OperationsStatementLine[];
+    expense_lines: OperationsStatementLine[];
+}
+
+export interface OperationsStatement {
+    rows: OperationsStatementRow[];
+    totals: {
+        income: number;
+        expenses: number;
+        balance: number;
+    };
 }
 
 export interface SaccoInvestments {

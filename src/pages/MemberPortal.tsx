@@ -92,7 +92,7 @@ import {
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent } from "react";
 import { useForm } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
 import { z } from "zod";
@@ -159,7 +159,7 @@ import {
 } from "../lib/endpoints";
 import { brandColors, crestGold, darkThemeColors, displayFontFamily, inkPanel } from "../theme/colors";
 import { useUI } from "../ui/UIProvider";
-import type { Loan, LoanApplication, LoanCapacitySummary, LoanProduct, LoanSchedule, LoanTransaction, Member, MemberAccount, MemberApplication, MemberApplicationStatus, MemberPortalPaymentControls, PaymentOrder, SaccoFinancialYearSettings, SaccoMilestoneBoard, SaccoInvestments, SaccoOverview, SaccoPerformanceTargetSettings, StatementRow } from "../types/api";
+import type { Loan, LoanApplication, LoanCapacitySummary, LoanProduct, LoanSchedule, LoanTransaction, Member, MemberAccount, MemberApplication, MemberApplicationStatus, MemberPortalPaymentControls, PaymentOrder, SaccoFinancialYearSettings, SaccoMilestoneBoard, OperationsStatement, SaccoInvestmentHolding, SaccoInvestments, SaccoOverview, SaccoPerformanceTargetSettings, StatementRow } from "../types/api";
 import { downloadLoanStatementPdf, downloadMemberStatementPdf, loadReportLogoDataUrl } from "../utils/memberStatementPdf";
 import { memberApplicationStatusLabels } from "../utils/member-application-status";
 import {
@@ -1275,6 +1275,8 @@ export function MemberPortalPage() {
     const [saccoOverviewLoading, setSaccoOverviewLoading] = useState(false);
     const [milestoneBoard, setMilestoneBoard] = useState<SaccoMilestoneBoard | null>(null);
     const [saccoInvestments, setSaccoInvestments] = useState<SaccoInvestments | null>(null);
+    const [operationsFund, setOperationsFund] = useState<OperationsStatement | null>(null);
+    const [operationsFundOpen, setOperationsFundOpen] = useState(false);
 
     interface MyReportsData {
         position: { rank: number | null; total_ranked_members: number; contributions: number; dividends: number; cumulative: number };
@@ -1443,6 +1445,31 @@ export function MemberPortalPage() {
             active = false;
         };
     }, [overviewMode, saccoInvestments]);
+
+    // The fund the cooperative's running costs come out of. Members are allowed
+    // this report — it carries monthly aggregates only, with member fees summed
+    // into a single line server-side.
+    useEffect(() => {
+        if (overviewMode !== "sacco" || operationsFund) {
+            return;
+        }
+        let active = true;
+        api
+            .get<{ data: OperationsStatement }>(endpoints.allReports.operationsStatement())
+            .then((res) => {
+                if (active) {
+                    setOperationsFund(res.data?.data ?? null);
+                }
+            })
+            .catch(() => {
+                if (active) {
+                    setOperationsFund(null);
+                }
+            });
+        return () => {
+            active = false;
+        };
+    }, [overviewMode, operationsFund]);
     const [runFeatureTour, setRunFeatureTour] = useState(false);
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -6425,12 +6452,56 @@ export function MemberPortalPage() {
 
     const renderSaccoOverview = () => {
         const tzs = (value: number) => `TZS ${new Intl.NumberFormat("en-US").format(Math.round(Number(value) || 0))}`;
+
+        // What the SACCO bought, keyed by asset, so a holding tile can say how
+        // many units it represents. The purchase detail used to live in a
+        // separate "Our Investments" section further down the page, which said
+        // the same figure twice — once as a holding and once as an order.
+        const ordersByAsset = new Map<string, SaccoInvestmentHolding[]>();
+        for (const order of saccoInvestments?.investments ?? []) {
+            const existing = ordersByAsset.get(order.asset_id);
+            if (existing) existing.push(order);
+            else ordersByAsset.set(order.asset_id, [order]);
+        }
+
+        // "20,000 units @ TZS 16,700 · DSE".
+        //
+        // An asset can be bought more than once, and the price will differ
+        // between purchases, so the per-unit figure is only shown when every
+        // order agrees on it. Otherwise the units alone are true and the
+        // average would be invented.
+        const purchaseLine = (assetId: string): string => {
+            const orders = ordersByAsset.get(assetId) ?? [];
+            if (!orders.length) return "";
+
+            const units = orders.reduce((sum, order) => sum + order.units, 0);
+            if (units <= 0) return "";
+
+            const prices = new Set(orders.map((order) => order.unit_price));
+            const market = orders.find((order) => order.market)?.market;
+
+            return [
+                `${units.toLocaleString()} ${units === 1 ? "unit" : "units"}`,
+                prices.size === 1 ? ` @ ${tzs(orders[0].unit_price)}` : "",
+                market ? ` · ${market}` : ""
+            ].join("");
+        };
+
+        // Removing the section below took the payment progress with it, so what
+        // is still owed is carried onto the tile. Money the SACCO has committed
+        // but not yet paid is not a detail a member should have to hunt for.
+        const outstandingLine = (assetId: string): string => {
+            const owed = (ordersByAsset.get(assetId) ?? [])
+                .reduce((sum, order) => sum + order.outstanding, 0);
+            return owed > 0 ? `${tzs(owed)} still to pay` : "";
+        };
+
         const cards = saccoOverview
             ? [
-                { key: "members", label: "Total Members", value: String(saccoOverview.total_members ?? 0), helper: `${saccoOverview.active_members ?? 0} active` },
-                { key: "savings", label: "Total Savings", value: tzs(saccoOverview.total_savings), helper: "" },
-                { key: "shares", label: "Share Capital", value: tzs(saccoOverview.total_shares), helper: "" },
-                { key: "loans", label: "Loan Book", value: tzs(saccoOverview.loan_book), helper: `${saccoOverview.active_loans ?? 0} active loans` },
+                { key: "members", label: "Total Members", value: String(saccoOverview.total_members ?? 0), helpers: [`${saccoOverview.active_members ?? 0} active`] },
+                { key: "savings", label: "Total Savings", value: tzs(saccoOverview.total_savings), helpers: [] },
+                { key: "shares", label: "Share Capital", value: tzs(saccoOverview.total_shares), helpers: [] },
+                { key: "loans", label: "Loan Book", value: tzs(saccoOverview.loan_book), helpers: [`${saccoOverview.active_loans ?? 0} active loans`] },
                 // One card per asset, largest first. This used to be a single
                 // "UTT Investments" tile reading utt_invested, which is every
                 // asset added together despite its name — so a SACCO holding
@@ -6448,17 +6519,33 @@ export function MemberPortalPage() {
                             key: asset.asset_id,
                             label: asset.asset_name,
                             value: tzs(asset.invested),
-                            helper: asset.income > 0 ? `${tzs(asset.income)} income earned` : ""
+                            helpers: [
+                                purchaseLine(asset.asset_id),
+                                asset.income > 0 ? `${tzs(asset.income)} income earned` : "",
+                                outstandingLine(asset.asset_id)
+                            ].filter(Boolean)
                         }))
                     : saccoOverview.utt_invested
-                        ? [{ key: "investments", label: "Investments", value: tzs(saccoOverview.utt_invested), helper: `${tzs(saccoOverview.utt_income ?? 0)} income earned` }]
+                        ? [{ key: "investments", label: "Investments", value: tzs(saccoOverview.utt_invested), helpers: [`${tzs(saccoOverview.utt_income ?? 0)} income earned`] }]
                         : []),
+                // Clickable, unlike its neighbours: the balance on its own says
+                // nothing about what the fund pays for, and that is the question
+                // a member has when they see money set aside for running costs.
+                ...(operationsFund
+                    ? [{
+                        key: "operations",
+                        label: "Operation Fund",
+                        value: tzs(operationsFund.totals.balance),
+                        helpers: [`${tzs(operationsFund.totals.income)} in · ${tzs(operationsFund.totals.expenses)} out`],
+                        onOpen: () => setOperationsFundOpen(true)
+                    }]
+                    : []),
                 ...(saccoOverview.dividends_distributed
                     ? [{
                         key: "dividends",
                         label: "Dividends Shared",
                         value: tzs(saccoOverview.dividends_distributed),
-                        helper: `UTT ${tzs(saccoOverview.dividends_utt ?? 0)} · Loans ${tzs(saccoOverview.dividends_loan ?? 0)}`
+                        helpers: [`UTT ${tzs(saccoOverview.dividends_utt ?? 0)} · Loans ${tzs(saccoOverview.dividends_loan ?? 0)}`]
                     }]
                     : [])
             ]
@@ -6477,13 +6564,40 @@ export function MemberPortalPage() {
                     <Grid container spacing={2}>
                         {cards.map((card) => (
                             <Grid key={card.key} size={{ xs: 6, md: 3 }}>
-                                <Card variant="outlined" sx={{ height: "100%" }}>
+                                <Card
+                                    variant="outlined"
+                                    sx={{
+                                        height: "100%",
+                                        ...(card.onOpen
+                                            ? {
+                                                cursor: "pointer",
+                                                transition: "border-color 120ms, box-shadow 120ms",
+                                                "&:hover": { borderColor: "primary.main", boxShadow: 2 }
+                                            }
+                                            : {})
+                                    }}
+                                    {...(card.onOpen
+                                        ? {
+                                            onClick: card.onOpen,
+                                            role: "button",
+                                            tabIndex: 0,
+                                            onKeyDown: (event: ReactKeyboardEvent) => {
+                                                if (event.key === "Enter" || event.key === " ") {
+                                                    event.preventDefault();
+                                                    card.onOpen?.();
+                                                }
+                                            }
+                                        }
+                                        : {})}
+                                >
                                     <CardContent>
                                         <Typography variant="body2" color="text.secondary">{card.label}</Typography>
                                         <Typography variant="h5" sx={{ mt: 0.5, fontWeight: 700 }}>{card.value}</Typography>
-                                        {card.helper ? (
-                                            <Typography variant="caption" color="text.secondary">{card.helper}</Typography>
-                                        ) : null}
+                                        {card.helpers.map((helper) => (
+                                            <Typography key={helper} variant="caption" color="text.secondary" display="block">
+                                                {helper}
+                                            </Typography>
+                                        ))}
                                     </CardContent>
                                 </Card>
                             </Grid>
@@ -6495,59 +6609,65 @@ export function MemberPortalPage() {
                     </Typography>
                 )}
 
-                {saccoInvestments && saccoInvestments.investments.length ? (
-                    <Box sx={{ mt: 3 }}>
-                        <Typography variant="h6" sx={{ fontWeight: 700 }}>Our Investments</Typography>
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                            Where the cooperative has invested. Total {tzs(saccoInvestments.total_value)}
-                            {saccoInvestments.total_paid < saccoInvestments.total_value ? ` · ${tzs(saccoInvestments.total_paid)} paid so far` : ""}.
+                <Dialog
+                    open={operationsFundOpen}
+                    onClose={() => setOperationsFundOpen(false)}
+                    fullWidth
+                    maxWidth="sm"
+                    scroll="paper"
+                >
+                    <DialogTitle sx={{ fontWeight: 800 }}>
+                        Operation Fund
+                        <Typography variant="body2" color="text.secondary">
+                            What the cooperative's running costs are paid from, month by month.
                         </Typography>
-                        <Grid container spacing={2}>
-                            {saccoInvestments.investments.map((inv) => (
-                                <Grid key={inv.id} size={{ xs: 12, md: 6 }}>
-                                    <Card variant="outlined" sx={{ height: "100%" }}>
-                                        <CardContent>
-                                            <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1} flexWrap="wrap" useFlexGap>
-                                                <Box sx={{ minWidth: 0 }}>
-                                                    <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
-                                                        {inv.asset_name}{inv.symbol ? ` (${inv.symbol})` : ""}
-                                                    </Typography>
-                                                    <Typography variant="caption" color="text.secondary">
-                                                        {inv.units.toLocaleString()} {inv.units === 1 ? "unit" : "units"} @ {tzs(inv.unit_price)}
-                                                        {inv.market ? ` · ${inv.market}` : ""}
-                                                    </Typography>
-                                                </Box>
-                                                <Chip
-                                                    size="small"
-                                                    label={inv.completed ? "Completed" : inv.fully_paid ? "Fully paid" : "In progress"}
-                                                    color={inv.completed || inv.fully_paid ? "success" : "warning"}
-                                                    variant="outlined"
-                                                />
-                                            </Stack>
-                                            <Typography variant="h6" sx={{ fontWeight: 800, mt: 1 }}>{tzs(inv.total_amount)}</Typography>
-                                            {inv.outstanding > 0 ? (
-                                                <>
-                                                    <LinearProgress
-                                                        variant="determinate"
-                                                        value={Math.min((inv.amount_paid / Math.max(inv.total_amount, 1)) * 100, 100)}
-                                                        sx={{ my: 1, height: 8, borderRadius: 999 }}
-                                                    />
-                                                    <Typography variant="body2" color="text.secondary">
-                                                        {tzs(inv.amount_paid)} paid · {tzs(inv.outstanding)} remaining
-                                                    </Typography>
-                                                </>
-                                            ) : (
-                                                <Typography variant="body2" color="success.main" sx={{ mt: 0.5, fontWeight: 600 }}>
-                                                    Fully paid
+                    </DialogTitle>
+                    <DialogContent dividers>
+                        {operationsFund?.rows.length ? (
+                            // Newest first. A member opening this wants to know
+                            // where the fund stands now, not where it started.
+                            [...operationsFund.rows].reverse().map((row) => (
+                                <Box key={row.month} sx={{ mb: 2.5 }}>
+                                    <Stack direction="row" justifyContent="space-between" alignItems="baseline" spacing={1}>
+                                        <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>{row.month}</Typography>
+                                        <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>{tzs(row.closing)}</Typography>
+                                    </Stack>
+                                    <Typography variant="caption" color="text.secondary">
+                                        {tzs(row.income)} in · {tzs(row.expenses)} out
+                                    </Typography>
+                                    {[...row.income_lines.map((line) => ({ ...line, sign: 1 })),
+                                      ...row.expense_lines.map((line) => ({ ...line, sign: -1 }))]
+                                        .map((line, index) => (
+                                            <Stack
+                                                key={`${row.month}-${line.sign}-${index}`}
+                                                direction="row"
+                                                justifyContent="space-between"
+                                                spacing={2}
+                                                sx={{ mt: 0.5 }}
+                                            >
+                                                <Typography variant="body2" color="text.secondary" sx={{ minWidth: 0 }}>
+                                                    {line.label}
                                                 </Typography>
-                                            )}
-                                        </CardContent>
-                                    </Card>
-                                </Grid>
-                            ))}
-                        </Grid>
-                    </Box>
-                ) : null}
+                                                <Typography
+                                                    variant="body2"
+                                                    sx={{ whiteSpace: "nowrap", color: line.sign > 0 ? "success.main" : "text.primary" }}
+                                                >
+                                                    {line.sign > 0 ? "+" : "−"}{tzs(line.amount)}
+                                                </Typography>
+                                            </Stack>
+                                        ))}
+                                </Box>
+                            ))
+                        ) : (
+                            <Typography variant="body2" color="text.secondary">
+                                Nothing has moved through the fund yet.
+                            </Typography>
+                        )}
+                    </DialogContent>
+                    <DialogActions>
+                        <Button onClick={() => setOperationsFundOpen(false)}>Close</Button>
+                    </DialogActions>
+                </Dialog>
 
                 {milestoneBoard && milestoneBoard.milestones.length ? (
                     <Box sx={{ mt: 3 }}>
