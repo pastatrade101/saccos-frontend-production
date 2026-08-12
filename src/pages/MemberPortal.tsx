@@ -6427,15 +6427,35 @@ export function MemberPortalPage() {
         const tzs = (value: number) => `TZS ${new Intl.NumberFormat("en-US").format(Math.round(Number(value) || 0))}`;
         const cards = saccoOverview
             ? [
-                { label: "Total Members", value: String(saccoOverview.total_members ?? 0), helper: `${saccoOverview.active_members ?? 0} active` },
-                { label: "Total Savings", value: tzs(saccoOverview.total_savings), helper: "" },
-                { label: "Share Capital", value: tzs(saccoOverview.total_shares), helper: "" },
-                { label: "Loan Book", value: tzs(saccoOverview.loan_book), helper: `${saccoOverview.active_loans ?? 0} active loans` },
-                ...(saccoOverview.utt_invested
-                    ? [{ label: "UTT Investments", value: tzs(saccoOverview.utt_invested), helper: `${tzs(saccoOverview.utt_income ?? 0)} income earned` }]
-                    : []),
+                { key: "members", label: "Total Members", value: String(saccoOverview.total_members ?? 0), helper: `${saccoOverview.active_members ?? 0} active` },
+                { key: "savings", label: "Total Savings", value: tzs(saccoOverview.total_savings), helper: "" },
+                { key: "shares", label: "Share Capital", value: tzs(saccoOverview.total_shares), helper: "" },
+                { key: "loans", label: "Loan Book", value: tzs(saccoOverview.loan_book), helper: `${saccoOverview.active_loans ?? 0} active loans` },
+                // One card per asset, largest first. This used to be a single
+                // "UTT Investments" tile reading utt_invested, which is every
+                // asset added together despite its name — so a SACCO holding
+                // both UTT units and NMB shares saw one figure that was neither.
+                //
+                // The flat pair is the fallback for a backend that predates the
+                // breakdown, and only then is the old label honest to keep.
+                ...(saccoOverview.investments_by_asset?.length
+                    ? saccoOverview.investments_by_asset
+                        .filter((asset) => asset.invested > 0)
+                        .map((asset) => ({
+                            // Keyed on the asset id, not the name, for the same
+                            // reason the backend buckets on it: two holdings
+                            // that happen to share a name must stay apart.
+                            key: asset.asset_id,
+                            label: asset.asset_name,
+                            value: tzs(asset.invested),
+                            helper: asset.income > 0 ? `${tzs(asset.income)} income earned` : ""
+                        }))
+                    : saccoOverview.utt_invested
+                        ? [{ key: "investments", label: "Investments", value: tzs(saccoOverview.utt_invested), helper: `${tzs(saccoOverview.utt_income ?? 0)} income earned` }]
+                        : []),
                 ...(saccoOverview.dividends_distributed
                     ? [{
+                        key: "dividends",
                         label: "Dividends Shared",
                         value: tzs(saccoOverview.dividends_distributed),
                         helper: `UTT ${tzs(saccoOverview.dividends_utt ?? 0)} · Loans ${tzs(saccoOverview.dividends_loan ?? 0)}`
@@ -6456,7 +6476,7 @@ export function MemberPortalPage() {
                 ) : saccoOverview ? (
                     <Grid container spacing={2}>
                         {cards.map((card) => (
-                            <Grid key={card.label} size={{ xs: 6, md: 3 }}>
+                            <Grid key={card.key} size={{ xs: 6, md: 3 }}>
                                 <Card variant="outlined" sx={{ height: "100%" }}>
                                     <CardContent>
                                         <Typography variant="body2" color="text.secondary">{card.label}</Typography>

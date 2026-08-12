@@ -2451,6 +2451,16 @@ export interface MemberHeirsSummary {
     heirs: MemberHeir[];
 }
 
+export interface SaccoAssetHolding {
+    asset_id: string;
+    asset_name: string;
+    asset_type: string | null;
+    symbol: string | null;
+    market: string | null;
+    invested: number;
+    income: number;
+}
+
 // Tenant-wide totals from the sacco_member_overview RPC — the canonical source
 // for SACCO-wide headline figures (Dashboard, member-portal SACCOS Overview).
 export interface SaccoOverview {
@@ -2460,8 +2470,13 @@ export interface SaccoOverview {
     total_shares: number;
     loan_book: number;
     active_loans: number;
+    /// Every treasury asset added together, not UTT alone — the name predates
+    /// the SACCO holding anything but UTT. Kept for callers that still read it;
+    /// prefer `investments_by_asset`, which is what the two names claim to be.
     utt_invested?: number;
     utt_income?: number;
+    /// Per-asset holdings, largest first. What `utt_invested` should have been.
+    investments_by_asset?: SaccoAssetHolding[];
     dividends_distributed?: number;
     dividends_utt?: number;
     dividends_loan?: number;
