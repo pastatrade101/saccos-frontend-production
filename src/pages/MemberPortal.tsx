@@ -2346,41 +2346,50 @@ export function MemberPortalPage() {
         || trackedContributionOrder?.purpose === "loan_repayment"
         ? trackedContributionOrder.purpose
         : paymentFlowPurpose;
-    const activePaymentCopy = activePaymentPurpose === "savings_deposit"
+    // The deposit wording is the default and the fallback both, so it is named
+    // once rather than written out twice and left to drift.
+    const savingsDepositCopy = {
+        noun: tr("savings deposit", "kuweka akiba"),
+        title: tr("Savings Deposit", "Kuweka Akiba"),
+        accountLabel: tr("Savings Account", "Akaunti ya Akiba"),
+        amountLabel: tr("Deposit Amount", "Kiasi cha Kuweka"),
+        helperText: tr("Amount to push to your phone.", "Kiasi kitakachotumwa kwenye simu yako."),
+        emptyAccountMessage: tr(
+            "A savings account will be prepared automatically when this deposit starts.",
+            "Akaunti ya akiba itaandaliwa yenyewe utakapoanza kuweka fedha."
+        )
+    };
+    const activePaymentCopy = activePaymentPurpose === "membership_fee"
         ? {
-            noun: "savings deposit",
-            title: "Savings Deposit",
-            accountLabel: "Savings Account",
-            amountLabel: "Deposit Amount",
-            helperText: "Amount to push to your phone.",
-            emptyAccountMessage: "A savings account will be prepared automatically when this deposit starts."
+            noun: tr("membership fee payment", "malipo ya ada ya uanachama"),
+            title: tr("Membership Fee", "Ada ya Uanachama"),
+            accountLabel: tr("Savings Account", "Akaunti ya Akiba"),
+            amountLabel: tr("Membership Fee Amount", "Kiasi cha Ada ya Uanachama"),
+            helperText: tr(
+                "This amount settles the outstanding membership fee.",
+                "Kiasi hiki kinamaliza ada ya uanachama inayodaiwa."
+            ),
+            emptyAccountMessage: tr(
+                "A savings account will be prepared automatically when the membership fee payment starts.",
+                "Akaunti ya akiba itaandaliwa yenyewe malipo ya ada yatakapoanza."
+            )
         }
-        : activePaymentPurpose === "membership_fee"
+        : activePaymentPurpose === "loan_repayment"
             ? {
-                noun: "membership fee payment",
-                title: "Membership Fee",
-                accountLabel: "Savings Account",
-                amountLabel: "Membership Fee Amount",
-                helperText: "This amount settles the outstanding membership fee.",
-                emptyAccountMessage: "A savings account will be prepared automatically when the membership fee payment starts."
+                noun: tr("loan repayment", "kulipa mkopo"),
+                title: tr("Loan Repayment", "Kulipa Mkopo"),
+                accountLabel: tr("Loan Facility", "Mkopo"),
+                amountLabel: tr("Repayment Amount", "Kiasi cha Kulipa"),
+                helperText: tr(
+                    "Enter any amount up to the outstanding balance. The system allocates interest first, then principal.",
+                    "Weka kiasi chochote hadi kufikia deni lililobaki. Mfumo hulipa riba kwanza, kisha mtaji."
+                ),
+                emptyAccountMessage: tr(
+                    "No repayable loan is linked to this member profile right now.",
+                    "Kwa sasa hakuna mkopo unaoweza kulipwa uliounganishwa na wasifu wako."
+                )
             }
-            : activePaymentPurpose === "loan_repayment"
-                ? {
-                    noun: "loan repayment",
-                    title: "Loan Repayment",
-                    accountLabel: "Loan Facility",
-                    amountLabel: "Repayment Amount",
-                    helperText: "Enter any amount up to the outstanding balance. The system allocates interest first, then principal.",
-                    emptyAccountMessage: "No repayable loan is linked to this member profile right now."
-                }
-            : {
-                noun: "savings deposit",
-                title: "Savings Deposit",
-                accountLabel: "Savings Account",
-                amountLabel: "Deposit Amount",
-                helperText: "Amount to push to your phone.",
-                emptyAccountMessage: "A savings account will be prepared automatically when this deposit starts."
-            };
+            : savingsDepositCopy;
     const contributionFlowState = submittingContribution ? "initiating" : trackedContributionOrder?.status || null;
     const pendingOrderCreatedMs = trackedContributionOrder?.created_at ? Date.parse(trackedContributionOrder.created_at) : Number.NaN;
     const pendingOrderExpiryMs = trackedContributionOrder?.expires_at ? Date.parse(trackedContributionOrder.expires_at) : Number.NaN;
