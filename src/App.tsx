@@ -43,6 +43,7 @@ const LoanDetailPage = lazy(() => import("./pages/LoanDetail").then((m) => ({ de
 const ProductCatalogPage = lazy(() => import("./pages/ProductCatalog").then((m) => ({ default: m.ProductCatalogPage })));
 const ReportsPage = lazy(() => import("./pages/Reports").then((m) => ({ default: m.ReportsPage })));
 const SaccoSettingsPage = lazy(() => import("./pages/SaccoSettings").then((m) => ({ default: m.SaccoSettingsPage })));
+const ShareCapitalTransferPage = lazy(() => import("./pages/ShareCapitalTransfer").then((m) => ({ default: m.ShareCapitalTransferPage })));
 const PerformanceTargetsPage = lazy(() => import("./pages/PerformanceTargets").then((m) => ({ default: m.PerformanceTargetsPage })));
 const LeaguesPage = lazy(() => import("./pages/Leagues").then((m) => ({ default: m.LeaguesPage })));
 const MilestonesPage = lazy(() => import("./pages/Milestones").then((m) => ({ default: m.MilestonesPage })));
@@ -265,6 +266,7 @@ export default function App() {
                         >
                             <Route path="/staff-users" element={<StaffUsersPage />} />
                             <Route path="/settings/sacco-year" element={<SaccoSettingsPage />} />
+                            <Route path="/finance/share-capital-transfer" element={<ShareCapitalTransferPage />} />
                             <Route path="/performance-targets" element={<PerformanceTargetsPage />} />
                             <Route path="/leagues" element={<LeaguesPage />} />
                             <Route path="/milestones" element={<MilestonesPage />} />

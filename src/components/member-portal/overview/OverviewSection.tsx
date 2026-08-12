@@ -38,7 +38,10 @@ export interface OverviewSectionProps {
     } | null;
     hero: {
         totalSavings: string;
-        netPositionCompact: string;
+        /** Savings and share capital named under the combined total. */
+        breakdown?: string;
+        /** Absent when there is no loan, where it would repeat the total. */
+        netPositionCompact?: string;
         statusLabel: string;
         entriesLabel: string;
         targetPercent: number;
@@ -162,12 +165,17 @@ export function OverviewSection({
                 <div className={styles.heroGlow} aria-hidden="true" />
 
                 <div className={styles.heroLeft}>
-                    <span className={styles.heroLabel}>{t("Total savings", "Jumla ya akiba")}</span>
+                    <span className={styles.heroLabel}>{t("Total holdings", "Jumla ya ulichonacho")}</span>
                     <p className={styles.heroFigure}>{hero.totalSavings}</p>
+                    {hero.breakdown ? (
+                        <p className={styles.heroNote}>{hero.breakdown}</p>
+                    ) : null}
                     <div className={styles.heroPills}>
-                        <span className={styles.glassPill}>
-                            {t("Net position", "Hali halisi")} <strong>{hero.netPositionCompact}</strong>
-                        </span>
+                        {hero.netPositionCompact ? (
+                            <span className={styles.glassPill}>
+                                {t("Net position", "Hali halisi")} <strong>{hero.netPositionCompact}</strong>
+                            </span>
+                        ) : null}
                         <span className={styles.glassPill}>{hero.statusLabel}</span>
                         <span className={styles.glassPill}>{hero.entriesLabel}</span>
                     </div>

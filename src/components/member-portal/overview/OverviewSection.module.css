@@ -87,6 +87,16 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Names the two figures the hero total is made of, sitting between the figure
+   and the pills so it reads as part of the number rather than as a badge. */
+.heroNote {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  opacity: 0.78;
+  font-variant-numeric: tabular-nums;
+}
+
 .heroPills {
   display: flex;
   flex-wrap: wrap;

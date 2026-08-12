@@ -10,6 +10,7 @@ import GppGoodRoundedIcon from "@mui/icons-material/GppGoodRounded";
 import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
 import MonitorHeartRoundedIcon from "@mui/icons-material/MonitorHeartRounded";
+import PieChartRoundedIcon from "@mui/icons-material/PieChartRounded";
 import PaidRoundedIcon from "@mui/icons-material/PaidRounded";
 import PeopleAltRoundedIcon from "@mui/icons-material/PeopleAltRounded";
 import PolicyRoundedIcon from "@mui/icons-material/PolicyRounded";
@@ -110,6 +111,7 @@ const navItems: NavItem[] = [
     { to: "/payments", label: "Payments", roles: ["super_admin", "branch_manager"], section: "finance", icon: PaidRoundedIcon },
     { to: "/revenue", label: "Gross Revenue", roles: ["branch_manager"], section: "finance", icon: PaidRoundedIcon },
     { to: "/dividends", label: "Dividends", roles: ["super_admin", "branch_manager"], section: "finance", icon: EventRepeatRoundedIcon },
+    { to: "/finance/share-capital-transfer", label: "Share Capital", roles: ["super_admin", "branch_manager", "auditor"], section: "finance", icon: PieChartRoundedIcon },
     { to: "/approvals", label: "Approvals", roles: ["super_admin", "branch_manager", "treasury_officer", "loan_officer", "teller"], section: "finance", icon: PendingActionsRoundedIcon },
     { to: "/cash", label: "Cash Desk", roles: ["teller"], section: "finance", icon: PaidRoundedIcon },
     { to: "/cash/transactions", label: "Transactions Report", roles: ["teller", "branch_manager", "super_admin"], section: "finance", icon: SummarizeRoundedIcon },
@@ -153,6 +155,7 @@ const searchKeywords: Partial<Record<NavItem["to"], string[]>> = {
     "/leagues": ["league", "savings league", "leaderboard", "ranking", "position", "standings", "legue"],
     "/milestones": ["milestone", "milestones", "roadmap", "target", "billion", "bilioni", "goal", "fundraising"],
     "/settings/sacco-year": ["financial year", "sacco year", "fiscal year", "year to date", "settings"],
+    "/finance/share-capital-transfer": ["share capital", "shares", "hisa", "mtaji", "transfer savings to shares"],
     "/cash-control": ["receipt policy", "teller balancing", "daily cashbook", "cash summary"],
     "/auditor/exceptions": ["audit", "exceptions", "flags", "compliance"],
     "/auditor/workbench": ["audit workbench", "branch risk", "patterns", "heatmap"],

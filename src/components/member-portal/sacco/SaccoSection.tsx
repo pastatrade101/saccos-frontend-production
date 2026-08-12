@@ -28,6 +28,8 @@ export interface SaccoSectionProps {
     loading: boolean;
     hero: {
         totalSavings: string;
+        /** Savings and share capital named separately under the combined total. */
+        breakdown?: string;
         note: string;
         yourSavings: string;
         yourSharePercent: string;
@@ -81,15 +83,16 @@ export function SaccoSection({ loading, hero, deployment, figures, milestone, mi
             <section className={styles.hero}>
                 <div className={styles.heroGlow} aria-hidden="true" />
                 <span className={styles.heroLabel} style={{ position: "relative" }}>
-                    {t("Total member savings", "Jumla ya akiba za wanachama")}
+                    {t("Total member funds", "Jumla ya fedha za wanachama")}
                 </span>
                 <p className={styles.heroFigure}>{hero.totalSavings}</p>
+                {hero.breakdown ? <p className={styles.heroNote}>{hero.breakdown}</p> : null}
                 <p className={styles.heroNote}>{hero.note}</p>
 
                 <div className={styles.heroStats}>
                     <div className={styles.heroStat}>
                         <span className={styles.heroStatValue}>{hero.yourSavings}</span>
-                        <span className={styles.heroStatLabel}>{t("Your savings", "Akiba yako")}</span>
+                        <span className={styles.heroStatLabel}>{t("Your holdings", "Ulichonacho")}</span>
                     </div>
                     <div className={styles.heroStat}>
                         <span className={`${styles.heroStatValue} ${styles.heroStatGold}`}>{hero.yourSharePercent}</span>

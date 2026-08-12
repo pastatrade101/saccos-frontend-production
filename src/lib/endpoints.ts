@@ -235,6 +235,7 @@ const routeMap = {
         deposit: "/deposit",
         withdraw: "/withdraw",
         shareContribution: "/share-contribution",
+        savingsToShares: "/savings-to-shares",
         dividendAllocation: "/dividend-allocation",
         loanPortfolio: "/loan/portfolio",
         loanSchedules: "/loan/schedules",
@@ -559,6 +560,9 @@ export const endpoints = {
         deposit: () => routeMap.finance.deposit,
         withdraw: () => routeMap.finance.withdraw,
         shareContribution: () => routeMap.finance.shareContribution,
+        savingsToShares: () => routeMap.finance.savingsToShares,
+        savingsToSharesPlan: () => `${routeMap.finance.savingsToShares}/plan`,
+        savingsToSharesBulk: () => `${routeMap.finance.savingsToShares}/bulk`,
         dividendAllocation: () => routeMap.finance.dividendAllocation,
         loanPortfolio: () => routeMap.finance.loanPortfolio,
         loanSchedules: () => routeMap.finance.loanSchedules,
@@ -676,7 +680,9 @@ export const endpoints = {
         loanMultiplier: () => routeMap.saccoSettings.loanMultiplier,
         shareCapital: () => routeMap.saccoSettings.shareCapital,
         shareCapitalPrice: (priceId: string) =>
-            `${routeMap.saccoSettings.shareCapital}/${priceId}`
+            `${routeMap.saccoSettings.shareCapital}/${priceId}`,
+        shareCapitalCountsAsSavings: () =>
+            `${routeMap.saccoSettings.shareCapital}/counts-as-savings`
     },
     leagues: {
         standings: () => routeMap.leagues.standings,
@@ -1551,6 +1557,12 @@ export interface MemberShareRequirement {
 
 export interface ShareCapitalSettings {
     tenant_id: string;
+    /**
+     * True while share capital still counts toward a member's borrowing base.
+     * Turning it off cuts every member's limit by their share capital times
+     * the loan multiple.
+     */
+    counts_as_savings: boolean;
     member_requirement?: MemberShareRequirement | null;
     /** The price in force today. Null only when nothing has been recorded yet. */
     current: SharePrice | null;
@@ -1565,6 +1577,50 @@ export interface ShareCapitalSettings {
 }
 
 export type ShareCapitalSettingsResponse = ApiEnvelope<ShareCapitalSettings>;
+
+export interface SavingsToSharesRow {
+    member_id: string;
+    member_no: string;
+    member_name: string;
+    branch_id: string;
+    joined_on: string | null;
+    price_per_share: number;
+    required_shares: number;
+    required: number;
+    /** Null when the member has no active account of that kind. */
+    share_balance: number | null;
+    savings_balance: number | null;
+    /** Savings this member has pledged guaranteeing other members' loans. */
+    encumbered: number;
+    shortfall: number;
+    /** What a posting would actually move: the shortfall, capped by free savings. */
+    movable: number;
+    status: "ready" | "partial" | "blocked" | "complete";
+    reason: string | null;
+}
+
+export interface SavingsToSharesPlan {
+    rows: SavingsToSharesRow[];
+    totals: { members: number; movable: number; short: number; complete: number };
+}
+
+export type SavingsToSharesPlanResponse = ApiEnvelope<SavingsToSharesPlan>;
+
+export interface SavingsToSharesRun {
+    dry_run: boolean;
+    considered: number;
+    posted: number;
+    failed: number;
+    moved: number;
+    rows: (SavingsToSharesRow & { outcome?: "posted" | "failed"; journal_id?: string; error?: string })[];
+}
+
+export type SavingsToSharesRunResponse = ApiEnvelope<SavingsToSharesRun>;
+
+export interface SetShareCapitalCountsAsSavingsRequest {
+    tenant_id?: string;
+    counts_as_savings: boolean;
+}
 
 export interface AddSharePriceRequest {
     tenant_id?: string;

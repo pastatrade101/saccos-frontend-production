@@ -20,6 +20,7 @@ import {
     Typography
 } from "@mui/material";
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext";
 import { AppLoader } from "../components/AppLoader";
@@ -77,6 +78,7 @@ const LOAN_MULTIPLIER_EXAMPLE_SAVINGS = 1_000_000;
 
 export function SaccoSettingsPage() {
     const { profile, selectedTenantId, selectedTenantName } = useAuth();
+    const navigate = useNavigate();
     const { pushToast } = useToast();
     const [settings, setSettings] = useState<SaccoFinancialYearSettings>(DEFAULT_SACCO_FINANCIAL_YEAR_SETTINGS);
     const [performanceSettings, setPerformanceSettings] = useState<SaccoPerformanceTargetSettings>(DEFAULT_SACCO_PERFORMANCE_TARGET_SETTINGS);
@@ -116,6 +118,8 @@ export function SaccoSettingsPage() {
         note: ""
     });
     const [savingSharePrice, setSavingSharePrice] = useState(false);
+    const [savingShareBase, setSavingShareBase] = useState(false);
+    const [shareCapitalError, setShareCapitalError] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [savingPerformance, setSavingPerformance] = useState(false);
@@ -193,7 +197,14 @@ export function SaccoSettingsPage() {
                     }).catch(() => null),
                     api.get<ShareCapitalSettingsResponse>(endpoints.saccoSettings.shareCapital(), {
                         params: { tenant_id: selectedTenantId }
-                    }).catch(() => null)
+                    }).catch((shareError) => {
+                        // Not discarded. When this read fails the whole Share
+                        // Capital card silently empties — price, history and the
+                        // borrowing-base switch all vanish at once — and the
+                        // screen looks as though the feature was never built.
+                        setShareCapitalError(getApiErrorMessage(shareError));
+                        return null;
+                    })
                 ]);
 
                 if (!isActive) {
@@ -230,6 +241,7 @@ export function SaccoSettingsPage() {
                 if (shareCapitalResult?.data?.data) {
                     const shareData = shareCapitalResult.data.data;
                     setShareCapital(shareData);
+                    setShareCapitalError(null);
                     // The share count carries over — a price rise rarely changes
                     // how many shares a member must hold — but the price and the
                     // date are what the board is here to decide, so they start
@@ -496,6 +508,32 @@ export function SaccoSettingsPage() {
             setError(getApiErrorMessage(saveError));
         } finally {
             setSavingSharePrice(false);
+        }
+    };
+
+    const setShareCountsAsSavings = async (next: boolean) => {
+        if (!selectedTenantId) return;
+
+        setSavingShareBase(true);
+        setError(null);
+
+        try {
+            const { data } = await api.patch<ShareCapitalSettingsResponse>(
+                endpoints.saccoSettings.shareCapitalCountsAsSavings(),
+                { tenant_id: selectedTenantId, counts_as_savings: next }
+            );
+            setShareCapital(data.data);
+            pushToast({
+                type: "success",
+                title: next ? "Share capital counts as savings" : "Share capital no longer counts",
+                message: next
+                    ? "Borrowing limits are unchanged by the move out of savings."
+                    : "Every member's limit now drops by their share capital times the loan multiple."
+            });
+        } catch (saveError) {
+            setError(getApiErrorMessage(saveError));
+        } finally {
+            setSavingShareBase(false);
         }
     };
 
@@ -1042,6 +1080,32 @@ export function SaccoSettingsPage() {
                             </Alert>
                         )}
 
+                        {shareCapitalError ? (
+                            <Alert severity="error" variant="outlined">
+                                Couldn't load share capital settings — {shareCapitalError}
+                            </Alert>
+                        ) : null}
+
+                        {shareCapital ? (
+                            <Box sx={{ p: 1.5, border: "1px solid", borderColor: "divider", borderRadius: 1.5 }}>
+                                <FormControlLabel
+                                    control={
+                                        <Switch
+                                            checked={shareCapital.counts_as_savings}
+                                            onChange={(event) => setShareCountsAsSavings(event.target.checked)}
+                                            disabled={!canSetShareCapital || savingShareBase}
+                                        />
+                                    }
+                                    label="Count share capital as savings when working out borrowing limits"
+                                />
+                                <Typography variant="caption" color="text.secondary" display="block">
+                                    {shareCapital.counts_as_savings
+                                        ? "On — limits are the same as before share capital was moved out of savings."
+                                        : "Off — each member's limit is lower by their share capital times the loan multiple."}
+                                </Typography>
+                            </Box>
+                        ) : null}
+
                         {shareCapital && shareCapital.upcoming.length > 0 ? (
                             <Alert severity="info" variant="outlined">
                                 {shareCapital.upcoming.map((row) => (
@@ -1092,6 +1156,22 @@ export function SaccoSettingsPage() {
                                 </Stack>
                             </Box>
                         ) : null}
+
+                        <Box sx={{ p: 1.5, border: "1px solid", borderColor: "divider", borderRadius: 1.5 }}>
+                            <Typography variant="subtitle2" gutterBottom>
+                                Move share capital out of savings
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary" gutterBottom>
+                                Share capital is collected into savings, so a member's share account stays at zero until it is moved across. The transfer page shows what each member still owes before anything is posted.
+                            </Typography>
+                            <Button
+                                variant="outlined"
+                                size="small"
+                                onClick={() => navigate("/finance/share-capital-transfer")}
+                            >
+                                Open Share Capital Transfer
+                            </Button>
+                        </Box>
 
                         <Typography variant="subtitle2">Raise the price</Typography>
                         <Grid container spacing={1.5}>

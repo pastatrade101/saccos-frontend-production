@@ -3649,15 +3649,21 @@ export function MemberPortalPage() {
     // Says where the money is and what it was priced at. Members who joined
     // before the rise see a smaller figure than the SACCOS now charges, and
     // without this that reads as their account being wrong.
+    // The "still in savings" sentence is true only until the money is actually
+    // moved across. Once the share account holds it, saying so would be plainly
+    // wrong to a member looking at a share balance that is no longer zero.
+    const shareCapitalStillInSavings = shareCapitalHeldInSavings > shareAccountCapital;
     const shareCapitalNote = shareRequirement
         ? `${shareRequirement.required_shares} ${tr("shares at", "hisa kwa")} ${formatCurrency(shareRequirement.price_per_share)}`
             + `${shareRequirement.is_historic_price
                 ? tr(" — the price when you joined", " — bei ya ulipojiunga")
                 : ""}`
-            + tr(
-                ". Held inside your savings, not yet moved to your share account.",
-                ". Zipo ndani ya akiba yako, hazijahamishiwa kwenye akaunti yako ya hisa."
-            )
+            + (shareCapitalStillInSavings
+                ? tr(
+                    ". Held inside your savings, not yet moved to your share account.",
+                    ". Zipo ndani ya akiba yako, hazijahamishiwa kwenye akaunti yako ya hisa."
+                )
+                : ".")
         : undefined;
     const performanceTargetPosition = useMemo(
         () => calculateMemberPerformanceTarget(memberRecord, accounts, performanceTargetSettings),
@@ -4038,7 +4044,15 @@ export function MemberPortalPage() {
             .filter(Boolean)
             .join(" · ")
         : (portalLang === "SW" && currentView?.subtitleSw ? currentView.subtitleSw : currentView?.subtitle) || "";
-    const totalVisibleCapital = totalSavings;
+    // Savings plus share capital: what the member actually holds in the SACCOS.
+    //
+    // This was savings alone, which was right while share capital sat inside
+    // savings. Moving it to share accounts left every member's portal showing
+    // 1,000,000 less than they hold — 3,000,000 for a new member — and dragged
+    // net position and the loan-cover donut down with it, for a posting that
+    // took nothing from anyone.
+    const totalHoldings = totalSavings + totalShareCapital;
+    const totalVisibleCapital = totalHoldings;
     const netPosition = totalVisibleCapital - totalOutstandingLoans;
     // Ledger-aware: the DB flag can be stale on rebuilt loans (residual parked
     // on a past-due schedule row); only alert when the member is genuinely
@@ -5923,6 +5937,12 @@ export function MemberPortalPage() {
         }
 
         const poolSavings = Number(saccoOverview.total_savings || 0);
+        // Savings plus share capital. Savings alone was the whole of it while
+        // share capital sat inside savings; moving it across took 152.9M off
+        // this headline overnight without a shilling leaving the cooperative,
+        // and every member's share of it moved with it.
+        const poolShares = Number(saccoOverview.total_shares || 0);
+        const poolMemberFunds = poolSavings + poolShares;
         const memberCount = Number(saccoOverview.total_members || 0);
 
         // Where the cooperative's money currently sits. Per-asset holdings, the
@@ -5979,11 +5999,16 @@ export function MemberPortalPage() {
             <SaccoSection
                 loading={saccoOverviewLoading}
                 hero={{
-                    totalSavings: tzs(poolSavings),
-                    note: `Contributed by ${memberCount} member${memberCount === 1 ? "" : "s"} of Ilboru Alumni SACCOS Ltd. Every figure below is the cooperative's position, not yours alone.`,
-                    yourSavings: formatCurrencyCompact(totalSavings),
-                    yourSharePercent: poolSavings > 0 ? `${((totalSavings / poolSavings) * 100).toFixed(2)}%` : "—",
-                    averagePerMember: memberCount > 0 ? tzs(poolSavings / memberCount) : "—",
+                    totalSavings: tzs(poolMemberFunds),
+                    breakdown: `${tr("Savings", "Akiba")} ${formatCurrencyCompact(poolSavings)} · ${tr("Share capital", "Mtaji wa hisa")} ${formatCurrencyCompact(poolShares)}`,
+                    note: `${tr("Contributed by", "Imechangwa na")} ${memberCount} ${tr("members of", "wanachama wa")} ${selectedTenantName || "the SACCOS"}. ${tr("Every figure below is the cooperative's position, not yours alone.", "Kila namba hapa chini ni hali ya ushirika, si yako peke yako.")}`,
+                    // The member's own side is measured the same way, or their
+                    // percentage would be their savings over everyone's savings
+                    // plus shares — a share that shrinks the moment their own
+                    // share capital is moved out of savings.
+                    yourSavings: formatCurrencyCompact(totalHoldings),
+                    yourSharePercent: poolMemberFunds > 0 ? `${((totalHoldings / poolMemberFunds) * 100).toFixed(2)}%` : "—",
+                    averagePerMember: memberCount > 0 ? tzs(poolMemberFunds / memberCount) : "—",
                     yourRank: leaguePosition?.overall_rank
                         ? `#${leaguePosition.overall_rank} of ${leaguePosition.total_members ?? memberCount}`
                         : "—"
@@ -6026,10 +6051,18 @@ export function MemberPortalPage() {
         <OverviewSection
             nextStep={overviewNextStep}
             hero={{
-                totalSavings: formatCurrency(totalSavings),
-                netPositionCompact: formatCurrencyCompact(netPosition),
+                totalSavings: formatCurrency(totalHoldings),
+                breakdown: totalShareCapital > 0
+                    ? `${tr("Savings", "Akiba")} ${formatCurrencyCompact(totalSavings)} · ${tr("Share capital", "Mtaji wa hisa")} ${formatCurrencyCompact(totalShareCapital)}`
+                    : undefined,
+                // Only when a loan makes it different. With nothing owed it is
+                // the total again, and a pill repeating the figure above it
+                // sends the reader looking for a difference that is not there.
+                netPositionCompact: totalOutstandingLoans > 0
+                    ? formatCurrencyCompact(netPosition)
+                    : undefined,
                 statusLabel: savingsTargetLevel.label,
-                entriesLabel: `${transactionCount} entries`,
+                entriesLabel: `${transactionCount} ${tr("entries", "miamala")}`,
                 targetPercent: savingsTargetProgress,
                 annualTarget: formatCurrency(annualSavingsTarget),
                 remaining: savingsTargetRemaining > 0 ? formatCurrency(savingsTargetRemaining) : "Target met",
@@ -6037,14 +6070,27 @@ export function MemberPortalPage() {
             }}
             kpis={[
                 {
+                    id: "holdings",
+                    label: tr("Total holdings", "Jumla ya ulichonacho"),
+                    value: formatCurrencyCompact(totalHoldings),
+                    valueTitle: formatCurrency(totalHoldings),
+                    helper: `${tr("Savings", "Akiba")} ${formatCurrencyCompact(totalSavings)} · ${tr("Shares", "Hisa")} ${formatCurrencyCompact(totalShareCapital)}`,
+                    chip: tr("Savings + shares", "Akiba + hisa"),
+                    tone: "ok"
+                },
+                // Holdings less what is owed. Identical to holdings for a member
+                // with no loan, and two cards showing the same figure invite the
+                // reader to hunt for a difference that is not there — so it is
+                // shown only when there is a debt for it to net off.
+                ...(totalOutstandingLoans > 0 ? [{
                     id: "net",
                     label: tr("Net position", "Hali yako kwa ujumla"),
                     value: formatCurrencyCompact(netPosition),
                     valueTitle: formatCurrency(netPosition),
                     helper: `${transactionCount} ${tr("entries on record", "miamala iliyoandikwa")}`,
                     chip: netPosition >= 0 ? tr("Positive", "Chanya") : tr("Negative", "Hasi"),
-                    tone: "info"
-                },
+                    tone: "info" as const
+                }] : []),
                 {
                     id: "savings",
                     label: tr("Savings", "Akiba"),
@@ -6061,6 +6107,19 @@ export function MemberPortalPage() {
                     valueTitle: formatCurrency(totalDividends),
                     helper: tr("Allocations posted", "Mgao uliowekwa"),
                     chip: totalDividends > 0 ? tr("Credited", "Umepokea") : tr("Building", "Bado linajengwa"),
+                    tone: "gold"
+                },
+                {
+                    id: "shares",
+                    label: tr("Share capital", "Mtaji wa hisa"),
+                    value: formatCurrencyCompact(totalShareCapital),
+                    valueTitle: formatCurrency(totalShareCapital),
+                    helper: shareRequirement
+                        ? `${shareRequirement.required_shares} ${tr("shares at", "hisa kwa")} ${formatCurrencyCompact(shareRequirement.price_per_share)}`
+                        : tr("Your holding in the SACCOS", "Umiliki wako kwenye SACCOS"),
+                    chip: shareCapitalStillInSavings
+                        ? tr("In savings", "Ipo kwenye akiba")
+                        : tr("Paid up", "Imekamilika"),
                     tone: "gold"
                 },
                 {
@@ -7242,7 +7301,7 @@ export function MemberPortalPage() {
                             label="Share Capital"
                             value={formatCurrency(totalShareCapital)}
                             helper={shareRequirement
-                                ? `${shareRequirement.required_shares} ${tr("shares at", "hisa kwa")} ${formatCurrency(shareRequirement.price_per_share)}${tr(", held inside your savings.", ", zipo ndani ya akiba yako.")}`
+                                ? `${shareRequirement.required_shares} ${tr("shares at", "hisa kwa")} ${formatCurrency(shareRequirement.price_per_share)}${shareCapitalStillInSavings ? tr(", held inside your savings.", ", zipo ndani ya akiba yako.") : "."}`
                                 : tr("Current visible share capital balance.", "Salio la mtaji wa hisa linaloonekana sasa.")}
                             tone="warning"
                         />
