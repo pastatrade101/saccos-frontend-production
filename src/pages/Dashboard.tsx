@@ -2007,6 +2007,13 @@ export function DashboardPage() {
         const branchSavingsBalance = activeBranchAccounts
             .filter((account) => account.product_type === "savings")
             .reduce((sum, account) => sum + Number(account.available_balance || 0) + Number(account.locked_balance || 0), 0);
+        // Kept apart from savings rather than folded in. The savings book is a
+        // real figure the branch reconciles against; share capital is a second
+        // one that used to hide inside it, and the two are answerable to
+        // different questions.
+        const branchShareCapital = activeBranchAccounts
+            .filter((account) => account.product_type === "shares")
+            .reduce((sum, account) => sum + Number(account.available_balance || 0) + Number(account.locked_balance || 0), 0);
         const totalDeposits = state.statements
             .filter((entry) => entry.direction === "in")
             .reduce((sum, entry) => sum + entry.amount, 0);
@@ -2090,6 +2097,7 @@ export function DashboardPage() {
             branchMembers: branchMembers.length,
             branchActiveMembers: branchMembers.filter((member) => member.status === "active").length,
             branchSavings: branchSavingsBalance,
+            branchShareCapital,
             branchDepositIntake,
             branchWithdrawalOutflow,
             branchOutstanding: branchLoans.reduce((sum, loan) => sum + loan.outstanding_principal, 0),
@@ -3404,11 +3412,22 @@ export function DashboardPage() {
                                 label="Savings"
                                 value={formatCurrencyCompact(metrics.branchSavings)}
                                 valueTooltip={formatCurrency(metrics.branchSavings)}
-                                helper="Operational member balance used for targets, borrowing context, and dashboard totals."
+                                helper="Member savings accounts only. Share capital is counted separately."
                                 status="Savings book"
                                 tone="positive"
                                 icon={<AccountBalanceWalletRoundedIcon fontSize="small" />}
                                 featured
+                            />
+                        </Grid>
+                        <Grid size={{ xs: 10, sm: 5, lg: 2 }}>
+                            <BranchManagerTopCard
+                                label="Share capital"
+                                value={formatCurrencyCompact(metrics.branchShareCapital)}
+                                valueTooltip={formatCurrency(metrics.branchShareCapital)}
+                                helper="Held in members' share accounts. Counts toward the annual target alongside savings."
+                                status={`${metrics.branchActiveMembers} member(s)`}
+                                tone="neutral"
+                                icon={<PieChartRoundedIcon fontSize="small" />}
                             />
                         </Grid>
                         <Grid size={{ xs: 10, sm: 5, lg: 2 }}>

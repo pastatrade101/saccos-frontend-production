@@ -51,7 +51,7 @@ const REPORTS: { key: ReportKey; label: string; description: string }[] = [
     { key: "contributions", label: "Contributions Summary", description: "Per member: savings, shares and social contributions with withdrawals netted." },
     { key: "monthly", label: "Monthly Contributions", description: "Member-by-month contribution matrix for the selected period." },
     { key: "dividends", label: "Dividend Distributions", description: "Every distribution: date, source, pool and member allocations." },
-    { key: "positions", label: "Member Positions", description: "Contributions + dividends = cumulative position, ranked." },
+    { key: "positions", label: "Member Positions", description: "Paid in, less withdrawals and the operations sweep, plus dividends — and where it sits today." },
     { key: "member-statement", label: "Member Profit Statement", description: "A single member's dividend history with running total." },
     { key: "utt", label: "UTT Investments", description: "UTT register: deposits, fund income, position and funding sources." },
     { key: "performance-targets", label: "Performance Targets", description: "Each member's annual target vs actual savings — % reached, remaining, position." },
@@ -88,9 +88,27 @@ interface DividendDistributionsData {
     totals: { distributions: number; utt: number; loan: number; total: number };
 }
 
+interface MemberPositionRow {
+    rank: number;
+    member_no: string | null;
+    full_name: string;
+    /** Gross paid in, before anything was taken back out. */
+    deposits: number;
+    withdrawn: number;
+    /** Swept to the SACCOS operations fund — not taken out by the member. */
+    operations: number;
+    /** deposits − withdrawn − operations. */
+    contributions: number;
+    dividends: number;
+    cumulative: number;
+    /** Where the cumulative position sits today. The two add up to it. */
+    savings_balance: number;
+    share_balance: number;
+}
+
 interface MemberPositionsData {
-    rows: { rank: number; member_no: string | null; full_name: string; contributions: number; dividends: number; cumulative: number }[];
-    totals: { contributions: number; dividends: number; cumulative: number };
+    rows: MemberPositionRow[];
+    totals: Omit<MemberPositionRow, "rank" | "member_no" | "full_name">;
 }
 
 interface MemberProfitStatementData {
@@ -852,10 +870,20 @@ export function AllReportsPage() {
             return {
                 name: "member-positions",
                 title: "Member Positions",
-                headers: ["Rank", "Member No", "Member", "Contributions", "Dividends", "Cumulative"],
+                headers: [
+                    "Rank", "Member No", "Member", "Paid In", "Withdrawn", "To Operations",
+                    "Contributions", "Dividends", "Cumulative", "In Savings", "In Shares"
+                ],
                 rows: [
-                    ...typed.rows.map((row) => [row.rank, row.member_no, row.full_name, row.contributions, row.dividends, row.cumulative] as (string | number | null)[]),
-                    ["", "", "TOTAL", typed.totals.contributions, typed.totals.dividends, typed.totals.cumulative]
+                    ...typed.rows.map((row) => [
+                        row.rank, row.member_no, row.full_name, row.deposits, row.withdrawn, row.operations,
+                        row.contributions, row.dividends, row.cumulative, row.savings_balance, row.share_balance
+                    ] as (string | number | null)[]),
+                    [
+                        "", "", "TOTAL", typed.totals.deposits, typed.totals.withdrawn, typed.totals.operations,
+                        typed.totals.contributions, typed.totals.dividends, typed.totals.cumulative,
+                        typed.totals.savings_balance, typed.totals.share_balance
+                    ]
                 ]
             };
         }
@@ -1234,20 +1262,30 @@ export function AllReportsPage() {
             const shown = search.trim()
                 ? filtered.reduce(
                     (acc, row) => ({
+                        deposits: acc.deposits + row.deposits,
+                        withdrawn: acc.withdrawn + row.withdrawn,
+                        operations: acc.operations + row.operations,
                         contributions: acc.contributions + row.contributions,
                         dividends: acc.dividends + row.dividends,
-                        cumulative: acc.cumulative + row.cumulative
+                        cumulative: acc.cumulative + row.cumulative,
+                        savings_balance: acc.savings_balance + row.savings_balance,
+                        share_balance: acc.share_balance + row.share_balance
                     }),
-                    { contributions: 0, dividends: 0, cumulative: 0 }
+                    {
+                        deposits: 0, withdrawn: 0, operations: 0, contributions: 0,
+                        dividends: 0, cumulative: 0, savings_balance: 0, share_balance: 0
+                    }
                 )
                 : typed.totals;
             return (
                 <Stack spacing={2}>
                     <StatTiles items={[
                         { label: "Members", value: String(filtered.length) },
-                        { label: "Contributions", value: formatCurrency(shown.contributions) },
+                        { label: "Contributions", value: formatCurrency(shown.contributions), helper: "Paid in, less withdrawals and the operations sweep" },
                         { label: "Dividends", value: formatCurrency(shown.dividends) },
-                        { label: "Cumulative", value: formatCurrency(shown.cumulative) }
+                        { label: "Cumulative", value: formatCurrency(shown.cumulative) },
+                        { label: "Held in savings", value: formatCurrency(shown.savings_balance) },
+                        { label: "Held in shares", value: formatCurrency(shown.share_balance) }
                     ]} />
                     <TableContainer sx={{ maxHeight: 560, borderRadius: 1.5, border: `1px solid ${theme.palette.divider}` }}>
                         <Table size="small" stickyHeader sx={zebraSx}>
@@ -1255,9 +1293,14 @@ export function AllReportsPage() {
                                 <TableRow>
                                     <TableCell sx={headCellSx}>#</TableCell>
                                     <TableCell sx={headCellSx}>Member</TableCell>
+                                    <TableCell align="right" sx={headCellSx}>Paid in</TableCell>
+                                    <TableCell align="right" sx={headCellSx}>Withdrawn</TableCell>
+                                    <TableCell align="right" sx={headCellSx} title="Swept to the SACCOS operations fund">To operations</TableCell>
                                     <TableCell align="right" sx={headCellSx}>Contributions</TableCell>
                                     <TableCell align="right" sx={headCellSx}>Dividends</TableCell>
                                     <TableCell align="right" sx={headCellSx}>Cumulative</TableCell>
+                                    <TableCell align="right" sx={headCellSx}>In savings</TableCell>
+                                    <TableCell align="right" sx={headCellSx}>In shares</TableCell>
                                 </TableRow>
                             </TableHead>
                             <TableBody>
@@ -1273,16 +1316,26 @@ export function AllReportsPage() {
                                             />
                                         </TableCell>
                                         <TableCell><MemberCell memberNo={row.member_no} name={row.full_name} /></TableCell>
+                                        <TableCell align="right"><Money value={row.deposits} /></TableCell>
+                                        <TableCell align="right"><Money value={row.withdrawn} /></TableCell>
+                                        <TableCell align="right"><Money value={row.operations} /></TableCell>
                                         <TableCell align="right"><Money value={row.contributions} /></TableCell>
                                         <TableCell align="right"><Money value={row.dividends} /></TableCell>
                                         <TableCell align="right"><Money value={row.cumulative} bold /></TableCell>
+                                        <TableCell align="right"><Money value={row.savings_balance} /></TableCell>
+                                        <TableCell align="right"><Money value={row.share_balance} /></TableCell>
                                     </TableRow>
                                 ))}
                                 <TableRow sx={totalRowSx}>
                                     <TableCell colSpan={2}><Typography variant="body2" sx={{ fontWeight: 800 }}>TOTAL</Typography></TableCell>
+                                    <TableCell align="right"><Money value={shown.deposits} bold /></TableCell>
+                                    <TableCell align="right"><Money value={shown.withdrawn} bold /></TableCell>
+                                    <TableCell align="right"><Money value={shown.operations} bold /></TableCell>
                                     <TableCell align="right"><Money value={shown.contributions} bold /></TableCell>
                                     <TableCell align="right"><Money value={shown.dividends} bold /></TableCell>
                                     <TableCell align="right"><Money value={shown.cumulative} bold /></TableCell>
+                                    <TableCell align="right"><Money value={shown.savings_balance} bold /></TableCell>
+                                    <TableCell align="right"><Money value={shown.share_balance} bold /></TableCell>
                                 </TableRow>
                             </TableBody>
                         </Table>

@@ -148,6 +148,10 @@ export function TreasuryPage() {
         order_type: "buy" as "buy" | "sell",
         units: "",
         unit_price: "",
+        // Blank means today. Set it to record a purchase the SACCOS already
+        // made — the UTT buys were all imported because there was nowhere to
+        // say when they happened.
+        order_date: "",
         notes: "",
         broker: "",
         cds_account: "",
@@ -258,6 +262,11 @@ export function TreasuryPage() {
         () => assets.find((asset) => asset.id === orderForm.asset_id) || null,
         [assets, orderForm.asset_id]
     );
+    // Broker, CDS account, quote reference and DSE fees belong to a share
+    // bought on an exchange. A unit trust is subscribed to directly, so those
+    // boxes had nothing to put in them and invited a NMB quote reference to be
+    // typed against a UTT purchase.
+    const isExchangeTraded = (selectedOrderAsset?.asset_type || "").toLowerCase() === "equity";
 
     const totalPortfolioMarketValue = useMemo(
         () => portfolio.reduce((sum, row) => sum + Number(row.current_market_value || 0), 0),
@@ -559,6 +568,7 @@ export function TreasuryPage() {
             order_type: "buy",
             units: "",
             unit_price: "",
+            order_date: "",
             notes: "",
             broker: "",
             cds_account: "",
@@ -622,11 +632,15 @@ export function TreasuryPage() {
                 units: Number(orderForm.units || 0),
                 unit_price: Number(orderForm.unit_price || 0),
                 total_amount: orderPreviewAmount,
+                order_date: orderForm.order_date || undefined,
                 notes: orderForm.notes.trim() || null,
-                broker: orderForm.broker.trim() || null,
-                cds_account: orderForm.cds_account.trim() || null,
-                invoice_ref: orderForm.invoice_ref.trim() || null,
-                total_fees: orderForm.total_fees ? Number(orderForm.total_fees) : null,
+                // Exchange details are sent only for an exchange-traded asset.
+                // The boxes are hidden for a unit trust, and anything left in
+                // state from a previous asset would otherwise ride along.
+                broker: isExchangeTraded ? orderForm.broker.trim() || null : null,
+                cds_account: isExchangeTraded ? orderForm.cds_account.trim() || null : null,
+                invoice_ref: isExchangeTraded ? orderForm.invoice_ref.trim() || null : null,
+                total_fees: isExchangeTraded && orderForm.total_fees ? Number(orderForm.total_fees) : null,
                 amount_paid: orderForm.amount_paid ? Number(orderForm.amount_paid) : 0
             });
             setOrderDialogOpen(false);
@@ -2033,14 +2047,25 @@ export function TreasuryPage() {
                         </TextField>
                         <TextField label="Units" value={orderForm.units} onChange={(event) => setOrderForm((current) => ({ ...current, units: event.target.value }))} fullWidth />
                         <TextField label="Unit price (TSh)" value={orderForm.unit_price} onChange={(event) => setOrderForm((current) => ({ ...current, unit_price: event.target.value }))} fullWidth />
-                        {orderForm.order_type === "buy" ? (
+                        <TextField
+                            type="date"
+                            label="Order date"
+                            value={orderForm.order_date}
+                            onChange={(event) => setOrderForm((current) => ({ ...current, order_date: event.target.value }))}
+                            fullWidth
+                            slotProps={{ inputLabel: { shrink: true } }}
+                            helperText="Leave blank for today. Set it to record a purchase already made."
+                        />
+                        {orderForm.order_type === "buy" && isExchangeTraded ? (
                             <>
                                 <TextField label="Broker (optional)" placeholder="e.g. KADOO SECURITIES CO. LTD" value={orderForm.broker} onChange={(event) => setOrderForm((current) => ({ ...current, broker: event.target.value }))} fullWidth />
                                 <TextField label="CDS account (optional)" value={orderForm.cds_account} onChange={(event) => setOrderForm((current) => ({ ...current, cds_account: event.target.value }))} fullWidth />
                                 <TextField label="Invoice / quote ref (optional)" placeholder="e.g. QT-KHO-B00821" value={orderForm.invoice_ref} onChange={(event) => setOrderForm((current) => ({ ...current, invoice_ref: event.target.value }))} fullWidth />
                                 <TextField label="Total fees / charges (TSh, optional)" value={orderForm.total_fees} onChange={(event) => setOrderForm((current) => ({ ...current, total_fees: event.target.value }))} fullWidth helperText="Broker + DSE + CMSA + CDS + fidelity fees." />
-                                <TextField label="Amount paid so far (TSh, optional)" value={orderForm.amount_paid} onChange={(event) => setOrderForm((current) => ({ ...current, amount_paid: event.target.value }))} fullWidth helperText="For prefunded / partial payments. Leave blank if not yet paid." />
                             </>
+                        ) : null}
+                        {orderForm.order_type === "buy" ? (
+                            <TextField label="Amount paid so far (TSh, optional)" value={orderForm.amount_paid} onChange={(event) => setOrderForm((current) => ({ ...current, amount_paid: event.target.value }))} fullWidth helperText="For prefunded / partial payments. Leave blank if not yet paid." />
                         ) : null}
                         <TextField
                             label="Notes"

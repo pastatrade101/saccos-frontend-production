@@ -185,6 +185,10 @@ export function summarizePerformanceTargetAccounts(accounts: MemberAccount[], se
                 summary.availableSavings += available;
             }
 
+            if (account.product_type === "shares") {
+                summary.shareBalance += total;
+            }
+
             return summary;
         },
         {
@@ -195,9 +199,14 @@ export function summarizePerformanceTargetAccounts(accounts: MemberAccount[], se
     );
 
     const normalized = normalizeSaccoPerformanceTargetSettings(settings);
-    const actualAmount = normalized.performance_target_actual_source === "available_savings"
+    // Share capital counts toward the target. It always did, because it was
+    // collected into savings and sat there; moving it into share accounts would
+    // otherwise have cut every member's progress by their share capital — a
+    // whole million on this book — for a posting that took nothing from them.
+    const savingsSide = normalized.performance_target_actual_source === "available_savings"
         ? balances.availableSavings
         : balances.savingsBalance;
+    const actualAmount = savingsSide + balances.shareBalance;
 
     return {
         ...balances,
