@@ -619,8 +619,22 @@ interface DateRangeState {
     to: string;
 }
 
-function groupBalances(statements: StatementRow[]) {
-    return statements
+/// Only rows belonging to [accountIds] are plotted.
+///
+/// `running_balance` is the balance of the account the row belongs to, and the
+/// statement mixes every account a member has. Plotting them together drew one
+/// line that jumped between two different balances: the moment share capital
+/// was posted, the last row of the month belonged to the share account and the
+/// chart fell from 99,000,000 to 1,000,000 for a member who had not withdrawn a
+/// shilling.
+function forAccounts(statements: StatementRow[], accountIds: Set<string>) {
+    return accountIds.size
+        ? statements.filter((entry) => accountIds.has(entry.account_id))
+        : statements;
+}
+
+function groupBalances(statements: StatementRow[], accountIds: Set<string>) {
+    return forAccounts(statements, accountIds)
         .slice()
         .reverse()
         .slice(-8)
@@ -671,10 +685,10 @@ function amountToWords(value: number): string {
     return parts.join(" ");
 }
 
-function groupSavingsByMonth(statements: StatementRow[]) {
+function groupSavingsByMonth(statements: StatementRow[], accountIds: Set<string>) {
     const monthly = new Map<string, { label: string; balance: number; date: number }>();
 
-    statements.forEach((entry) => {
+    forAccounts(statements, accountIds).forEach((entry) => {
         const date = new Date(entry.created_at || entry.transaction_date);
         const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
         const existing = monthly.get(key);
@@ -4022,17 +4036,29 @@ export function MemberPortalPage() {
     );
     const financialYearPeriod = useMemo(() => resolveFinancialYearPeriod(financialYearSettings), [financialYearSettings]);
     const transactionCount = statements.length;
-    const balanceTrend = groupBalances(statements);
-    const monthlySavingsTrend = useMemo(() => groupSavingsByMonth(statements), [statements]);
+    const savingsAccountIds = useMemo(
+        () => new Set(savingsAccounts.map((account) => account.id)),
+        [savingsAccounts]
+    );
+    const balanceTrend = groupBalances(statements, savingsAccountIds);
+    const monthlySavingsTrend = useMemo(
+        () => groupSavingsByMonth(statements, savingsAccountIds),
+        [statements, savingsAccountIds]
+    );
+    // Savings accounts only. `running_balance` belongs to the account the row
+    // was posted on, and the statement carries every account a member has, so
+    // plotting them together draws one line jumping between two balances: the
+    // day share capital was posted this fell from 82,000,000 to 1,000,000 for a
+    // member who had not withdrawn a shilling.
     const savingsTrendSeries = useMemo(
         () =>
-            statements
+            forAccounts(statements, savingsAccountIds)
                 .map((entry) => ({
                     date: new Date(entry.created_at || entry.transaction_date).getTime(),
                     balance: Number(entry.running_balance)
                 }))
                 .filter((point) => Number.isFinite(point.date) && Number.isFinite(point.balance)),
-        [statements]
+        [statements, savingsAccountIds]
     );
     const currentView = visiblePortalSections.find((section) => section.id === activeSection) || visiblePortalSections[0];
     // Overview greets the member by name; every other section uses its own label.
@@ -4477,7 +4503,13 @@ export function MemberPortalPage() {
         () => filteredLoans.filter((loan) => ["active", "in_arrears"].includes(loan.status)).length,
         [filteredLoans]
     );
-    const transactionTrend = useMemo(() => groupBalances(filteredTransactions), [filteredTransactions]);
+    // Savings only, like the overview chart. A running-balance line can only
+    // belong to one account; drawing the share account's balance on the same
+    // line makes it fall off a cliff the day share capital is posted.
+    const transactionTrend = useMemo(
+        () => groupBalances(filteredTransactions, savingsAccountIds),
+        [filteredTransactions, savingsAccountIds]
+    );
     const transactionTrendLabels = transactionTrend.map((entry) => entry.label);
     const transactionTrendValues = transactionTrend.map((entry) => entry.balance);
     const latestFilteredTransaction = filteredTransactions[0] || null;
