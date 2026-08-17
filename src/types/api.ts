@@ -355,6 +355,13 @@ export interface TreasuryOrder {
     reference: string;
     status: "draft" | "pending_review" | "pending_approval" | "approved" | "rejected" | "executed" | "cancelled";
     approval_request_id?: string | null;
+    /// Status of the linked approval request, not of the order. The order stays
+    /// at `pending_approval` after it is signed, so this is the only field that
+    /// says whether anyone has actually approved it.
+    approval_status?: "pending" | "approved" | "rejected" | "expired" | "executed" | null;
+    approval_maker_user_id?: string | null;
+    approval_approved_count?: number | null;
+    approval_required_checker_count?: number | null;
     liquidity_snapshot: Record<string, unknown>;
     created_by: string;
     reviewed_by?: string | null;

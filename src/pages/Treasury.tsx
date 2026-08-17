@@ -70,18 +70,33 @@ const TAB_OPTIONS: Array<{ value: TreasuryTab; label: string }> = [
     { value: "liquidity", label: "Liquidity Overview" }
 ];
 
+/// Whether the order's approval has actually been signed.
+///
+/// An approved order sits at `pending_approval` until the moment it executes —
+/// approval is recorded against the request, never copied onto the order. So
+/// the order status says only "this went through governance", and the signature
+/// has to be read off `approval_status`. Orders that never needed an approval
+/// have no request at all, and are ready by definition.
+function orderApprovalSigned(order: TreasuryOrder): boolean {
+    if (!order.approval_request_id) return true;
+    return order.approval_status === "approved" || order.approval_status === "executed";
+}
+
 /// Where an order has got to, and whose move it is.
 ///
 /// The status chip alone said "pending approval" and stopped there, so the only
 /// way to learn that a super admin or branch manager still had to decide was to
 /// press Execute and read the error.
-function orderStage(status: TreasuryOrder["status"]): { step: string; waitingOn: string | null } {
+function orderStage(order: TreasuryOrder): { step: string; waitingOn: string | null } {
+    const status = order.status;
     switch (status) {
         case "draft":
         case "pending_review":
             return { step: "Step 1 of 3 — review", waitingOn: "Branch manager or super admin" };
         case "pending_approval":
-            return { step: "Step 2 of 3 — approval", waitingOn: "Branch manager or super admin — not whoever raised it" };
+            return orderApprovalSigned(order)
+                ? { step: "Step 3 of 3 — execution", waitingOn: "Branch manager or super admin" }
+                : { step: "Step 2 of 3 — approval", waitingOn: "Branch manager or super admin — not whoever raised it" };
         case "approved":
             return { step: "Step 3 of 3 — execution", waitingOn: "Branch manager or super admin" };
         case "executed":
@@ -1667,7 +1682,7 @@ export function TreasuryPage() {
                                                                     <TableCell>
                                                                         <Chip size="small" color={orderStatusColor(order.status)} label={order.status.replace(/_/g, " ")} />
                                                                         {(() => {
-                                                                            const stage = orderStage(order.status);
+                                                                            const stage = orderStage(order);
                                                                             return (
                                                                                 <>
                                                                                     <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
@@ -1715,15 +1730,29 @@ export function TreasuryPage() {
                                                                                         </Button>
                                                                                     </>
                                                                                 ) : null}
-                                                                                {/* One button per stage. Offering Execute while the
-                                                                                    request is still undecided guaranteed a 409 and told
-                                                                                    the user nothing about what was actually needed. */}
-                                                                                {canReviewExecute && order.status === "pending_approval" && order.approval_request_id ? (
-                                                                                    <Button size="small" variant="contained" color="warning" onClick={() => handleApproveOrder(order)}>
+                                                                                {/* One button per stage, keyed off whether the request
+                                                                                    has actually been signed. Offering Execute on an
+                                                                                    undecided request guaranteed a 409; keying Approve
+                                                                                    off the order status alone left the button showing
+                                                                                    Approve forever, because an approved order stays at
+                                                                                    `pending_approval` until it executes. */}
+                                                                                {canReviewExecute && order.status === "pending_approval" && !orderApprovalSigned(order) ? (
+                                                                                    <Button
+                                                                                        size="small"
+                                                                                        variant="contained"
+                                                                                        color="warning"
+                                                                                        disabled={Boolean(order.approval_maker_user_id) && order.approval_maker_user_id === profile?.user_id}
+                                                                                        title={
+                                                                                            order.approval_maker_user_id === profile?.user_id
+                                                                                                ? "You raised this order. Someone else has to approve it."
+                                                                                                : undefined
+                                                                                        }
+                                                                                        onClick={() => handleApproveOrder(order)}
+                                                                                    >
                                                                                         Approve
                                                                                     </Button>
                                                                                 ) : null}
-                                                                                {canReviewExecute && order.status === "approved" ? (
+                                                                                {canReviewExecute && (order.status === "approved" || (order.status === "pending_approval" && orderApprovalSigned(order))) ? (
                                                                                     <Button size="small" variant="contained" onClick={() => handleExecuteOrder(order)}>
                                                                                         Execute
                                                                                     </Button>
