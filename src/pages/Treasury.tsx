@@ -81,7 +81,7 @@ function orderStage(status: TreasuryOrder["status"]): { step: string; waitingOn:
         case "pending_review":
             return { step: "Step 1 of 3 — review", waitingOn: "Branch manager or super admin" };
         case "pending_approval":
-            return { step: "Step 2 of 3 — approval", waitingOn: "A checker who did not raise it" };
+            return { step: "Step 2 of 3 — approval", waitingOn: "Branch manager or super admin — not whoever raised it" };
         case "approved":
             return { step: "Step 3 of 3 — execution", waitingOn: "Branch manager or super admin" };
         case "executed":
@@ -782,6 +782,44 @@ export function TreasuryPage() {
         } finally {
             setBusy(false);
         }
+    };
+
+    /// Approves the order's outstanding request without leaving Treasury.
+    ///
+    /// The page used to offer Execute at this stage, which can never work: the
+    /// request has to be decided first, so the button returned 409 and the only
+    /// way to learn what was missing was to read the error and go hunting for
+    /// the approvals queue.
+    const handleApproveOrder = (order: TreasuryOrder) => {
+        if (!order.approval_request_id) return;
+
+        openStepUpDialog(
+            "Approve treasury order",
+            `Confirm a fresh authenticator check before approving ${assetLabel(order.treasury_assets)}. Approving does not post anything — the order still has to be executed.`,
+            "Approve order",
+            async (stepUpPayload) => {
+                setBusy(true);
+                try {
+                    await api.post(endpoints.approvals.approve(order.approval_request_id as string), {
+                        tenant_id: tenantId,
+                        notes: "Approved from the treasury orders table.",
+                        two_factor_code: stepUpPayload.two_factor_code || null,
+                        recovery_code: stepUpPayload.recovery_code || null
+                    });
+                    setStepUpOpen(false);
+                    setStepUpHandler(null);
+                    await loadTreasury();
+                    pushToast({ type: "success", title: "Treasury", message: "Order approved. Execute it to post to the ledger." });
+                } catch (error) {
+                    if (handleTwoFactorGateError(error)) {
+                        return;
+                    }
+                    pushToast({ type: "error", title: "Treasury", message: getApiErrorMessage(error, "Unable to approve treasury order.") });
+                } finally {
+                    setBusy(false);
+                }
+            }
+        );
     };
 
     const handleExecuteOrder = (order: TreasuryOrder) => {
@@ -1677,7 +1715,15 @@ export function TreasuryPage() {
                                                                                         </Button>
                                                                                     </>
                                                                                 ) : null}
-                                                                                {canReviewExecute && (order.status === "approved" || order.status === "pending_approval") ? (
+                                                                                {/* One button per stage. Offering Execute while the
+                                                                                    request is still undecided guaranteed a 409 and told
+                                                                                    the user nothing about what was actually needed. */}
+                                                                                {canReviewExecute && order.status === "pending_approval" && order.approval_request_id ? (
+                                                                                    <Button size="small" variant="contained" color="warning" onClick={() => handleApproveOrder(order)}>
+                                                                                        Approve
+                                                                                    </Button>
+                                                                                ) : null}
+                                                                                {canReviewExecute && order.status === "approved" ? (
                                                                                     <Button size="small" variant="contained" onClick={() => handleExecuteOrder(order)}>
                                                                                         Execute
                                                                                     </Button>
