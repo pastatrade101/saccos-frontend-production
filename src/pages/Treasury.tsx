@@ -250,7 +250,13 @@ export function TreasuryPage() {
     const orderPreviewAmount = useMemo(() => {
         const units = Number(orderForm.units || 0);
         const unitPrice = Number(orderForm.unit_price || 0);
-        return units > 0 && unitPrice > 0 ? units * unitPrice : 0;
+        // Rounded to the cent, and this is the figure sent as well as shown.
+        // 348,754.6 units at 525.8712 comes out of the browser as
+        // 183,400,000.00752 — the same money, but the server was refusing it
+        // for not being a whole number of cents, and the order could not be
+        // created at all.
+        const raw = units > 0 && unitPrice > 0 ? units * unitPrice : 0;
+        return Math.round((raw + Number.EPSILON) * 100) / 100;
     }, [orderForm.units, orderForm.unit_price]);
 
     const effectivePolicy = useMemo(
