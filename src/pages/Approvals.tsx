@@ -91,6 +91,68 @@ interface PolicyFormValues {
     allowed_checker_roles: string;
 }
 
+/// Picks roles from the set the system actually has, rather than asking for a
+/// comma-separated list.
+///
+/// The two policy fields were free text: a typo — "branch manger", "Super Admin"
+/// — saved cleanly and silently left nobody able to approve that operation.
+const APPROVAL_ROLE_OPTIONS = [
+    { value: "super_admin", label: "Super admin" },
+    { value: "branch_manager", label: "Branch manager" },
+    { value: "treasury_officer", label: "Treasury officer" },
+    { value: "loan_officer", label: "Loan officer" },
+    { value: "teller", label: "Teller" },
+    { value: "auditor", label: "Auditor" }
+];
+
+function RolePicker({
+    label,
+    value,
+    onChange,
+    helper
+}: {
+    label: string;
+    value: string;
+    onChange: (next: string) => void;
+    helper?: string;
+}) {
+    const selected = value.split(",").map((role) => role.trim()).filter(Boolean);
+
+    const toggle = (role: string) => {
+        const next = selected.includes(role)
+            ? selected.filter((item) => item !== role)
+            : [...selected, role];
+        onChange(next.join(", "));
+    };
+
+    return (
+        <Box>
+            <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>{label}</Typography>
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                {APPROVAL_ROLE_OPTIONS.map((option) => (
+                    <Chip
+                        key={option.value}
+                        label={option.label}
+                        color={selected.includes(option.value) ? "primary" : "default"}
+                        variant={selected.includes(option.value) ? "filled" : "outlined"}
+                        onClick={() => toggle(option.value)}
+                    />
+                ))}
+            </Stack>
+            {helper ? (
+                <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.75 }}>
+                    {helper}
+                </Typography>
+            ) : null}
+            {!selected.length ? (
+                <Typography variant="caption" color="error.main" display="block" sx={{ mt: 0.75 }}>
+                    Nobody selected — this operation would be impossible to complete.
+                </Typography>
+            ) : null}
+        </Box>
+    );
+}
+
 function parseCsvRoles(raw: string) {
     return [...new Set(
         String(raw || "")
@@ -878,17 +940,16 @@ export function ApprovalsPage() {
                             inputProps={{ min: 5, max: 10080, step: 1 }}
                             {...policyForm.register("sla_minutes", { valueAsNumber: true })}
                         />
-                        <TextField
-                            label="Allowed maker roles"
-                            fullWidth
-                            helperText="Comma-separated roles, e.g. teller, branch_manager, super_admin"
-                            {...policyForm.register("allowed_maker_roles")}
+                        <RolePicker
+                            label="Who may raise it (makers)"
+                            value={policyForm.watch("allowed_maker_roles") || ""}
+                            onChange={(next) => policyForm.setValue("allowed_maker_roles", next, { shouldDirty: true })}
                         />
-                        <TextField
-                            label="Allowed checker roles"
-                            fullWidth
-                            helperText="Comma-separated roles, e.g. branch_manager, super_admin"
-                            {...policyForm.register("allowed_checker_roles")}
+                        <RolePicker
+                            label="Who may approve it (checkers)"
+                            value={policyForm.watch("allowed_checker_roles") || ""}
+                            onChange={(next) => policyForm.setValue("allowed_checker_roles", next, { shouldDirty: true })}
+                            helper="Whoever raised a request can never approve it, so at least two people are always involved."
                         />
                     </Stack>
                 </DialogContent>

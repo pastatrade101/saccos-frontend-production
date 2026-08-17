@@ -70,6 +70,33 @@ const TAB_OPTIONS: Array<{ value: TreasuryTab; label: string }> = [
     { value: "liquidity", label: "Liquidity Overview" }
 ];
 
+/// Where an order has got to, and whose move it is.
+///
+/// The status chip alone said "pending approval" and stopped there, so the only
+/// way to learn that a super admin or branch manager still had to decide was to
+/// press Execute and read the error.
+function orderStage(status: TreasuryOrder["status"]): { step: string; waitingOn: string | null } {
+    switch (status) {
+        case "draft":
+        case "pending_review":
+            return { step: "Step 1 of 3 — review", waitingOn: "Branch manager or super admin" };
+        case "pending_approval":
+            return { step: "Step 2 of 3 — approval", waitingOn: "A checker who did not raise it" };
+        case "approved":
+            return { step: "Step 3 of 3 — execution", waitingOn: "Branch manager or super admin" };
+        case "executed":
+            return { step: "Posted to the ledger", waitingOn: null };
+        case "rejected":
+            return { step: "Rejected", waitingOn: null };
+        case "cancelled":
+            return { step: "Cancelled", waitingOn: null };
+        default:
+            // Unreachable while the union is exhaustive; kept so a status added
+            // later degrades to its own name rather than a blank cell.
+            return { step: String(status).replace(/_/g, " "), waitingOn: null };
+    }
+}
+
 function orderStatusColor(status: TreasuryOrder["status"]): "default" | "warning" | "success" | "error" | "info" {
     if (status === "executed") return "success";
     if (status === "approved") return "info";
@@ -1601,6 +1628,21 @@ export function TreasuryPage() {
                                                                     </TableCell>
                                                                     <TableCell>
                                                                         <Chip size="small" color={orderStatusColor(order.status)} label={order.status.replace(/_/g, " ")} />
+                                                                        {(() => {
+                                                                            const stage = orderStage(order.status);
+                                                                            return (
+                                                                                <>
+                                                                                    <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                                                                                        {stage.step}
+                                                                                    </Typography>
+                                                                                    {stage.waitingOn ? (
+                                                                                        <Typography variant="caption" color="warning.main" display="block">
+                                                                                            Waiting on: {stage.waitingOn}
+                                                                                        </Typography>
+                                                                                    ) : null}
+                                                                                </>
+                                                                            );
+                                                                        })()}
                                                                     </TableCell>
                                                                     <TableCell>{formatDate(order.order_date)}</TableCell>
                                                                     {canManageOrders ? (
@@ -2081,6 +2123,11 @@ export function TreasuryPage() {
                             minRows={3}
                             fullWidth
                         />
+                        <Alert severity="info" variant="outlined">
+                            After you create it: a checker who did not raise it reviews and approves,
+                            then it is executed and posted to the ledger. Nothing reaches the books
+                            until that last step.
+                        </Alert>
                         <Paper variant="outlined" sx={{ p: 2 }}>
                             <Typography variant="body2" color="text.secondary">Order preview</Typography>
                             <Typography variant="h6" fontWeight={800} sx={{ mt: 1 }}>
