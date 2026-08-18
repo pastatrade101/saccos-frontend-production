@@ -856,7 +856,8 @@ export interface PublicReferrerOption {
 
 export interface PublicSignupRequest {
     branch_id: string;
-    referred_by_member_id?: string | null;
+    /// Required: the API rejects a signup that names no referring member.
+    referred_by_member_id: string;
     first_name: string;
     last_name: string;
     gender: "male" | "female" | "other";

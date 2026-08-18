@@ -56,6 +56,7 @@ const PASSWORD_SPECIAL_PATTERN = /[^A-Za-z0-9]/;
 const SIGNUP_MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const MIN_INITIAL_SHARE_AMOUNT_TZS = 50000;
 const MIN_MONTHLY_SAVINGS_COMMITMENT_TZS = 10000;
+const REFERRER_REQUIRED_MESSAGE = "Chagua mwanachama aliyekuletea. Ni lazima — hakuna maombi yanayopokelewa bila mdhamini.";
 // Common bond per the SACCO by-laws (§5): Ilboru Secondary leavers in this range.
 const ILBORU_MIN_COMPLETION_YEAR = 1980;
 const ILBORU_MAX_COMPLETION_YEAR = 2022;
@@ -385,6 +386,10 @@ export function SignupPage() {
     const [referrerQuery, setReferrerQuery] = useState("");
     const [referrerOptions, setReferrerOptions] = useState<PublicReferrerOption[]>([]);
     const [referrerLoading, setReferrerLoading] = useState(false);
+    // The referrer is picked through an Autocomplete held in plain state rather
+    // than registered with react-hook-form, so form.trigger() cannot see it and
+    // its "required" has to be enforced by hand on the step that shows it.
+    const [referrerError, setReferrerError] = useState<string | null>(null);
 
     const form = useForm<SignupValues>({
         resolver: zodResolver(schema),
@@ -603,6 +608,14 @@ export function SignupPage() {
         if (!valid) {
             return;
         }
+
+        // Membership step: the referring member is mandatory and lives outside
+        // the form, so form.trigger() above has already returned true for it.
+        if (activeStep === 4 && !referrer) {
+            setReferrerError(REFERRER_REQUIRED_MESSAGE);
+            return;
+        }
+
         setActiveStep((current) => Math.min(current + 1, STEP_TITLES.length - 1));
     };
 
@@ -622,9 +635,18 @@ export function SignupPage() {
             return;
         }
 
+        // Second gate on the referrer. The step check catches the ordinary path;
+        // this catches a form restored from an earlier draft, where the applicant
+        // never walked through step 5 in this session.
+        if (!referrer) {
+            setReferrerError(REFERRER_REQUIRED_MESSAGE);
+            setActiveStep(4);
+            return;
+        }
+
         const payload: PublicSignupRequest = {
             branch_id: values.branch_id,
-            referred_by_member_id: referrer?.id || null,
+            referred_by_member_id: referrer.id,
             first_name: values.first_name.trim(),
             last_name: values.last_name.trim(),
             gender: values.gender,
@@ -1390,16 +1412,24 @@ export function SignupPage() {
                                             setReferrerQuery(value);
                                         }
                                     }}
-                                    onChange={(_event, option) => setReferrer(option)}
+                                    onChange={(_event, option) => {
+                                        setReferrer(option);
+                                        if (option) {
+                                            setReferrerError(null);
+                                        }
+                                    }}
                                     noOptionsText={referrerQuery.trim().length < 3
                                         ? "Andika angalau herufi 3 za jina la mwanachama."
                                         : "Hakuna mwanachama anayelingana na jina hilo."}
                                     renderInput={(params) => (
                                         <TextField
                                             {...params}
-                                            label="Referred by an existing member (optional)"
+                                            required
+                                            label="Referred by an existing member"
                                             sx={signupFieldSx}
-                                            helperText="Umejiunga kupitia/umeambiwa na mwanachama gani? Tafuta jina lake na umchague — si lazima."
+                                            error={Boolean(referrerError)}
+                                            helperText={referrerError
+                                                || "Umejiunga kupitia/umeambiwa na mwanachama gani? Tafuta jina lake na umchague."}
                                             InputProps={{
                                                 ...params.InputProps,
                                                 endAdornment: (
