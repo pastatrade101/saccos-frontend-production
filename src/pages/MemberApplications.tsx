@@ -914,7 +914,23 @@ export function MemberApplicationsPage() {
                                         {detailLoading && selected?.id === row.id ? "Loading..." : "Review details"}
                                     </Button>
                                 ) : null}
-                                {isSuperAdmin && ["submitted", "under_review"].includes(row.status) ? <Button size="small" color="success" startIcon={<ApprovalRoundedIcon />} onClick={() => void approveApplication(row)}>Approve</Button> : null}
+                                {/* The API refuses approval without a referring member, so the
+                                    button says why up front rather than after a 409. A native
+                                    title is used because a disabled button fires no hover
+                                    events of its own. */}
+                                {isSuperAdmin && ["submitted", "under_review"].includes(row.status) ? (
+                                    <span title={row.referred_by_member_id ? undefined : "Record the referring member on this application before approving it."}>
+                                        <Button
+                                            size="small"
+                                            color="success"
+                                            startIcon={<ApprovalRoundedIcon />}
+                                            disabled={!row.referred_by_member_id}
+                                            onClick={() => void approveApplication(row)}
+                                        >
+                                            Approve
+                                        </Button>
+                                    </span>
+                                ) : null}
                                 {isSuperAdmin && ["draft", "submitted", "under_review"].includes(row.status) ? <Button size="small" color="error" startIcon={<DoDisturbRoundedIcon />} onClick={() => { setSelected(row); rejectForm.reset({ reason: row.rejection_reason || "" }); setDialogMode("reject"); }}>Reject</Button> : null}
                                 {isBranchManager && row.status === "approved" ? (
                                     <Button size="small" onClick={() => navigate("/members")}>
