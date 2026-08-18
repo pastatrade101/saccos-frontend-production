@@ -176,6 +176,7 @@ const routeMap = {
     memberApplications: {
         list: "/member-applications",
         detail: (applicationId: string) => `/member-applications/${applicationId}`,
+        setReferrer: (applicationId: string) => `/member-applications/${applicationId}/referrer`,
         submit: (applicationId: string) => `/member-applications/${applicationId}/submit`,
         review: (applicationId: string) => `/member-applications/${applicationId}/review`,
         requestMoreInfo: (applicationId: string) => `/member-applications/${applicationId}/request-more-info`,
@@ -499,6 +500,7 @@ export const endpoints = {
     memberApplications: {
         list: () => routeMap.memberApplications.list,
         detail: (applicationId: string) => routeMap.memberApplications.detail(applicationId),
+        setReferrer: (applicationId: string) => routeMap.memberApplications.setReferrer(applicationId),
         submit: (applicationId: string) => routeMap.memberApplications.submit(applicationId),
         review: (applicationId: string) => routeMap.memberApplications.review(applicationId),
         requestMoreInfo: (applicationId: string) => routeMap.memberApplications.requestMoreInfo(applicationId),

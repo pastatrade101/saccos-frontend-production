@@ -16,11 +16,13 @@ import TipsAndUpdatesRoundedIcon from "@mui/icons-material/TipsAndUpdatesRounded
 import VerifiedUserRoundedIcon from "@mui/icons-material/VerifiedUserRounded";
 import {
     Alert,
+    Autocomplete,
     Box,
     Button,
     Card,
     CardContent,
     Chip,
+    CircularProgress,
     Dialog,
     DialogActions,
     DialogContent,
@@ -56,7 +58,7 @@ import {
     type RequestMoreInfoMemberApplicationRequest,
     type ReviewMemberApplicationRequest
 } from "../lib/endpoints";
-import type { Branch, MemberApplication, MemberApplicationStatus } from "../types/api";
+import type { Branch, Member, MemberApplication, MemberApplicationStatus } from "../types/api";
 import { memberApplicationStatusLabels } from "../utils/member-application-status";
 import { formatCurrency, formatDate } from "../utils/format";
 import { formatNextOfKinRelationship } from "../utils/nextOfKin";
@@ -103,6 +105,185 @@ function ApplicationDetailItem({ label, value }: { label: string; value: ReactNo
                 {value}
             </Typography>
         </Box>
+    );
+}
+
+/// Statuses in which the API will still accept a referrer. Kept in step with
+/// REFERRER_EDITABLE_STATUSES on the server: showing the control where the save
+/// is going to be refused is worse than not showing it at all. Approved and
+/// active are included because the records needing a backfill are past review.
+const REFERRER_EDITABLE_STATUSES: MemberApplicationStatus[] = [
+    "draft",
+    "submitted",
+    "under_review",
+    "approved",
+    "approved_pending_payment",
+    "active"
+];
+
+/// "Referred by", editable in place.
+///
+/// Public signups have required a referrer since 18 Aug 2026, but applications
+/// submitted before that carry a blank and the branch usually knows the answer.
+function ApplicationReferrerField({
+    application,
+    canEdit,
+    onSaved
+}: {
+    application: MemberApplication;
+    canEdit: boolean;
+    onSaved: (updated: MemberApplication) => void;
+}) {
+    const { pushToast } = useToast();
+    const [editing, setEditing] = useState(false);
+    const [query, setQuery] = useState("");
+    const [options, setOptions] = useState<Member[]>([]);
+    const [choice, setChoice] = useState<Member | null>(null);
+    const [searching, setSearching] = useState(false);
+    const [saving, setSaving] = useState(false);
+
+    const editable = canEdit && REFERRER_EDITABLE_STATUSES.includes(application.status);
+
+    useEffect(() => {
+        setEditing(false);
+        setChoice(null);
+        setQuery("");
+        setOptions([]);
+    }, [application.id]);
+
+    useEffect(() => {
+        const term = query.trim();
+        if (!editing || term.length < 3) {
+            setOptions([]);
+            return;
+        }
+
+        // Debounced so typing a name is one search, not one per keystroke.
+        let cancelled = false;
+        const timer = window.setTimeout(async () => {
+            setSearching(true);
+            try {
+                const { data } = await api.get<{ data: Member[] }>(endpoints.members.list(), {
+                    params: {
+                        search: term,
+                        status: "active",
+                        fields: "lookup",
+                        include_total: false,
+                        limit: 8
+                    }
+                });
+                if (!cancelled) {
+                    setOptions(data.data || []);
+                }
+            } catch {
+                if (!cancelled) {
+                    setOptions([]);
+                }
+            } finally {
+                if (!cancelled) {
+                    setSearching(false);
+                }
+            }
+        }, 300);
+
+        return () => {
+            cancelled = true;
+            window.clearTimeout(timer);
+        };
+    }, [editing, query]);
+
+    const save = async () => {
+        if (!choice) return;
+        setSaving(true);
+        try {
+            const { data } = await api.patch<MemberApplicationResponse>(
+                endpoints.memberApplications.setReferrer(application.id),
+                { referred_by_member_id: choice.id }
+            );
+            pushToast({ type: "success", title: "Referrer recorded", message: `${choice.full_name} is now recorded as the referring member.` });
+            setEditing(false);
+            if (data.data) {
+                onSaved(data.data);
+            }
+        } catch (error) {
+            pushToast({ type: "error", title: "Unable to record the referrer", message: getApiErrorMessage(error) });
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    if (!editing) {
+        return (
+            <Box sx={{ display: "flex", justifyContent: "space-between", gap: 2, alignItems: "flex-start" }}>
+                <Typography variant="body2" color="text.secondary" sx={{ minWidth: 132 }}>
+                    Referred by
+                </Typography>
+                <Stack direction="row" spacing={1} alignItems="center" sx={{ justifyContent: "flex-end", flexWrap: "wrap" }}>
+                    <Typography
+                        variant="body2"
+                        sx={{ fontWeight: 600, textAlign: "right", wordBreak: "break-word" }}
+                        color={application.referred_by_name ? "text.primary" : "warning.main"}
+                    >
+                        {application.referred_by_name || "Not provided"}
+                    </Typography>
+                    {editable ? (
+                        <Button size="small" onClick={() => setEditing(true)} sx={{ minWidth: 0, px: 1 }}>
+                            {application.referred_by_name ? "Change" : "Add"}
+                        </Button>
+                    ) : null}
+                </Stack>
+            </Box>
+        );
+    }
+
+    return (
+        <Stack spacing={1}>
+            <Typography variant="body2" color="text.secondary">
+                Referred by
+            </Typography>
+            <Autocomplete
+                size="small"
+                options={options}
+                value={choice}
+                loading={searching}
+                filterOptions={(entries) => entries}
+                getOptionLabel={(option) => option.member_no ? `${option.full_name} (${option.member_no})` : option.full_name}
+                isOptionEqualToValue={(option, current) => option.id === current.id}
+                onInputChange={(_event, value, reason) => {
+                    if (reason !== "reset") {
+                        setQuery(value);
+                    }
+                }}
+                onChange={(_event, option) => setChoice(option)}
+                noOptionsText={query.trim().length < 3
+                    ? "Andika angalau herufi 3 za jina la mwanachama."
+                    : "Hakuna mwanachama anayelingana na jina hilo."}
+                renderInput={(params) => (
+                    <TextField
+                        {...params}
+                        label="Search an active member"
+                        helperText="Mwanachama aliyemleta mwombaji huyu."
+                        InputProps={{
+                            ...params.InputProps,
+                            endAdornment: (
+                                <>
+                                    {searching ? <CircularProgress size={16} /> : null}
+                                    {params.InputProps.endAdornment}
+                                </>
+                            )
+                        }}
+                    />
+                )}
+            />
+            <Stack direction="row" spacing={1} justifyContent="flex-end">
+                <Button size="small" onClick={() => { setEditing(false); setChoice(null); }} disabled={saving}>
+                    Cancel
+                </Button>
+                <Button size="small" variant="contained" onClick={() => void save()} disabled={!choice || saving}>
+                    {saving ? "Saving…" : "Save referrer"}
+                </Button>
+            </Stack>
+        </Stack>
     );
 }
 
@@ -1014,7 +1195,18 @@ export function MemberApplicationsPage() {
                                             <ApplicationDetailItem label="Occupation" value={displayApplicationValue(selected?.occupation)} />
                                             <ApplicationDetailItem label="Employer" value={displayApplicationValue(selected?.employer)} />
                                             <ApplicationDetailItem label="Member number" value={displayApplicationValue(selected?.member_no)} />
-                                            <ApplicationDetailItem label="Referred by" value={displayApplicationValue(selected?.referred_by_name)} />
+                                            {selected ? (
+                                                <ApplicationReferrerField
+                                                    application={selected}
+                                                    canEdit={isSuperAdmin || isBranchManager}
+                                                    onSaved={(updated) => {
+                                                        setSelected(updated);
+                                                        void loadApplications();
+                                                    }}
+                                                />
+                                            ) : (
+                                                <ApplicationDetailItem label="Referred by" value="Not provided" />
+                                            )}
                                         </ReviewSectionCard>
 
                                         <ReviewSectionCard
