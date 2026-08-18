@@ -535,7 +535,11 @@ export function MemberApplicationsPage() {
         !selected.terms_accepted ? "membership terms consent" : null,
         !selected.data_processing_consent ? "data processing consent" : null,
         !selectedDocumentTypes.has("national_id") ? "national ID upload" : null,
-        !selectedDocumentTypes.has("passport_photo") ? "passport photo upload" : null
+        !selectedDocumentTypes.has("passport_photo") ? "passport photo upload" : null,
+        // Mandatory on the public form since 18 Aug 2026, so a blank one now
+        // means an older application — and the branch is the only party who can
+        // still say who introduced the applicant.
+        !selected.referred_by_member_id ? "referring member" : null
     ].filter(Boolean) as string[] : [];
 
     useEffect(() => {
