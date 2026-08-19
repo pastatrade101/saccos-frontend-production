@@ -894,6 +894,16 @@ export function MemberApplicationsPage() {
                         )
                     },
                     { key: "branch", header: "Branch", render: (row) => branches.find((branch) => branch.id === row.branch_id)?.name || row.branch_id },
+                    {
+                        // Visible in the list because a blank one now blocks approval —
+                        // waiting until the detail drawer is open to find that out wastes
+                        // the reviewer's time.
+                        key: "referred_by",
+                        header: "Referred by",
+                        render: (row) => (row.referred_by_name
+                            ? <Typography variant="body2">{row.referred_by_name}</Typography>
+                            : <Chip size="small" color="warning" variant="outlined" label="Not provided" />)
+                    },
                     { key: "status", header: "Status", render: (row) => <Chip size="small" color={statusColor(row.status)} label={memberApplicationStatusLabels[row.status] || row.status.replace(/_/g, " ")} /> },
                     { key: "kyc", header: "KYC", render: (row) => row.kyc_status },
                     { key: "fee", header: "Fee", render: (row) => `${formatCurrency(row.membership_fee_paid)} / ${formatCurrency(row.membership_fee_amount)}` },
