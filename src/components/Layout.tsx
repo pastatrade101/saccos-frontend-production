@@ -138,7 +138,10 @@ const navItems: NavItem[] = [
 const navGroups: NavGroup[] = [
     { key: "workspace", label: "Workspace", itemTos: ["/member-applications", "/members", "/members/import", "/staff-users"] },
     { key: "products", label: "Products", itemTos: ["/products"] },
-    { key: "finance", label: "Finance", itemTos: ["/savings", "/loans", "/payments", "/revenue", "/dividends", "/cash-control", "/cash", "/cash/transactions", "/treasury", "/treasury/policy-settings"] },
+    // A path must appear here as well as in navItems — the sidebar renders the
+    // intersection. Anything listed in only one of the two is reachable by URL
+    // and by search, but never shows up in the menu.
+    { key: "finance", label: "Finance", itemTos: ["/savings", "/loans", "/payments", "/revenue", "/dividends", "/finance/share-capital-transfer", "/cash-control", "/cash", "/cash/transactions", "/treasury", "/treasury/policy-settings"] },
     { key: "operations", label: "Operations", itemTos: ["/approvals"] },
     { key: "analytics", label: "Analytics", itemTos: ["/performance-targets", "/leagues", "/milestones", "/reports", "/auditor/reports", "/auditor/workbench", "/auditor/exceptions", "/auditor/journals", "/auditor/audit-logs", "/auditor/login-history"] },
     { key: "setup", label: "Setup", itemTos: ["/setup/super-admin", "/settings/sacco-year"] }
@@ -376,6 +379,7 @@ export function AppLayout() {
                                 "/all-reports/commitments",
                                 "/all-reports/summary-sorted",
                                 "/all-reports/loans",
+                                "/all-reports/loan-income",
                                 "/all-reports/operations",
                                 "/reports"
                             ]
