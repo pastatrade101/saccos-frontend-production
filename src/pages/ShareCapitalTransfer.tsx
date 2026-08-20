@@ -1,6 +1,7 @@
 import PieChartRoundedIcon from "@mui/icons-material/PieChartRounded";
 import {
     Alert,
+    Autocomplete,
     Box,
     Button,
     CardContent,
@@ -55,6 +56,10 @@ export function ShareCapitalTransferPage() {
     // Typed back to confirm a bulk run. A dialog that only needs "OK" is
     // clicked through; a figure that has to be copied is read first.
     const [confirmation, setConfirmation] = useState("");
+    // Single-member transfer: any member, any amount, independent of whether
+    // they still owe share capital.
+    const [oneMember, setOneMember] = useState<SavingsToSharesRow | null>(null);
+    const [oneAmount, setOneAmount] = useState("");
 
     const canPost = profile?.role === "super_admin";
 
@@ -110,7 +115,13 @@ export function ShareCapitalTransferPage() {
         }
     };
 
-    const runOne = async (row: SavingsToSharesRow) => {
+    /// Posts one member's transfer.
+    ///
+    /// The amount is a parameter rather than always row.movable: the table
+    /// moves the shortfall, while the single-member form moves whatever figure
+    /// was typed — which is how a member converts extra savings into shares
+    /// once their requirement is already met.
+    const postTransfer = async (member: SavingsToSharesRow, amount: number) => {
         if (!selectedTenantId) return;
 
         setPosting(true);
@@ -119,14 +130,16 @@ export function ShareCapitalTransferPage() {
         try {
             await api.post(endpoints.finance.savingsToShares(), {
                 tenant_id: selectedTenantId,
-                member_id: row.member_id,
-                amount: row.movable
+                member_id: member.member_id,
+                amount
             });
             pushToast({
                 type: "success",
                 title: "Share capital moved",
-                message: `${row.member_name} · ${formatCurrency(row.movable)}`
+                message: `${member.member_name} · ${formatCurrency(amount)}`
             });
+            setOneMember(null);
+            setOneAmount("");
             await loadPlan();
         } catch (postError) {
             setError(getApiErrorMessage(postError));
@@ -142,6 +155,21 @@ export function ShareCapitalTransferPage() {
     const totals = plan?.totals;
     const movableLabel = totals ? String(Math.round(totals.movable)) : "";
     const nothingToDo = !totals || totals.movable <= 0;
+
+    // Mirrors what the server will refuse, so the button explains itself rather
+    // than failing after the click. The server remains the authority — these
+    // balances are as of the last plan load.
+    const oneAmountValue = Number(oneAmount);
+    const oneAvailable = oneMember
+        ? Math.max(0, (oneMember.savings_balance ?? 0) - (oneMember.encumbered || 0))
+        : 0;
+    const oneAmountError = (() => {
+        if (!oneMember || oneAmount.trim() === "") return null;
+        if (!Number.isFinite(oneAmountValue) || oneAmountValue <= 0) return "Enter an amount above zero.";
+        if (oneMember.savings_balance === null) return "This member has no active savings account.";
+        if (oneAmountValue > oneAvailable) return `Only ${formatCurrency(oneAvailable)} can be moved.`;
+        return null;
+    })();
 
     return (
         <Stack spacing={2}>
@@ -217,6 +245,75 @@ export function ShareCapitalTransferPage() {
 
             <MotionCard variant="outlined" inView>
                 <CardContent>
+                    <Stack spacing={1.5}>
+                        <Stack spacing={0.5}>
+                            <Typography variant="subtitle2">Transfer for one member</Typography>
+                            <Typography variant="body2" color="text.secondary">
+                                Pick a member and type the amount. This is not limited to what they still owe — it moves whatever you enter from their savings into their share account.
+                            </Typography>
+                        </Stack>
+
+                        <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} alignItems={{ md: "flex-start" }}>
+                            <Autocomplete
+                                size="small"
+                                sx={{ minWidth: 300, flexGrow: 1 }}
+                                options={plan?.rows || []}
+                                value={oneMember}
+                                getOptionLabel={(option) => `${option.member_name} (${option.member_no})`}
+                                isOptionEqualToValue={(option, current) => option.member_id === current.member_id}
+                                onChange={(_event, option) => {
+                                    setOneMember(option);
+                                    // Their shortfall is the likeliest figure, so it is offered
+                                    // — but only as a starting value, still editable.
+                                    setOneAmount(option && option.movable > 0 ? String(Math.round(option.movable)) : "");
+                                }}
+                                renderInput={(params) => (
+                                    <TextField {...params} label="Member" placeholder="Search by name or number" />
+                                )}
+                            />
+                            <TextField
+                                size="small"
+                                type="number"
+                                label="Amount (TZS)"
+                                value={oneAmount}
+                                onChange={(event) => setOneAmount(event.target.value)}
+                                disabled={!oneMember || !canPost || posting}
+                                sx={{ maxWidth: { md: 200 } }}
+                                error={Boolean(oneAmountError)}
+                                helperText={oneAmountError || " "}
+                            />
+                            <Button
+                                variant="contained"
+                                onClick={() => oneMember && postTransfer(oneMember, oneAmountValue)}
+                                disabled={!canPost || posting || !oneMember || !oneAmountValue || Boolean(oneAmountError)}
+                                sx={{ mt: { md: 0.1 } }}
+                            >
+                                {posting ? "Posting..." : "Move To Shares"}
+                            </Button>
+                        </Stack>
+
+                        {oneMember ? (
+                            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                                <Chip size="small" variant="outlined" label={`Savings ${oneMember.savings_balance === null ? "—" : formatCurrency(oneMember.savings_balance)}`} />
+                                <Chip size="small" variant="outlined" label={`In shares ${oneMember.share_balance === null ? "—" : formatCurrency(oneMember.share_balance)}`} />
+                                <Chip size="small" variant="outlined" label={`Required ${formatCurrency(oneMember.required)}`} />
+                                {oneMember.encumbered > 0 ? (
+                                    <Chip size="small" variant="outlined" color="warning" label={`${formatCurrency(oneMember.encumbered)} pledged as guarantee`} />
+                                ) : null}
+                            </Stack>
+                        ) : null}
+
+                        {!canPost ? (
+                            <Alert severity="info" variant="outlined" sx={{ py: 0.25 }}>
+                                Only a super admin can post these.
+                            </Alert>
+                        ) : null}
+                    </Stack>
+                </CardContent>
+            </MotionCard>
+
+            <MotionCard variant="outlined" inView>
+                <CardContent>
                     <Typography variant="subtitle2" gutterBottom>
                         Member by member
                     </Typography>
@@ -274,7 +371,7 @@ export function ShareCapitalTransferPage() {
                                             {row.movable > 0 ? (
                                                 <Button
                                                     size="small"
-                                                    onClick={() => runOne(row)}
+                                                    onClick={() => postTransfer(row, row.movable)}
                                                     disabled={!canPost || posting}
                                                 >
                                                     Move
