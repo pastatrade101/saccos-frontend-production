@@ -51,6 +51,18 @@ const STATUS_COLOR: Record<WeeklyChallenge["status"], "default" | "info" | "succ
     cancelled: "error"
 };
 
+/// A trophy for every participant once the challenge is over — 1st/2nd/3rd
+/// get the numbered medal, everyone else who finished gets a plain trophy for
+/// having competed. Null before completion: standings are still moving, and a
+/// trophy on an in-progress rank would read as decided when it is not.
+function trophyFor(status: WeeklyChallenge["status"], rank: number): string | null {
+    if (status !== "completed") return null;
+    if (rank === 1) return "🥇";
+    if (rank === 2) return "🥈";
+    if (rank === 3) return "🥉";
+    return "🏆";
+}
+
 const EMPTY_FORM = {
     name: "",
     description: "",
@@ -391,7 +403,10 @@ export function WeeklyChallengesPage() {
                                         <TableBody>
                                             {standings.rows.map((row) => (
                                                 <TableRow key={row.member_id} hover>
-                                                    <TableCell>{row.rank}</TableCell>
+                                                    <TableCell>
+                                                        {row.rank}
+                                                        {trophyFor(selected.status, row.rank) ? ` ${trophyFor(selected.status, row.rank)}` : ""}
+                                                    </TableCell>
                                                     <TableCell>
                                                         <Typography variant="body2">{row.full_name}</Typography>
                                                         <Typography variant="caption" color="text.secondary">{row.member_no}</Typography>
