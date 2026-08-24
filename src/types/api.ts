@@ -986,6 +986,9 @@ export interface WeeklyChallengeStandings {
     days: WeeklyChallengeDaySummary[];
     rows: WeeklyChallengeStandingRow[];
     today_leaderboard: WeeklyChallengeLeaderboardRow[];
+    /// Pooled totals, never redacted even when individual amounts are hidden.
+    today_total_deposited: number;
+    overall_total_deposited: number;
 }
 
 export interface MyWeeklyChallengeStatus {

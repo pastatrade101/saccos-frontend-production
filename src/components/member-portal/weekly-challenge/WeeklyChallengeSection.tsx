@@ -163,6 +163,23 @@ export function WeeklyChallengeSection({
                             <Chip size="small" label={`${t("Bronze", "Shaba")} ${tzs(challenge.bronze_reward_amount)}`} />
                         </Stack>
 
+                        {(challenge.status === "active" || challenge.status === "completed") && standings ? (
+                            <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+                                <Chip
+                                    size="small"
+                                    color="primary"
+                                    variant="outlined"
+                                    label={`${t("Today's total", "Jumla ya leo")}: ${tzs(standings.today_total_deposited)}`}
+                                />
+                                <Chip
+                                    size="small"
+                                    color="primary"
+                                    variant="outlined"
+                                    label={`${t("Overall so far", "Jumla kwa ujumla")}: ${tzs(standings.overall_total_deposited)}`}
+                                />
+                            </Stack>
+                        ) : null}
+
                         {challenge.status === "draft" ? (
                             <Alert severity="info" variant="outlined">
                                 {t("Registration has not opened yet.", "Usajili haujafunguliwa bado.")}
