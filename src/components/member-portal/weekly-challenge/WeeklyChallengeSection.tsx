@@ -31,6 +31,21 @@ function fmtDate(iso: string) {
     return new Date(`${iso}T00:00:00`).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
 }
 
+/// A negative duration reads as nonsense in a countdown — null once the
+/// deadline has actually passed, rather than "-3h".
+function countdownLabel(deadlineIso: string): string | null {
+    const remainingMs = new Date(deadlineIso).getTime() - Date.now();
+    if (remainingMs <= 0) return null;
+    const hours = Math.floor(remainingMs / 3_600_000);
+    const minutes = Math.floor((remainingMs % 3_600_000) / 60_000);
+    return hours >= 1 ? (minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`) : `${Math.max(1, minutes)}m`;
+}
+
+function daysUntil(dateIso: string): number {
+    const days = Math.ceil((new Date(`${dateIso}T00:00:00`).getTime() - Date.now()) / 86_400_000);
+    return Math.max(0, days);
+}
+
 /// A trophy for every participant once the challenge is over — 1st/2nd/3rd
 /// get the numbered medal, everyone else who finished gets a plain trophy for
 /// having competed. Null before completion.
@@ -114,6 +129,31 @@ export function WeeklyChallengeSection({
                                 variant="outlined"
                                 label={`${challenge.participant_count} ${t("registered", "wamejisajili")} (${t("min", "kima")} ${challenge.minimum_participants})`}
                             />
+                            {challenge.status === "registration_open" && challenge.registration_closes_at && countdownLabel(challenge.registration_closes_at) ? (
+                                <Chip
+                                    size="small"
+                                    color="warning"
+                                    variant="outlined"
+                                    label={`${t("Closes to join in", "Usajili unafunga baada ya")} ${countdownLabel(challenge.registration_closes_at)}`}
+                                />
+                            ) : null}
+                            {challenge.status === "active" ? (
+                                <Chip
+                                    size="small"
+                                    variant="outlined"
+                                    label={daysUntil(challenge.end_date) === 0
+                                        ? t("Ends today", "Inaisha leo")
+                                        : `${t("Ends in", "Inaisha baada ya")} ${daysUntil(challenge.end_date)} ${t("days", "siku")}`}
+                                />
+                            ) : null}
+                            {challenge.status === "active" && challenge.today_leader ? (
+                                <Chip
+                                    size="small"
+                                    color="success"
+                                    variant="outlined"
+                                    label={`${t("Leading", "Anaongoza")}: ${challenge.today_leader.full_name || t("Member", "Mwanachama")} · ${tzs(challenge.today_leader.deposited_amount)}`}
+                                />
+                            ) : null}
                         </Stack>
 
                         <Stack direction="row" spacing={0.75}>

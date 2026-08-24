@@ -929,6 +929,10 @@ export interface WeeklyChallenge {
     created_at: string;
     updated_at: string;
     participant_count: number;
+    /// Who is #1 today, and by how much. Only computed while status is
+    /// "active" — null during registration (nothing deposited yet) or once
+    /// nobody has deposited today.
+    today_leader: { member_id: string; full_name: string | null; deposited_amount: number } | null;
 }
 
 export interface WeeklyChallengeDayCell {
