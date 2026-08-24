@@ -28,6 +28,7 @@ import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
 import RuleFolderRoundedIcon from "@mui/icons-material/RuleFolderRounded";
 import TrackChangesRoundedIcon from "@mui/icons-material/TrackChangesRounded";
 import EmojiEventsRoundedIcon from "@mui/icons-material/EmojiEventsRounded";
+import WhatshotRoundedIcon from "@mui/icons-material/WhatshotRounded";
 import FlagRoundedIcon from "@mui/icons-material/FlagRounded";
 import {
     Autocomplete,
@@ -100,6 +101,7 @@ const navItems: NavItem[] = [
     { to: "/members/import", label: "Member Import", roles: ["branch_manager"], section: "workspace", icon: StoreRoundedIcon },
     { to: "/performance-targets", label: "Performance Targets", roles: ["super_admin", "branch_manager"], section: "workspace", icon: TrackChangesRoundedIcon },
     { to: "/leagues", label: "Savings Leagues", roles: ["super_admin", "branch_manager"], section: "workspace", icon: EmojiEventsRoundedIcon },
+    { to: "/weekly-challenges", label: "Weekly Challenge", roles: ["super_admin", "branch_manager", "treasury_officer"], section: "workspace", icon: WhatshotRoundedIcon },
     { to: "/milestones", label: "SACCO Milestones", roles: ["super_admin", "branch_manager"], section: "workspace", icon: FlagRoundedIcon },
     { to: "/settings/sacco-year", label: "SACCO Settings", roles: ["super_admin", "branch_manager"], section: "workspace", icon: SettingsRoundedIcon },
     { to: "/auditor/workbench", label: "Workbench", roles: ["auditor"], section: "workspace", icon: HubRoundedIcon },
@@ -143,7 +145,7 @@ const navGroups: NavGroup[] = [
     // and by search, but never shows up in the menu.
     { key: "finance", label: "Finance", itemTos: ["/savings", "/loans", "/payments", "/revenue", "/dividends", "/finance/share-capital-transfer", "/cash-control", "/cash", "/cash/transactions", "/treasury", "/treasury/policy-settings"] },
     { key: "operations", label: "Operations", itemTos: ["/approvals"] },
-    { key: "analytics", label: "Analytics", itemTos: ["/performance-targets", "/leagues", "/milestones", "/reports", "/auditor/reports", "/auditor/workbench", "/auditor/exceptions", "/auditor/journals", "/auditor/audit-logs", "/auditor/login-history"] },
+    { key: "analytics", label: "Analytics", itemTos: ["/performance-targets", "/leagues", "/weekly-challenges", "/milestones", "/reports", "/auditor/reports", "/auditor/workbench", "/auditor/exceptions", "/auditor/journals", "/auditor/audit-logs", "/auditor/login-history"] },
     { key: "setup", label: "Setup", itemTos: ["/setup/super-admin", "/settings/sacco-year"] }
 ];
 
@@ -156,6 +158,7 @@ const searchKeywords: Partial<Record<NavItem["to"], string[]>> = {
     "/members/import": ["csv import", "bulk members", "credentials", "portal onboarding"],
     "/performance-targets": ["performance target", "target watchlist", "annual target", "member level", "branch target"],
     "/leagues": ["league", "savings league", "leaderboard", "ranking", "position", "standings", "legue"],
+    "/weekly-challenges": ["weekly challenge", "challenge", "competition", "league of the week", "deposit challenge", "daily deposit"],
     "/milestones": ["milestone", "milestones", "roadmap", "target", "billion", "bilioni", "goal", "fundraising"],
     "/settings/sacco-year": ["financial year", "sacco year", "fiscal year", "year to date", "settings"],
     "/finance/share-capital-transfer": ["share capital", "shares", "hisa", "mtaji", "transfer savings to shares"],
@@ -202,6 +205,10 @@ function getPageSubtitle(pathname: string) {
 
     if (pathname.startsWith("/leagues")) {
         return "Group members into savings leagues, configure the bands, and follow positions and monthly movement.";
+    }
+
+    if (pathname.startsWith("/weekly-challenges")) {
+        return "Run a time-boxed savings-deposit competition — register members, track daily wins, and settle the trophy.";
     }
 
     if (pathname.startsWith("/milestones")) {

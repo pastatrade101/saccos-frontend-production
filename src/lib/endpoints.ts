@@ -351,6 +351,19 @@ const routeMap = {
         me: "/leagues/me",
         snapshot: "/leagues/snapshot"
     },
+    weeklyChallenges: {
+        list: "/weekly-challenges",
+        create: "/weekly-challenges",
+        detail: (id: string) => `/weekly-challenges/${id}`,
+        update: (id: string) => `/weekly-challenges/${id}`,
+        openRegistration: (id: string) => `/weekly-challenges/${id}/open-registration`,
+        bulkRegister: (id: string) => `/weekly-challenges/${id}/participants/bulk`,
+        withdrawParticipant: (id: string, memberId: string) => `/weekly-challenges/${id}/participants/${memberId}`,
+        standings: (id: string) => `/weekly-challenges/${id}/standings`,
+        active: "/weekly-challenges/active",
+        register: (id: string) => `/weekly-challenges/${id}/register`,
+        me: (id: string) => `/weekly-challenges/${id}/me`
+    },
     milestones: {
         board: "/sacco-milestones",
         create: "/sacco-milestones",
@@ -690,6 +703,19 @@ export const endpoints = {
         standings: () => routeMap.leagues.standings,
         me: () => routeMap.leagues.me,
         snapshot: () => routeMap.leagues.snapshot
+    },
+    weeklyChallenges: {
+        list: () => routeMap.weeklyChallenges.list,
+        create: () => routeMap.weeklyChallenges.create,
+        detail: (id: string) => routeMap.weeklyChallenges.detail(id),
+        update: (id: string) => routeMap.weeklyChallenges.update(id),
+        openRegistration: (id: string) => routeMap.weeklyChallenges.openRegistration(id),
+        bulkRegister: (id: string) => routeMap.weeklyChallenges.bulkRegister(id),
+        withdrawParticipant: (id: string, memberId: string) => routeMap.weeklyChallenges.withdrawParticipant(id, memberId),
+        standings: (id: string) => routeMap.weeklyChallenges.standings(id),
+        active: () => routeMap.weeklyChallenges.active,
+        register: (id: string) => routeMap.weeklyChallenges.register(id),
+        me: (id: string) => routeMap.weeklyChallenges.me(id)
     },
     milestones: {
         board: () => routeMap.milestones.board,

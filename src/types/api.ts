@@ -907,6 +907,95 @@ export interface MyLeaguePosition {
     tiers?: LeagueTier[];
 }
 
+export type WeeklyChallengeStatus = "draft" | "registration_open" | "active" | "completed" | "cancelled";
+
+export interface WeeklyChallenge {
+    id: string;
+    tenant_id: string;
+    name: string;
+    description: string | null;
+    start_date: string;
+    end_date: string;
+    minimum_daily_deposit: number;
+    minimum_participants: number;
+    registration_closes_at: string | null;
+    gold_reward_amount: number;
+    silver_reward_amount: number;
+    bronze_reward_amount: number;
+    status: WeeklyChallengeStatus;
+    quorum_met: boolean | null;
+    rewards_posted_at: string | null;
+    created_by: string;
+    created_at: string;
+    updated_at: string;
+    participant_count: number;
+}
+
+export interface WeeklyChallengeDayCell {
+    member_id: string;
+    date: string;
+    deposited_amount: number;
+    qualified: boolean;
+    is_day_winner: boolean;
+}
+
+export interface WeeklyChallengeDaySummary {
+    date: string;
+    closed: boolean;
+    winner_member_id: string | null;
+    winner_amount: number | null;
+}
+
+export interface WeeklyChallengeStandingRow {
+    member_id: string;
+    member_no: string;
+    full_name: string;
+    registered_at: string;
+    days_won: number;
+    period_total: number;
+    eliminated: boolean;
+    eliminated_on: string | null;
+    daily_status: WeeklyChallengeDayCell[];
+    rank: number;
+}
+
+export interface WeeklyChallengeLeaderboardRow {
+    rank: number;
+    member_id: string;
+    member_no?: string;
+    full_name?: string;
+    deposited_amount: number;
+    qualified: boolean;
+}
+
+export interface WeeklyChallengeStandings {
+    challenge: WeeklyChallenge;
+    participant_count: number;
+    days: WeeklyChallengeDaySummary[];
+    rows: WeeklyChallengeStandingRow[];
+    today_leaderboard: WeeklyChallengeLeaderboardRow[];
+}
+
+export interface MyWeeklyChallengeStatus {
+    registered: boolean;
+    challenge: WeeklyChallenge;
+    days_won?: number;
+    rank?: number | null;
+    eliminated?: boolean;
+    eliminated_on?: string | null;
+    today_deposited?: number;
+    today_qualified?: boolean;
+    still_owed_today?: number;
+}
+
+export interface WeeklyChallengeBulkRegisterResult {
+    dry_run: boolean;
+    registered: Array<{ member_id: string; member_no?: string; full_name?: string }>;
+    already_registered: Array<{ member_id: string; member_no?: string; full_name?: string }>;
+    skipped: Array<{ requested?: string; member_id?: string; member_no?: string; full_name?: string; reason: string }>;
+    reactivated?: number;
+}
+
 export interface SaccoMilestone {
     id: string;
     title: string;

@@ -46,6 +46,7 @@ const SaccoSettingsPage = lazy(() => import("./pages/SaccoSettings").then((m) =>
 const ShareCapitalTransferPage = lazy(() => import("./pages/ShareCapitalTransfer").then((m) => ({ default: m.ShareCapitalTransferPage })));
 const PerformanceTargetsPage = lazy(() => import("./pages/PerformanceTargets").then((m) => ({ default: m.PerformanceTargetsPage })));
 const LeaguesPage = lazy(() => import("./pages/Leagues").then((m) => ({ default: m.LeaguesPage })));
+const WeeklyChallengesPage = lazy(() => import("./pages/WeeklyChallenges").then((m) => ({ default: m.WeeklyChallengesPage })));
 const MilestonesPage = lazy(() => import("./pages/Milestones").then((m) => ({ default: m.MilestonesPage })));
 const AllReportsPage = lazy(() => import("./pages/AllReports").then((m) => ({ default: m.AllReportsPage })));
 const TreasuryPage = lazy(() => import("./pages/Treasury").then((m) => ({ default: m.TreasuryPage })));
@@ -269,6 +270,7 @@ export default function App() {
                             <Route path="/finance/share-capital-transfer" element={<ShareCapitalTransferPage />} />
                             <Route path="/performance-targets" element={<PerformanceTargetsPage />} />
                             <Route path="/leagues" element={<LeaguesPage />} />
+                            <Route path="/weekly-challenges" element={<WeeklyChallengesPage />} />
                             <Route path="/milestones" element={<MilestonesPage />} />
                         </Route>
                         <Route

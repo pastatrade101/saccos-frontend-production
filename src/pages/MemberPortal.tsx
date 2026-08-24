@@ -4,6 +4,7 @@ import DescriptionRoundedIcon from "@mui/icons-material/DescriptionRounded";
 import ReceiptLongRoundedIcon from "@mui/icons-material/ReceiptLongRounded";
 import AccountBalanceWalletRoundedIcon from "@mui/icons-material/AccountBalanceWalletRounded";
 import EmojiEventsRoundedIcon from "@mui/icons-material/EmojiEventsRounded";
+import WhatshotRoundedIcon from "@mui/icons-material/WhatshotRounded";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import PersonRoundedIcon from "@mui/icons-material/PersonRounded";
 import ContactPhoneRoundedIcon from "@mui/icons-material/ContactPhoneRounded";
@@ -115,6 +116,7 @@ import { DetailCards } from "../components/member-portal/overview/DetailCards";
 import { OverviewSection } from "../components/member-portal/overview/OverviewSection";
 import { DEPLOYMENT_COLOURS, SaccoSection } from "../components/member-portal/sacco/SaccoSection";
 import { LeagueSection, leagueColour } from "../components/member-portal/league/LeagueSection";
+import { WeeklyChallengeSection } from "../components/member-portal/weekly-challenge/WeeklyChallengeSection";
 import { TransactionsSection } from "../components/member-portal/transactions/TransactionsSection";
 import { AccountsSection } from "../components/member-portal/accounts/AccountsSection";
 import { LoanStatusDonut, LoansHero } from "../components/member-portal/loans/LoansHero";
@@ -180,7 +182,7 @@ import {
 import { brandColors, crestGold, darkThemeColors, displayFontFamily, inkPanel } from "../theme/colors";
 import { useLanguage } from "../ui/LanguageProvider";
 import { useUI } from "../ui/UIProvider";
-import type { LeagueStandings, Loan, LoanApplication, MyLeaguePosition, LoanCapacitySummary, LoanProduct, LoanSchedule, LoanTransaction, Member, MemberAccount, MemberApplication, MemberApplicationStatus, MemberPortalPaymentControls, PaymentOrder, SaccoFinancialYearSettings, SaccoMilestoneBoard, OperationsStatement,  SaccoOverview, SaccoPerformanceTargetSettings, StatementRow } from "../types/api";
+import type { LeagueStandings, Loan, LoanApplication, MyLeaguePosition, LoanCapacitySummary, LoanProduct, LoanSchedule, LoanTransaction, Member, MemberAccount, MemberApplication, MemberApplicationStatus, MemberPortalPaymentControls, MyWeeklyChallengeStatus, PaymentOrder, SaccoFinancialYearSettings, SaccoMilestoneBoard, OperationsStatement,  SaccoOverview, SaccoPerformanceTargetSettings, StatementRow, WeeklyChallenge, WeeklyChallengeStandings } from "../types/api";
 import { downloadLoanStatementPdf, downloadMemberStatementPdf, loadReportLogoDataUrl } from "../utils/memberStatementPdf";
 import { memberApplicationStatusLabels } from "../utils/member-application-status";
 import {
@@ -952,6 +954,14 @@ const portalSections = [
         icon: EmojiEventsRoundedIcon
     },
     {
+        id: "member-weekly-challenge",
+        label: "Weekly Challenge",
+        labelSw: "Changamoto ya Wiki",
+        subtitle: "This week's savings deposit competition.",
+        subtitleSw: "Mashindano ya wiki ya kuweka akiba.",
+        icon: WhatshotRoundedIcon
+    },
+    {
         id: "member-accounts",
         label: "Accounts",
         labelSw: "Akaunti",
@@ -1350,6 +1360,15 @@ export function MemberPortalPage() {
     // and whether the Savings league nav entry appears at all.
     const [leaguePosition, setLeaguePosition] = useState<MyLeaguePosition | null>(null);
     const [leagueStandings, setLeagueStandings] = useState<LeagueStandings | null>(null);
+    // Weekly Challenge — a time-boxed savings-deposit competition, separate
+    // from the tier-based Savings League above. Same eager/lazy split: the
+    // active challenge drives the nav entry's visibility, standings/my-status
+    // load only once the member opens the section.
+    const [weeklyChallenge, setWeeklyChallenge] = useState<WeeklyChallenge | null>(null);
+    const [myWeeklyChallengeStatus, setMyWeeklyChallengeStatus] = useState<MyWeeklyChallengeStatus | null>(null);
+    const [weeklyChallengeStandings, setWeeklyChallengeStandings] = useState<WeeklyChallengeStandings | null>(null);
+    const [weeklyChallengeStandingsLoading, setWeeklyChallengeStandingsLoading] = useState(false);
+    const [weeklyChallengeRegistering, setWeeklyChallengeRegistering] = useState(false);
     const [saccoOverview, setSaccoOverview] = useState<SaccoOverview | null>(null);
     const [saccoOverviewLoading, setSaccoOverviewLoading] = useState(false);
     const [milestoneBoard, setMilestoneBoard] = useState<SaccoMilestoneBoard | null>(null);
@@ -1495,6 +1514,98 @@ export function MemberPortalPage() {
             active = false;
         };
     }, [activeSection, leagueStandings, profile?.tenant_id]);
+
+    // Active Weekly Challenge, loaded up front — drives the nav entry's
+    // visibility the same way leaguePosition does for the Savings league.
+    useEffect(() => {
+        const tenantId = profile?.tenant_id;
+        if (!tenantId) {
+            return;
+        }
+        let active = true;
+        api
+            .get<{ data: WeeklyChallenge | null }>(endpoints.weeklyChallenges.active(), { params: { tenant_id: tenantId } })
+            .then((res) => {
+                if (active) {
+                    setWeeklyChallenge(res.data?.data ?? null);
+                }
+            })
+            .catch(() => {
+                if (active) {
+                    setWeeklyChallenge(null);
+                }
+            });
+        return () => {
+            active = false;
+        };
+    }, [profile?.tenant_id]);
+
+    // My status and full standings, loaded only when the member opens the
+    // section — same lazy pattern as leagueStandings above.
+    useEffect(() => {
+        const tenantId = profile?.tenant_id;
+        if (activeSection !== "member-weekly-challenge" || !tenantId || !weeklyChallenge) {
+            return;
+        }
+        let active = true;
+        setWeeklyChallengeStandingsLoading(true);
+        Promise.all([
+            api.get<{ data: MyWeeklyChallengeStatus }>(endpoints.weeklyChallenges.me(weeklyChallenge.id), { params: { tenant_id: tenantId } }),
+            api.get<{ data: WeeklyChallengeStandings }>(endpoints.weeklyChallenges.standings(weeklyChallenge.id), { params: { tenant_id: tenantId } })
+        ])
+            .then(([myRes, standingsRes]) => {
+                if (active) {
+                    setMyWeeklyChallengeStatus(myRes.data?.data ?? null);
+                    setWeeklyChallengeStandings(standingsRes.data?.data ?? null);
+                }
+            })
+            .catch(() => {
+                if (active) {
+                    setMyWeeklyChallengeStatus(null);
+                    setWeeklyChallengeStandings(null);
+                }
+            })
+            .finally(() => {
+                if (active) {
+                    setWeeklyChallengeStandingsLoading(false);
+                }
+            });
+        return () => {
+            active = false;
+        };
+    }, [activeSection, profile?.tenant_id, weeklyChallenge]);
+
+    const registerForWeeklyChallenge = useCallback(async () => {
+        if (!weeklyChallenge || !profile?.tenant_id) return;
+        setWeeklyChallengeRegistering(true);
+        try {
+            await api.post(endpoints.weeklyChallenges.register(weeklyChallenge.id), { tenant_id: profile.tenant_id });
+            const [myRes, standingsRes] = await Promise.all([
+                api.get<{ data: MyWeeklyChallengeStatus }>(endpoints.weeklyChallenges.me(weeklyChallenge.id), { params: { tenant_id: profile.tenant_id } }),
+                api.get<{ data: WeeklyChallengeStandings }>(endpoints.weeklyChallenges.standings(weeklyChallenge.id), { params: { tenant_id: profile.tenant_id } })
+            ]);
+            setMyWeeklyChallengeStatus(myRes.data?.data ?? null);
+            setWeeklyChallengeStandings(standingsRes.data?.data ?? null);
+            pushToast({ type: "success", title: "Registered", message: `You're in "${weeklyChallenge.name}".` });
+        } catch (registerError) {
+            pushToast({ type: "error", title: "Unable to register", message: getApiErrorMessage(registerError) });
+        } finally {
+            setWeeklyChallengeRegistering(false);
+        }
+    }, [weeklyChallenge, profile?.tenant_id, pushToast]);
+
+    const withdrawFromWeeklyChallenge = useCallback(async () => {
+        if (!weeklyChallenge || !profile?.tenant_id) return;
+        setWeeklyChallengeRegistering(true);
+        try {
+            await api.delete(endpoints.weeklyChallenges.register(weeklyChallenge.id), { params: { tenant_id: profile.tenant_id } });
+            setMyWeeklyChallengeStatus((prev) => (prev ? { ...prev, registered: false } : prev));
+        } catch (withdrawError) {
+            pushToast({ type: "error", title: "Unable to withdraw", message: getApiErrorMessage(withdrawError) });
+        } finally {
+            setWeeklyChallengeRegistering(false);
+        }
+    }, [weeklyChallenge, profile?.tenant_id, pushToast]);
 
     // Lazy-load the curated SACCOS overview only when the member opens that view.
     useEffect(() => {
@@ -4030,9 +4141,15 @@ export function MemberPortalPage() {
                 return leagueEnabled;
             }
 
+            // Weekly Challenge only appears while there is one to see — no
+            // permanently-visible entry for a feature that is not always running.
+            if (section.id === "member-weekly-challenge") {
+                return Boolean(weeklyChallenge);
+            }
+
             return (canUsePortalPayments || paymentOrders.length > 0) || section.id !== "member-payments";
         }),
-        [canUsePortalPayments, leagueEnabled, paymentOrders.length]
+        [canUsePortalPayments, leagueEnabled, paymentOrders.length, weeklyChallenge]
     );
     const financialYearPeriod = useMemo(() => resolveFinancialYearPeriod(financialYearSettings), [financialYearSettings]);
     const transactionCount = statements.length;
@@ -6291,6 +6408,18 @@ export function MemberPortalPage() {
         />
     );
 
+    const renderWeeklyChallengeView = () => (
+        <WeeklyChallengeSection
+            challenge={weeklyChallenge}
+            myStatus={myWeeklyChallengeStatus}
+            standings={weeklyChallengeStandings}
+            standingsLoading={weeklyChallengeStandingsLoading}
+            registering={weeklyChallengeRegistering}
+            onRegister={() => void registerForWeeklyChallenge()}
+            onWithdraw={() => void withdrawFromWeeklyChallenge()}
+        />
+    );
+
     const renderLeagueView = () => {
         const tzs = (value: number) => `TSh ${new Intl.NumberFormat("en-US").format(Math.round(Number(value) || 0))}`;
         const tier = leaguePosition?.tier;
@@ -7859,6 +7988,8 @@ export function MemberPortalPage() {
                 return renderSaccoOverview();
             case "member-league":
                 return renderLeagueView();
+            case "member-weekly-challenge":
+                return renderWeeklyChallengeView();
             case "member-accounts":
                 return renderAccountsView();
             case "member-loans":
