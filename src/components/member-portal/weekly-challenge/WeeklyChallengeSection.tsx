@@ -151,7 +151,8 @@ export function WeeklyChallengeSection({
                                     size="small"
                                     color="success"
                                     variant="outlined"
-                                    label={`${t("Leading", "Anaongoza")}: ${challenge.today_leader.full_name || t("Member", "Mwanachama")} · ${tzs(challenge.today_leader.deposited_amount)}`}
+                                    label={`${t("Leading", "Anaongoza")}: ${challenge.today_leader.full_name || t("Member", "Mwanachama")}`
+                                        + (challenge.today_leader.deposited_amount === null ? "" : ` · ${tzs(challenge.today_leader.deposited_amount)}`)}
                                 />
                             ) : null}
                         </Stack>
@@ -235,7 +236,9 @@ export function WeeklyChallengeSection({
                                     <Typography variant="body2">
                                         {row.rank}. {row.full_name || row.member_no}
                                     </Typography>
-                                    <Typography variant="body2" fontWeight={600}>{tzs(row.deposited_amount)}</Typography>
+                                    <Typography variant="body2" fontWeight={600} color={row.deposited_amount === null ? "text.secondary" : "text.primary"}>
+                                        {row.deposited_amount === null ? t("Hidden", "Imefichwa") : tzs(row.deposited_amount)}
+                                    </Typography>
                                 </Stack>
                             ))}
                         </Stack>
@@ -280,7 +283,10 @@ export function WeeklyChallengeSection({
                                             </TableCell>
                                             {row.daily_status.map((cell) => (
                                                 <TableCell key={cell.date} align="center">
-                                                    {cell.deposited_amount > 0 || cell.date < new Date().toISOString().slice(0, 10)
+                                                    {/* qualified, not deposited_amount, decides this — the amount is
+                                                        redactable (null for another member when hidden), qualified
+                                                        never is. */}
+                                                    {cell.qualified || cell.date < new Date().toISOString().slice(0, 10)
                                                         ? (cell.qualified ? "✅" : "❌")
                                                         : "—"}
                                                 </TableCell>

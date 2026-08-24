@@ -929,16 +929,22 @@ export interface WeeklyChallenge {
     created_at: string;
     updated_at: string;
     participant_count: number;
+    /// Off hides every OTHER participant's shilling figures from a member —
+    /// rank, qualified and days_won are never affected, only the amounts.
+    show_amounts_to_members: boolean;
     /// Who is #1 today, and by how much. Only computed while status is
     /// "active" — null during registration (nothing deposited yet) or once
-    /// nobody has deposited today.
-    today_leader: { member_id: string; full_name: string | null; deposited_amount: number } | null;
+    /// nobody has deposited today. deposited_amount is null when this is
+    /// someone else's figure and show_amounts_to_members is off.
+    today_leader: { member_id: string; full_name: string | null; deposited_amount: number | null } | null;
 }
 
 export interface WeeklyChallengeDayCell {
     member_id: string;
     date: string;
-    deposited_amount: number;
+    /// Null when this is another member's cell and the challenge hides
+    /// amounts — qualified/is_day_winner still show either way.
+    deposited_amount: number | null;
     qualified: boolean;
     is_day_winner: boolean;
 }
@@ -956,7 +962,8 @@ export interface WeeklyChallengeStandingRow {
     full_name: string;
     registered_at: string;
     days_won: number;
-    period_total: number;
+    /// Null for another member's row when amounts are hidden.
+    period_total: number | null;
     eliminated: boolean;
     eliminated_on: string | null;
     daily_status: WeeklyChallengeDayCell[];
@@ -968,7 +975,8 @@ export interface WeeklyChallengeLeaderboardRow {
     member_id: string;
     member_no?: string;
     full_name?: string;
-    deposited_amount: number;
+    /// Null for another member's entry when amounts are hidden.
+    deposited_amount: number | null;
     qualified: boolean;
 }
 

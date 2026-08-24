@@ -12,9 +12,11 @@ import {
     DialogActions,
     DialogContent,
     DialogTitle,
+    FormControlLabel,
     Grid,
     IconButton,
     Stack,
+    Switch,
     Table,
     TableBody,
     TableCell,
@@ -72,7 +74,8 @@ const EMPTY_FORM = {
     minimum_participants: "5",
     gold_reward_amount: "150000",
     silver_reward_amount: "100000",
-    bronze_reward_amount: "50000"
+    bronze_reward_amount: "50000",
+    show_amounts_to_members: true
 };
 
 /// Configures and runs a time-boxed savings-deposit competition.
@@ -151,7 +154,8 @@ export function WeeklyChallengesPage() {
                 minimum_participants: Number(form.minimum_participants),
                 gold_reward_amount: Number(form.gold_reward_amount),
                 silver_reward_amount: Number(form.silver_reward_amount),
-                bronze_reward_amount: Number(form.bronze_reward_amount)
+                bronze_reward_amount: Number(form.bronze_reward_amount),
+                show_amounts_to_members: form.show_amounts_to_members
             });
             pushToast({ type: "success", title: "Weekly Challenge created", message: `${form.name} was saved as a draft.` });
             setCreateOpen(false);
@@ -419,7 +423,10 @@ export function WeeklyChallengesPage() {
                                                     </TableCell>
                                                     {row.daily_status.map((cell) => (
                                                         <TableCell key={cell.date} align="center">
-                                                            {cell.deposited_amount > 0 || cell.date <= (standings.days.find((d) => d.closed)?.date || "")
+                                                            {/* qualified, not deposited_amount, decides this — the amount
+                                                                is redactable (null for another member when the challenge
+                                                                hides figures), qualified never is. */}
+                                                            {cell.qualified || cell.date <= (standings.days.find((d) => d.closed)?.date || "")
                                                                 ? (cell.qualified ? "✅" : "❌")
                                                                 : "—"}
                                                         </TableCell>
@@ -496,6 +503,22 @@ export function WeeklyChallengesPage() {
                         </Grid>
                         <Grid size={{ xs: 4 }}>
                             <TextField fullWidth type="number" label="Bronze (TZS)" value={form.bronze_reward_amount} onChange={(e) => setForm({ ...form, bronze_reward_amount: e.target.value })} />
+                        </Grid>
+                        <Grid size={{ xs: 12 }}>
+                            <FormControlLabel
+                                control={
+                                    <Switch
+                                        checked={form.show_amounts_to_members}
+                                        onChange={(e) => setForm({ ...form, show_amounts_to_members: e.target.checked })}
+                                    />
+                                }
+                                label="Show deposited amounts to members"
+                            />
+                            <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: -0.5 }}>
+                                {form.show_amounts_to_members
+                                    ? "Members see each other's deposits and rank."
+                                    : "Members see rank only — a member who watches the board can't just deposit slightly more than the current leader before the day closes."}
+                            </Typography>
                         </Grid>
                     </Grid>
                 </DialogContent>
