@@ -109,7 +109,11 @@ export function WeeklyChallengeSection({
                         <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
                             <Chip size="small" variant="outlined" label={`${fmtDate(challenge.start_date)} – ${fmtDate(challenge.end_date)}`} />
                             <Chip size="small" variant="outlined" label={`${t("Min", "Kima")} ${tzs(challenge.minimum_daily_deposit)}/${t("day", "siku")}`} />
-                            <Chip size="small" variant="outlined" label={`${challenge.participant_count} / ${challenge.minimum_participants} ${t("registered", "wamejisajili")}`} />
+                            <Chip
+                                size="small"
+                                variant="outlined"
+                                label={`${challenge.participant_count} ${t("registered", "wamejisajili")} (${t("min", "kima")} ${challenge.minimum_participants})`}
+                            />
                         </Stack>
 
                         <Stack direction="row" spacing={0.75}>

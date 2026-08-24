@@ -286,7 +286,13 @@ export function WeeklyChallengesPage() {
                                         <TableCell>{formatDate(challenge.start_date)} – {formatDate(challenge.end_date)}</TableCell>
                                         <TableCell align="right">{formatCurrency(challenge.minimum_daily_deposit)}</TableCell>
                                         <TableCell align="right">
-                                            {challenge.participant_count} / {challenge.minimum_participants}
+                                            {/* "X / Y" reads as a cap at Y — it isn't one. Y is the floor to
+                                                open, and registration keeps counting past it until the admin
+                                                closes it, so the two figures are said as two different things. */}
+                                            {challenge.participant_count}
+                                            <Typography component="span" variant="caption" color="text.secondary">
+                                                {" "}(min {challenge.minimum_participants})
+                                            </Typography>
                                         </TableCell>
                                         <TableCell>
                                             <Chip size="small" color={STATUS_COLOR[challenge.status]} label={challenge.status.replace(/_/g, " ")} />
@@ -467,7 +473,20 @@ export function WeeklyChallengesPage() {
                             <TextField fullWidth type="number" label="Minimum daily deposit (TZS)" value={form.minimum_daily_deposit} onChange={(e) => setForm({ ...form, minimum_daily_deposit: e.target.value })} />
                         </Grid>
                         <Grid size={{ xs: 6 }}>
-                            <TextField fullWidth type="number" label="Minimum participants" value={form.minimum_participants} onChange={(e) => setForm({ ...form, minimum_participants: e.target.value })} />
+                            <TextField
+                                fullWidth
+                                type="number"
+                                label="Minimum participants"
+                                value={form.minimum_participants}
+                                onChange={(e) => setForm({ ...form, minimum_participants: e.target.value })}
+                                inputProps={{ min: 5 }}
+                                error={Number(form.minimum_participants) < 5}
+                                helperText={
+                                    Number(form.minimum_participants) < 5
+                                        ? "Must be at least 5."
+                                        : "The floor to open — registration keeps taking members past this once it's met."
+                                }
+                            />
                         </Grid>
                         <Grid size={{ xs: 4 }}>
                             <TextField fullWidth type="number" label="Gold (TZS)" value={form.gold_reward_amount} onChange={(e) => setForm({ ...form, gold_reward_amount: e.target.value })} />
@@ -484,7 +503,13 @@ export function WeeklyChallengesPage() {
                     <Button onClick={() => setCreateOpen(false)}>Cancel</Button>
                     <Button
                         variant="contained"
-                        disabled={creating || !form.name.trim() || !form.start_date || !form.end_date}
+                        disabled={
+                            creating
+                            || !form.name.trim()
+                            || !form.start_date
+                            || !form.end_date
+                            || Number(form.minimum_participants) < 5
+                        }
                         onClick={createChallenge}
                     >
                         {creating ? "Creating…" : "Create as draft"}
