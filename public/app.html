@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ILBORU SACCOS Mobile App</title>
+<meta name="description" content="Check your savings, apply for a loan and follow your dividends from your phone — the official app for members of ILBORU ALUMNI SACCOS LTD." />
+<link rel="icon" href="/icon-ilboru.png" />
+<style>
+  /* Self-contained on purpose: no CDN, no fonts, no app bundle. Someone
+     tapping through from the App Store may be on a weak connection, and this
+     page must not depend on anything that can fail to load. */
+  :root {
+    --green: #0f4433;
+    --green-soft: #2f7d5c;
+    --gold: #c9a227;
+    --ink: #1a1d1b;
+    --muted: #5c6b65;
+    --hairline: #e3e9e6;
+    --bg: #ffffff;
+    --panel: #f7faf8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #e8efeb;
+      --muted: #9fb0a9;
+      --hairline: #24302b;
+      --bg: #0e1512;
+      --panel: #141d19;
+      --green-soft: #4bbd8b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-text-size-adjust: 100%;
+  }
+  .hero {
+    background: var(--green);
+    border-bottom: 3px solid var(--gold);
+    padding: 54px 20px 58px;
+    text-align: center;
+  }
+  .hero img {
+    width: 76px; height: 76px; border-radius: 18px;
+    background: #fff; padding: 8px; margin-bottom: 18px;
+  }
+  .hero h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.2; color: #fff; letter-spacing: -0.4px; }
+  .hero .org { margin: 0 0 16px; font-size: 13px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--gold); font-weight: 700; }
+  .hero p.pitch {
+    margin: 0 auto; max-width: 480px; font-size: 17px; line-height: 1.55;
+    color: rgba(255,255,255,0.86);
+  }
+  main { max-width: 760px; margin: 0 auto; padding: 44px 20px 20px; }
+  h2 {
+    font-size: 12px; letter-spacing: 1.3px; text-transform: uppercase;
+    color: var(--muted); font-weight: 700; margin: 44px 0 16px;
+  }
+  h2:first-child { margin-top: 0; }
+  h3 { font-size: 16.5px; margin: 0 0 5px; }
+  p { margin: 0 0 12px; }
+  a { color: var(--green-soft); }
+  .grid { display: grid; gap: 13px; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 620px) { .grid { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--panel); border: 1px solid var(--hairline);
+    border-radius: 12px; padding: 17px 19px;
+  }
+  .card p { margin: 0; color: var(--muted); font-size: 14.5px; line-height: 1.55; }
+  .wide { background: var(--panel); border: 1px solid var(--hairline); border-radius: 12px; padding: 20px 22px; }
+  .wide p:last-child { margin-bottom: 0; }
+  .links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
+  .links a {
+    display: inline-block; padding: 11px 18px; border-radius: 999px;
+    background: var(--green); color: #fff; text-decoration: none;
+    font-weight: 600; font-size: 15px;
+  }
+  .links a.ghost { background: transparent; color: var(--green-soft); border: 1px solid var(--hairline); }
+  .sw { border-top: 1px solid var(--hairline); margin-top: 52px; padding-top: 10px; }
+  footer {
+    max-width: 760px; margin: 0 auto; padding: 30px 20px 56px;
+    color: var(--muted); font-size: 13px; border-top: 1px solid var(--hairline);
+    margin-top: 44px;
+  }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <img src="/icon-ilboru.png" alt="" />
+  <p class="org">ILBORU ALUMNI SACCOS LTD</p>
+  <h1>Your SACCOS, in your pocket</h1>
+  <p class="pitch">
+    Check your savings, apply for a loan and follow your dividends from your phone —
+    without queuing at the branch.
+  </p>
+</div>
+
+<main>
+
+  <h2>What you can do</h2>
+  <div class="grid">
+    <div class="card">
+      <h3>See your savings</h3>
+      <p>Your balance the moment it changes, and every deposit and withdrawal in a clear running statement.</p>
+    </div>
+    <div class="card">
+      <h3>Statements as PDF</h3>
+      <p>Prepare your statement as a PDF you can save, print, or send on — straight from your phone.</p>
+    </div>
+    <div class="card">
+      <h3>Loans, end to end</h3>
+      <p>See what you qualify for, apply, follow each approval step, and track what is due and what is left.</p>
+    </div>
+    <div class="card">
+      <h3>Guarantors</h3>
+      <p>Stand as a guarantor for a fellow member, or ask someone to stand for you — and see where it stands.</p>
+    </div>
+    <div class="card">
+      <h3>Shares and dividends</h3>
+      <p>Track your share capital as it grows, and see your dividends the moment they are allocated.</p>
+    </div>
+    <div class="card">
+      <h3>Instant alerts</h3>
+      <p>Know whenever money moves on your account, plus loan decisions and SACCOS announcements.</p>
+    </div>
+    <div class="card">
+      <h3>Savings challenges</h3>
+      <p>Take part in savings challenges with fellow members and follow the standings day by day.</p>
+    </div>
+    <div class="card">
+      <h3>Fast, private sign-in</h3>
+      <p>Unlock with your fingerprint or face, or a 4-digit PIN you set yourself. Available in English and Kiswahili.</p>
+    </div>
+  </div>
+
+  <h2>Who it is for</h2>
+  <div class="wide">
+    <p>
+      The app is for <strong>registered members of ILBORU ALUMNI SACCOS LTD</strong>. You sign in with the
+      username and password the SACCOS office issues to you.
+    </p>
+    <p>
+      If you are a member but have never received sign-in details, or you would like to join the SACCOS,
+      visit the office and our staff will set you up.
+    </p>
+  </div>
+
+  <h2>Get the app</h2>
+  <div class="wide">
+    <p>The ILBORU SACCOS app is available for <strong>iPhone and Android</strong>.</p>
+    <p>
+      Members who need help installing it or signing in for the first time can contact us at
+      <a href="mailto:support@ias.co.tz">support@ias.co.tz</a> or visit the SACCOS office during working hours.
+    </p>
+    <div class="links">
+      <a href="/support.html">Support &amp; help</a>
+      <a class="ghost" href="/privacy-policy">Privacy policy</a>
+    </div>
+  </div>
+
+  <div class="sw">
+    <h2>Kwa Kiswahili</h2>
+    <div class="wide">
+      <p>
+        <strong>SACCOS yako, mfukoni mwako.</strong> Angalia akiba yako, omba mkopo, na fuatilia gawio lako
+        ukiwa na simu yako — bila kupanga foleni tawini.
+      </p>
+      <p>
+        Kwa kutumia programu hii unaweza kuona salio lako likibadilika papo hapo, kupata taarifa ya akaunti
+        yako kama PDF, kuomba mkopo na kufuatilia hatua zake, kudhamini mwanachama mwenzako, kufuatilia hisa
+        na gawio lako, na kupata taarifa mara pesa zinapoingia au kutoka.
+      </p>
+      <p>
+        Programu hii ni kwa ajili ya <strong>wanachama waliosajiliwa wa ILBORU ALUMNI SACCOS LTD</strong>.
+        Unaingia kwa jina la mtumiaji na nenosiri unalopewa na ofisi ya SACCOS. Kama wewe ni mwanachama
+        lakini hujapata taarifa za kuingia, au ungependa kujiunga, tembelea ofisi yetu.
+      </p>
+      <p>
+        Inapatikana kwa <strong>iPhone na Android</strong>. Kwa msaada, tuandikie
+        <a href="mailto:support@ias.co.tz">support@ias.co.tz</a>.
+      </p>
+    </div>
+  </div>
+
+</main>
+
+<footer>
+  ILBORU ALUMNI SACCOS LTD ·
+  <a href="/support.html">Support</a> ·
+  <a href="/privacy-policy">Privacy policy</a> ·
+  <a href="mailto:support@ias.co.tz">support@ias.co.tz</a>
+</footer>
+
+</body>
+</html>
