@@ -45,7 +45,7 @@ import {
     type PerformanceTargetStatusId
 } from "../utils/performanceTarget";
 import { formatCurrency } from "../utils/format";
-import { downloadPerformanceTargetPdf } from "../utils/performanceTargetExport";
+import { downloadPerformanceTargetExcel, downloadPerformanceTargetPdf } from "../utils/performanceTargetExport";
 
 const PAGE_LOAD_LIMIT = 100;
 const MAX_PAGE_LOADS = 100;
@@ -53,6 +53,7 @@ const rowsPerPageOptions = [10, 25, 50, 100];
 
 type StatusFilter = PerformanceTargetStatusId | "needs_action" | "variance" | "all";
 type TargetBandFilter = "all" | "under_40" | "under_on_track" | "on_track_to_target" | "met_or_above" | "no_target";
+type SavingsBandFilter = "all" | "below_1m" | "below_3_5m" | "below_5m" | "below_10m";
 type SortKey = "member_no" | "name" | "reach_asc" | "reach_desc" | "gap_desc" | "actual_desc" | "target_desc";
 
 interface PagedApiEnvelope<T> {
@@ -103,6 +104,22 @@ const targetBandOptions: Array<{ value: TargetBandFilter; label: string }> = [
     { value: "on_track_to_target", label: "On track, not met" },
     { value: "met_or_above", label: "Met or above" },
     { value: "no_target", label: "No target amount" }
+];
+
+/**
+ * Absolute savings bands, independent of each member's own target.
+ *
+ * Target bands answer "how far along is this member against their own goal?",
+ * which hides a member on a small target who is technically on track but holds
+ * very little. These bands answer the other question the committee asks: who
+ * simply does not have much saved, whatever they signed up for.
+ */
+const savingsBandOptions: Array<{ value: SavingsBandFilter; label: string; threshold: number }> = [
+    { value: "all", label: "All savings levels", threshold: 0 },
+    { value: "below_1m", label: "Below TSh 1M", threshold: 1_000_000 },
+    { value: "below_3_5m", label: "Below TSh 3.5M", threshold: 3_500_000 },
+    { value: "below_5m", label: "Below TSh 5M", threshold: 5_000_000 },
+    { value: "below_10m", label: "Below TSh 10M", threshold: 10_000_000 }
 ];
 
 const sortOptions: Array<{ value: SortKey; label: string }> = [
@@ -175,6 +192,20 @@ function matchesTargetBand(row: PerformanceTargetRow, filter: TargetBandFilter, 
     return row.reachPercent >= 100;
 }
 
+function savingsBandThreshold(filter: SavingsBandFilter) {
+    return savingsBandOptions.find((option) => option.value === filter)?.threshold ?? 0;
+}
+
+function matchesSavingsBand(row: PerformanceTargetRow, filter: SavingsBandFilter) {
+    if (filter === "all") {
+        return true;
+    }
+
+    // actualFormAmount is the member's savings under the tenant's configured
+    // actual source, which is the same figure the table and the PDF report show.
+    return row.actualFormAmount < savingsBandThreshold(filter);
+}
+
 function sortTargetRows(rows: PerformanceTargetRow[], sortKey: SortKey) {
     return [...rows].sort((left, right) => {
         if (sortKey === "name") {
@@ -242,6 +273,7 @@ export function PerformanceTargetsPage() {
     const [search, setSearch] = useState("");
     const [statusFilter, setStatusFilter] = useState<StatusFilter>("needs_action");
     const [targetBandFilter, setTargetBandFilter] = useState<TargetBandFilter>("all");
+    const [savingsBandFilter, setSavingsBandFilter] = useState<SavingsBandFilter>("all");
     const [reconciliationFilter, setReconciliationFilter] = useState<"all" | "matched" | "variance">("all");
     const [sortKey, setSortKey] = useState<SortKey>("reach_asc");
     const [page, setPage] = useState(0);
@@ -396,15 +428,20 @@ export function PerformanceTargetsPage() {
             const matchesSearch = !normalizedSearch || searchable.includes(normalizedSearch);
             const matchesSelectedStatus = matchesStatus(row, statusFilter, settings);
             const matchesSelectedTargetBand = matchesTargetBand(row, targetBandFilter, settings);
+            const matchesSelectedSavingsBand = matchesSavingsBand(row, savingsBandFilter);
             const matchesReconciliation = reconciliationFilter === "all"
                 || (reconciliationFilter === "matched" && row.matchesDetail)
                 || (reconciliationFilter === "variance" && !row.matchesDetail);
 
-            return matchesSearch && matchesSelectedStatus && matchesSelectedTargetBand && matchesReconciliation;
+            return matchesSearch
+                && matchesSelectedStatus
+                && matchesSelectedTargetBand
+                && matchesSelectedSavingsBand
+                && matchesReconciliation;
         });
 
         return sortTargetRows(filtered, sortKey);
-    }, [reconciliationFilter, rows, search, settings, sortKey, statusFilter, targetBandFilter]);
+    }, [reconciliationFilter, rows, savingsBandFilter, search, settings, sortKey, statusFilter, targetBandFilter]);
 
     const hiddenRowCount = rows.length - filteredRows.length;
 
@@ -468,18 +505,47 @@ export function PerformanceTargetsPage() {
         setSearch("");
         setStatusFilter("needs_action");
         setTargetBandFilter("all");
+        setSavingsBandFilter("all");
         setReconciliationFilter("all");
         setSortKey("reach_asc");
     };
 
     // Exports what is on screen, so the filter chips double as the report's
     // scope: pick "Target met" and you share that category alone.
-    const handleSharePdf = () => {
+    // Both exports describe themselves by the filters in force, so a sheet
+    // mailed on is self-explanatory without the sender adding a note.
+    const activeScopeLabel = () => {
         const statusLabel = statusFilterOptions.find((option) => option.value === statusFilter)?.label || "All members";
+        const savingsLabel = savingsBandFilter === "all"
+            ? null
+            : savingsBandOptions.find((option) => option.value === savingsBandFilter)?.label;
 
+        return [statusLabel, savingsLabel].filter(Boolean).join("  ·  ");
+    };
+
+    const handleExportExcel = () => {
+        void downloadPerformanceTargetExcel({
+            tenantName: selectedTenantName || "SACCO",
+            scopeLabel: `${activeScopeLabel()} — ${filteredRows.length} of ${rows.length} members`,
+            actualSourceLabel: actualSourceLabel(settings),
+            rows: filteredRows.map((row) => ({
+                memberNo: row.memberNo,
+                memberName: row.memberName,
+                phone: row.phone,
+                level: row.level,
+                actualAmount: row.actualFormAmount,
+                annualTargetAmount: row.annualTargetAmount,
+                remainingToTargetAmount: row.remainingToTargetAmount,
+                nextRequiredAmount: row.nextRequiredAmount,
+                reachPercent: row.reachPercent
+            }))
+        });
+    };
+
+    const handleSharePdf = () => {
         downloadPerformanceTargetPdf({
             tenantName: selectedTenantName || "SACCO",
-            scopeLabel: `${statusLabel} — ${filteredRows.length} of ${rows.length} members`,
+            scopeLabel: `${activeScopeLabel()} — ${filteredRows.length} of ${rows.length} members`,
             requiredNowAmount: calculateRequiredToDate(settings) ?? settings.performance_target_required_amount,
             onTrackPercent: settings.performance_target_on_track_percent,
             rows: filteredRows.map((row) => ({
@@ -499,6 +565,7 @@ export function PerformanceTargetsPage() {
     const showAllRows = () => {
         setSearch("");
         setStatusFilter("all");
+        setSavingsBandFilter("all");
         setTargetBandFilter("all");
         setReconciliationFilter("all");
         setPage(0);
@@ -615,7 +682,7 @@ export function PerformanceTargetsPage() {
                     </Stack>
 
                     <Grid container spacing={1.5} alignItems="center">
-                        <Grid size={{ xs: 12, md: 4 }}>
+                        <Grid size={{ xs: 12, md: 3 }}>
                             <TextField
                                 label="Search member"
                                 placeholder="Member name, ID, phone, or level"
@@ -623,6 +690,20 @@ export function PerformanceTargetsPage() {
                                 onChange={(event) => setSearch(event.target.value)}
                                 fullWidth
                             />
+                        </Grid>
+                        <Grid size={{ xs: 12, sm: 6, md: 2 }}>
+                            <FormControl fullWidth>
+                                <InputLabel>Savings</InputLabel>
+                                <Select
+                                    label="Savings"
+                                    value={savingsBandFilter}
+                                    onChange={(event) => setSavingsBandFilter(event.target.value as SavingsBandFilter)}
+                                >
+                                    {savingsBandOptions.map((option) => (
+                                        <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
                         </Grid>
                         <Grid size={{ xs: 12, sm: 6, md: 2 }}>
                             <FormControl fullWidth>
@@ -666,22 +747,34 @@ export function PerformanceTargetsPage() {
                                 </Select>
                             </FormControl>
                         </Grid>
-                        <Grid size={{ xs: 12, sm: 6, md: 1 }}>
-                            <Button variant="outlined" fullWidth onClick={clearFilters}>
-                                Clear
-                            </Button>
-                        </Grid>
-                        <Grid size={{ xs: 12, sm: 6, md: 1 }}>
-                            <Button
-                                variant="contained"
-                                fullWidth
-                                startIcon={<DownloadRoundedIcon />}
-                                onClick={handleSharePdf}
-                                disabled={!filteredRows.length}
-                                sx={{ whiteSpace: "nowrap" }}
+                        <Grid size={{ xs: 12 }}>
+                            <Stack
+                                direction={{ xs: "column", sm: "row" }}
+                                spacing={1.5}
+                                justifyContent="flex-end"
                             >
-                                Share PDF
-                            </Button>
+                                <Button variant="outlined" onClick={clearFilters}>
+                                    Clear
+                                </Button>
+                                <Button
+                                    variant="outlined"
+                                    startIcon={<DownloadRoundedIcon />}
+                                    onClick={handleExportExcel}
+                                    disabled={!filteredRows.length}
+                                    sx={{ whiteSpace: "nowrap" }}
+                                >
+                                    Export Excel
+                                </Button>
+                                <Button
+                                    variant="contained"
+                                    startIcon={<DownloadRoundedIcon />}
+                                    onClick={handleSharePdf}
+                                    disabled={!filteredRows.length}
+                                    sx={{ whiteSpace: "nowrap" }}
+                                >
+                                    Share PDF
+                                </Button>
+                            </Stack>
                         </Grid>
                     </Grid>
 

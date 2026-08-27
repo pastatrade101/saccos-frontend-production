@@ -172,3 +172,92 @@ export function downloadPerformanceTargetPdf(payload: PerformanceTargetExportPay
 
     doc.save(`member-targets-${stamp()}.pdf`);
 }
+
+/**
+ * Working spreadsheet for staff follow-up.
+ *
+ * Unlike the PDF above, this one DOES carry member names and phone numbers.
+ * The two exports exist for opposite audiences: the PDF is circulated to the
+ * whole membership, so it stays anonymous; this sheet is the call list a branch
+ * manager or auditor works through, and a follow-up list without a name and a
+ * number to ring is useless. Keep it internal.
+ */
+export interface PerformanceTargetSheetRow {
+    memberNo: string;
+    memberName: string;
+    phone: string | null;
+    level: string;
+    actualAmount: number;
+    annualTargetAmount: number;
+    remainingToTargetAmount: number;
+    nextRequiredAmount: number;
+    reachPercent: number;
+}
+
+export interface PerformanceTargetSheetPayload {
+    tenantName: string;
+    /** Describes which filter produced these rows, e.g. "Below TSh 3.5M". */
+    scopeLabel: string;
+    /** "Available savings" or "Savings balance", per tenant settings. */
+    actualSourceLabel: string;
+    rows: PerformanceTargetSheetRow[];
+}
+
+export async function downloadPerformanceTargetExcel(payload: PerformanceTargetSheetPayload) {
+    const XLSX = await import("xlsx");
+
+    const headers = [
+        "Member No.",
+        "Member Name",
+        "Phone",
+        "Status",
+        payload.actualSourceLabel,
+        "Annual Target",
+        "Remaining To Target",
+        "Next Required",
+        "Reach %"
+    ];
+
+    // Amounts stay as numbers so the recipient can sum and sort in Excel;
+    // formatting them into strings here would make the sheet dead weight.
+    const body = payload.rows.map((row) => [
+        row.memberNo,
+        row.memberName,
+        row.phone || "",
+        row.level,
+        row.actualAmount,
+        row.annualTargetAmount,
+        row.remainingToTargetAmount,
+        row.nextRequiredAmount,
+        Number(row.reachPercent.toFixed(1))
+    ]);
+
+    const totals = payload.rows.reduce(
+        (sum, row) => ({
+            actual: sum.actual + row.actualAmount,
+            target: sum.target + row.annualTargetAmount,
+            remaining: sum.remaining + row.remainingToTargetAmount
+        }),
+        { actual: 0, target: 0, remaining: 0 }
+    );
+
+    const sheet = XLSX.utils.aoa_to_sheet([
+        [`${payload.tenantName} — Member Savings & Performance Targets`],
+        [payload.scopeLabel],
+        [`${payload.rows.length} member(s)  ·  generated ${new Date().toLocaleDateString("en-GB")}`],
+        [],
+        headers,
+        ...body,
+        [],
+        ["", "", "", "TOTAL", totals.actual, totals.target, totals.remaining, "", ""]
+    ]);
+
+    sheet["!cols"] = [
+        { wch: 16 }, { wch: 30 }, { wch: 16 }, { wch: 16 },
+        { wch: 18 }, { wch: 18 }, { wch: 20 }, { wch: 18 }, { wch: 10 }
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, sheet, "Performance Targets");
+    XLSX.writeFile(workbook, `performance-targets-${stamp()}.xlsx`);
+}
