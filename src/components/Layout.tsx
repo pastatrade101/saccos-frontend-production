@@ -99,7 +99,7 @@ const navItems: NavItem[] = [
     { to: "/member-applications", label: "Applications", roles: ["super_admin", "branch_manager", "auditor"], section: "workspace", icon: DescriptionRoundedIcon },
     { to: "/members", label: "Members", roles: ["super_admin", "branch_manager", "teller"], section: "workspace", icon: GroupRoundedIcon },
     { to: "/members/import", label: "Member Import", roles: ["branch_manager"], section: "workspace", icon: StoreRoundedIcon },
-    { to: "/performance-targets", label: "Performance Targets", roles: ["super_admin", "branch_manager"], section: "workspace", icon: TrackChangesRoundedIcon },
+    { to: "/performance-targets", label: "Performance Targets", roles: ["super_admin", "branch_manager", "auditor"], section: "workspace", icon: TrackChangesRoundedIcon },
     { to: "/leagues", label: "Savings Leagues", roles: ["super_admin", "branch_manager"], section: "workspace", icon: EmojiEventsRoundedIcon },
     { to: "/weekly-challenges", label: "Weekly Challenge", roles: ["super_admin", "branch_manager", "treasury_officer"], section: "workspace", icon: WhatshotRoundedIcon },
     { to: "/milestones", label: "SACCO Milestones", roles: ["super_admin", "branch_manager"], section: "workspace", icon: FlagRoundedIcon },
@@ -129,7 +129,7 @@ const navItems: NavItem[] = [
     { to: "/all-reports/positions", label: "Member Positions", roles: ["super_admin", "branch_manager"], section: "finance", icon: GroupRoundedIcon },
     { to: "/all-reports/member-statement", label: "Member Profit Statement", roles: ["super_admin", "branch_manager"], section: "finance", icon: DescriptionRoundedIcon },
     { to: "/all-reports/utt", label: "UTT Investments", roles: ["super_admin", "branch_manager"], section: "finance", icon: AccountBalanceRoundedIcon },
-    { to: "/all-reports/performance-targets", label: "Performance Targets", roles: ["super_admin", "branch_manager"], section: "finance", icon: TrackChangesRoundedIcon },
+    { to: "/all-reports/performance-targets", label: "Performance Targets", roles: ["super_admin", "branch_manager", "auditor"], section: "finance", icon: TrackChangesRoundedIcon },
     { to: "/all-reports/commitments", label: "Monthly Commitments", roles: ["super_admin", "branch_manager"], section: "finance", icon: EventRepeatRoundedIcon },
     { to: "/all-reports/summary-sorted", label: "Sorted Summary", roles: ["super_admin", "branch_manager"], section: "finance", icon: SummarizeRoundedIcon },
     { to: "/all-reports/loans", label: "Loans (MIKOPO)", roles: ["super_admin", "branch_manager"], section: "finance", icon: CreditScoreRoundedIcon },
@@ -355,6 +355,7 @@ export function AppLayout() {
 
     const isTreasuryWorkspaceRole = profile?.role === "treasury_officer";
     const isBranchManagerRole = profile?.role === "branch_manager" || profile?.role === "super_admin";
+    const isAuditorRole = profile?.role === "auditor";
     const effectiveNavGroups = useMemo<NavGroup[]>(() => {
         if (isTreasuryWorkspaceRole) {
             return [
@@ -362,6 +363,26 @@ export function AppLayout() {
                 { key: "operations", label: "Operations", itemTos: ["/approvals"] },
                 { key: "analytics", label: "Analytics", itemTos: ["/reports"] }
             ];
+        }
+
+        if (isAuditorRole) {
+            // Auditors get a narrow "All Reports" group — only the contribution
+            // watchlist, not the full finance report set the branch manager sees.
+            // The sidebar renders the intersection of navItems and itemTos, so a
+            // path added here must also carry "auditor" in its navItems roles.
+            return navGroups.flatMap<NavGroup>((group) => {
+                if (group.key === "analytics") {
+                    return [
+                        group,
+                        {
+                            key: "all_reports",
+                            label: "All Reports",
+                            itemTos: ["/all-reports/performance-targets"]
+                        }
+                    ];
+                }
+                return [group];
+            });
         }
 
         if (isBranchManagerRole) {
@@ -398,7 +419,7 @@ export function AppLayout() {
         }
 
         return navGroups;
-    }, [isTreasuryWorkspaceRole, isBranchManagerRole]);
+    }, [isTreasuryWorkspaceRole, isBranchManagerRole, isAuditorRole]);
 
     const topLevelItems = useMemo(
         () => visibleItems.filter((item) => item.to === "/dashboard"),

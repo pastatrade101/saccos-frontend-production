@@ -268,7 +268,6 @@ export default function App() {
                             <Route path="/staff-users" element={<StaffUsersPage />} />
                             <Route path="/settings/sacco-year" element={<SaccoSettingsPage />} />
                             <Route path="/finance/share-capital-transfer" element={<ShareCapitalTransferPage />} />
-                            <Route path="/performance-targets" element={<PerformanceTargetsPage />} />
                             <Route path="/leagues" element={<LeaguesPage />} />
                             <Route path="/weekly-challenges" element={<WeeklyChallengesPage />} />
                             <Route path="/milestones" element={<MilestonesPage />} />
@@ -282,6 +281,10 @@ export default function App() {
                             }
                         >
                             <Route path="/all-reports/:report" element={<AllReportsPage />} />
+                            {/* Auditors need the contribution watchlist for oversight. The
+                                page is read-only, and every endpoint it calls already
+                                authorises the auditor role. */}
+                            <Route path="/performance-targets" element={<PerformanceTargetsPage />} />
                         </Route>
                         <Route
                             element={
