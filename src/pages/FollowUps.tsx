@@ -96,24 +96,35 @@ export function FollowUpsPage() {
         const loanMap = new Map(loans.map((loan) => [loan.id, loan]));
         const memberMap = new Map(members.map((member) => [member.id, member]));
 
-        return schedules.map((schedule) => {
-            const loan = loanMap.get(schedule.loan_id);
-            const member = loan ? memberMap.get(loan.member_id) : null;
-            const principalDue = Math.max(schedule.principal_due - schedule.principal_paid, 0);
-            const interestDue = Math.max(schedule.interest_due - schedule.interest_paid, 0);
+        return schedules
+            // A schedule row can be left pending/partial/overdue even after its
+            // loan has closed — a top-up or restructure settles the loan without
+            // going back to reconcile every remaining installment. That is a
+            // closed matter, not something to chase, so this page (unlike the
+            // loan detail view, which still needs full history) only follows up
+            // on loans that are actually still outstanding.
+            .filter((schedule) => {
+                const loan = loanMap.get(schedule.loan_id);
+                return !loan || (loan.status !== "closed" && loan.status !== "written_off");
+            })
+            .map((schedule) => {
+                const loan = loanMap.get(schedule.loan_id);
+                const member = loan ? memberMap.get(loan.member_id) : null;
+                const principalDue = Math.max(schedule.principal_due - schedule.principal_paid, 0);
+                const interestDue = Math.max(schedule.interest_due - schedule.interest_paid, 0);
 
-            return {
-                id: schedule.id,
-                loan_id: schedule.loan_id,
-                loan_number: loan?.loan_number || schedule.loan_id,
-                member_name: member?.full_name || "Unknown member",
-                due_date: schedule.due_date,
-                status: schedule.status,
-                principal_due: principalDue,
-                interest_due: interestDue,
-                total_due: principalDue + interestDue
-            };
-        });
+                return {
+                    id: schedule.id,
+                    loan_id: schedule.loan_id,
+                    loan_number: loan?.loan_number || schedule.loan_id,
+                    member_name: member?.full_name || "Unknown member",
+                    due_date: schedule.due_date,
+                    status: schedule.status,
+                    principal_due: principalDue,
+                    interest_due: interestDue,
+                    total_due: principalDue + interestDue
+                };
+            });
     }, [loans, members, schedules]);
 
     const filteredRows = useMemo(() => {
