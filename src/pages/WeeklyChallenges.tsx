@@ -423,12 +423,20 @@ export function WeeklyChallengesPage() {
                                                     </TableCell>
                                                     {row.daily_status.map((cell) => (
                                                         <TableCell key={cell.date} align="center">
-                                                            {/* qualified, not deposited_amount, decides this — the amount
-                                                                is redactable (null for another member when the challenge
-                                                                hides figures), qualified never is. */}
-                                                            {cell.qualified || cell.date <= (standings.days.find((d) => d.closed)?.date || "")
-                                                                ? (cell.qualified ? "✅" : "❌")
-                                                                : "—"}
+                                                            {/* Staff never get the redacted (null) amount the member
+                                                                portal shows other members — the backend exempts every
+                                                                staff role from show_amounts_to_members entirely, so a
+                                                                branch manager running the challenge should see the
+                                                                real figure here, not the member-facing tick/cross. */}
+                                                            <Typography
+                                                                variant="body2"
+                                                                sx={{
+                                                                    color: cell.qualified ? "success.main" : "text.secondary",
+                                                                    fontWeight: cell.qualified ? 700 : 400
+                                                                }}
+                                                            >
+                                                                {formatCurrency(cell.deposited_amount ?? 0)}
+                                                            </Typography>
                                                         </TableCell>
                                                     ))}
                                                     <TableCell align="right">{row.days_won}</TableCell>
