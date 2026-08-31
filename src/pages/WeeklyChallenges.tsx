@@ -21,6 +21,7 @@ import {
     TableBody,
     TableCell,
     TableContainer,
+    TableFooter,
     TableHead,
     TableRow,
     TextField,
@@ -405,6 +406,7 @@ export function WeeklyChallengesPage() {
                                                 {standings.days.map((day) => (
                                                     <TableCell key={day.date} align="center">{formatDate(day.date)}</TableCell>
                                                 ))}
+                                                <TableCell align="right">Total</TableCell>
                                                 <TableCell align="right">Days won</TableCell>
                                                 <TableCell align="right">Status</TableCell>
                                                 {canManage ? <TableCell /> : null}
@@ -439,6 +441,11 @@ export function WeeklyChallengesPage() {
                                                             </Typography>
                                                         </TableCell>
                                                     ))}
+                                                    <TableCell align="right">
+                                                        <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                                                            {formatCurrency(row.period_total ?? 0)}
+                                                        </Typography>
+                                                    </TableCell>
                                                     <TableCell align="right">{row.days_won}</TableCell>
                                                     <TableCell align="right">
                                                         {row.eliminated ? <Chip size="small" color="error" variant="outlined" label="Eliminated" /> : <Chip size="small" color="success" variant="outlined" label="In it" />}
@@ -460,6 +467,37 @@ export function WeeklyChallengesPage() {
                                                 </TableRow>
                                             ) : null}
                                         </TableBody>
+                                        {standings.rows.length ? (
+                                            <TableFooter>
+                                                <TableRow>
+                                                    <TableCell />
+                                                    <TableCell>
+                                                        <Typography variant="body2" sx={{ fontWeight: 700 }}>Total</Typography>
+                                                    </TableCell>
+                                                    {standings.days.map((day) => {
+                                                        const dayTotal = standings.rows.reduce((sum, row) => {
+                                                            const cell = row.daily_status.find((c) => c.date === day.date);
+                                                            return sum + (cell?.deposited_amount ?? 0);
+                                                        }, 0);
+                                                        return (
+                                                            <TableCell key={day.date} align="center">
+                                                                <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                                                                    {formatCurrency(dayTotal)}
+                                                                </Typography>
+                                                            </TableCell>
+                                                        );
+                                                    })}
+                                                    <TableCell align="right">
+                                                        <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                                                            {formatCurrency(standings.rows.reduce((sum, row) => sum + (row.period_total ?? 0), 0))}
+                                                        </Typography>
+                                                    </TableCell>
+                                                    <TableCell />
+                                                    <TableCell />
+                                                    {canManage ? <TableCell /> : null}
+                                                </TableRow>
+                                            </TableFooter>
+                                        ) : null}
                                     </Table>
                                 </Box>
                             )}
