@@ -2116,6 +2116,8 @@ export interface DividendPoolSuggestion {
     last_dividend_date: string | null;
     /** True when the server chose the window because none was requested. */
     defaulted: boolean;
+    /** True when the window stops at a month end rather than at today. */
+    complete_month_only: boolean;
     loan_interest: number;
     treasury_income: number;
     total: number;

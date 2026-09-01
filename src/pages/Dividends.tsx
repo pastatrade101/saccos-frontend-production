@@ -1427,7 +1427,7 @@ export function DividendsPage() {
                             withdrawals. Nothing is posted until you confirm the preview.
                         </Alert>
 
-                        {earned && earned.total > 0 ? (
+                        {earned && earned.loan_interest > 0 ? (
                             <Alert
                                 severity="info"
                                 variant="outlined"
@@ -1436,7 +1436,7 @@ export function DividendsPage() {
                                         size="small"
                                         variant="contained"
                                         onClick={() => {
-                                            setDistPool(String(earned.total));
+                                            setDistPool(String(earned.loan_interest));
                                             setDistPreview(null);
                                         }}
                                     >
@@ -1445,14 +1445,26 @@ export function DividendsPage() {
                                 }
                             >
                                 <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                                    {formatCurrency(earned.total)} earned since the last gawio
+                                    {formatCurrency(earned.loan_interest)} loan interest earned
                                 </Typography>
                                 <Typography variant="body2" color="text.secondary">
-                                    Loan interest {formatCurrency(earned.loan_interest)} + UTT/treasury {formatCurrency(earned.treasury_income)}
-                                    {earned.last_dividend_date
-                                        ? ` · ${formatDate(earned.last_dividend_date)} to ${formatDate(earned.end_date)}`
-                                        : ` · everything up to ${formatDate(earned.end_date)}, no dividend paid yet`}
+                                    {formatDate(earned.start_date)} to {formatDate(earned.end_date)}
+                                    {earned.complete_month_only ? " · whole months only, so the current month is not counted" : ""}
                                 </Typography>
+                                {/* UTT is keyed in by hand, so it is named but never added
+                                    into the figure the button posts — a pool should only
+                                    ever be filled with something the SACCO actually put
+                                    there. */}
+                                {earned.treasury_income > 0 ? (
+                                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                                        UTT/treasury recorded for this period: {formatCurrency(earned.treasury_income)}. Add it to the pool yourself if this gawio includes it.
+                                    </Typography>
+                                ) : null}
+                            </Alert>
+                        ) : earned ? (
+                            <Alert severity="info" variant="outlined">
+                                No loan interest recorded between {formatDate(earned.start_date)} and {formatDate(earned.end_date)}
+                                {earned.last_dividend_date ? `, the period since the gawio of ${formatDate(earned.last_dividend_date)}` : ""}.
                             </Alert>
                         ) : earnedError ? (
                             <Alert severity="warning" variant="outlined">
