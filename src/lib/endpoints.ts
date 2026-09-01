@@ -2118,6 +2118,8 @@ export interface DividendPoolSuggestion {
     defaulted: boolean;
     /** True when the window stops at a month end rather than at today. */
     complete_month_only: boolean;
+    /** Batch references most recently used, newest first, without the member suffix. */
+    recent_references: string[];
     loan_interest: number;
     treasury_income: number;
     total: number;

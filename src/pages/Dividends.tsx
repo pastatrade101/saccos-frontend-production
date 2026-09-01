@@ -29,7 +29,9 @@ import {
     TableHead,
     TableRow,
     TextField,
-    Typography
+    Typography,
+    ToggleButton,
+    ToggleButtonGroup
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -787,6 +789,12 @@ export function DividendsPage() {
     // server anchors the window itself — the period a SACCO wants to share out
     // is almost always "since the last gawio", and that was the one period the
     // screen made you look up and type by hand.
+    // Which income this gawio shares out. It decides the figure the strip
+    // leads with, what "Use this" applies, and the batch reference — the book
+    // keeps the two apart (DIV-LOANS-JUL2026 against DIV-UTT8-JUL2026), and
+    // posting one under the other's reference would make a month impossible
+    // to reconcile afterwards.
+    const [distSource, setDistSource] = useState<"loans" | "utt">("loans");
     const [earned, setEarned] = useState<DividendPoolSuggestion | null>(null);
     const [earnedError, setEarnedError] = useState<string | null>(null);
 
@@ -1458,45 +1466,90 @@ export function DividendsPage() {
                             withdrawals. Nothing is posted until you confirm the preview.
                         </Alert>
 
-                        {earned && earned.loan_interest > 0 ? (
-                            <Alert
-                                severity="info"
-                                variant="outlined"
-                                action={
-                                    <Button
-                                        size="small"
-                                        variant="contained"
-                                        onClick={() => {
-                                            setDistPool(String(earned.loan_interest));
-                                            setDistPreview(null);
-                                        }}
-                                    >
-                                        Use this
-                                    </Button>
+                        <ToggleButtonGroup
+                            size="small"
+                            exclusive
+                            value={distSource}
+                            onChange={(_event: React.MouseEvent<HTMLElement>, next: "loans" | "utt" | null) => {
+                                if (!next || next === distSource) return;
+                                setDistSource(next);
+                                setDistPreview(null);
+                                // Retag the batch for the new source. Both
+                                // fields are rewritten, not filled-if-blank:
+                                // leaving DIV-LOANS-AUG2026 on a UTT posting
+                                // is exactly the mix-up this control exists to
+                                // stop, and the operator can still edit after.
+                                if (earned) {
+                                    const period = monthCode(earned.end_date);
+                                    const tag = next === "loans" ? "LOANS" : "UTT";
+                                    const word = next === "loans" ? "Loans" : "UTT";
+                                    setDistReference(`DIV-${tag}-${period.code}`);
+                                    setDistDescription(`DIV (${word} ${period.label})`);
                                 }
-                            >
-                                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                                    {formatCurrency(earned.loan_interest)} loan interest earned
-                                </Typography>
-                                <Typography variant="body2" color="text.secondary">
-                                    {formatDate(earned.start_date)} to {formatDate(earned.end_date)}
-                                    {earned.complete_month_only ? " · whole months only, so the current month is not counted" : ""}
-                                </Typography>
-                                {/* UTT is keyed in by hand, so it is named but never added
-                                    into the figure the button posts — a pool should only
-                                    ever be filled with something the SACCO actually put
-                                    there. */}
-                                {earned.treasury_income > 0 ? (
-                                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                                        UTT/treasury recorded for this period: {formatCurrency(earned.treasury_income)}. Add it to the pool yourself if this gawio includes it.
-                                    </Typography>
-                                ) : null}
-                            </Alert>
-                        ) : earned ? (
-                            <Alert severity="info" variant="outlined">
-                                No loan interest recorded between {formatDate(earned.start_date)} and {formatDate(earned.end_date)}
-                                {earned.last_dividend_date ? `, the period since the gawio of ${formatDate(earned.last_dividend_date)}` : ""}.
-                            </Alert>
+                            }}
+                        >
+                            <ToggleButton value="loans">Loan interest</ToggleButton>
+                            <ToggleButton value="utt">UTT / treasury</ToggleButton>
+                        </ToggleButtonGroup>
+
+                        {earned ? (
+                            (() => {
+                                const amount = distSource === "loans"
+                                    ? earned.loan_interest
+                                    : earned.treasury_income;
+                                const label = distSource === "loans"
+                                    ? "loan interest earned"
+                                    : "UTT / treasury income recorded";
+
+                                if (amount <= 0) {
+                                    return (
+                                        <Alert severity="info" variant="outlined">
+                                            No {label} between {formatDate(earned.start_date)} and {formatDate(earned.end_date)}. Enter the pool by hand.
+                                        </Alert>
+                                    );
+                                }
+
+                                return (
+                                    <Alert
+                                        severity="info"
+                                        variant="outlined"
+                                        action={
+                                            <Button
+                                                size="small"
+                                                variant="contained"
+                                                onClick={() => {
+                                                    setDistPool(String(amount));
+                                                    setDistPreview(null);
+                                                }}
+                                            >
+                                                Use this
+                                            </Button>
+                                        }
+                                    >
+                                        <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                                            {formatCurrency(amount)} {label}
+                                        </Typography>
+                                        <Typography variant="body2" color="text.secondary">
+                                            {formatDate(earned.start_date)} to {formatDate(earned.end_date)}
+                                            {earned.complete_month_only ? " · whole months only, so the current month is not counted" : ""}
+                                        </Typography>
+                                        {/* UTT figures are keyed in by hand, so the number
+                                            is only as good as what was entered — say so
+                                            rather than let a derived-looking total imply
+                                            the system worked it out. */}
+                                        {distSource === "utt" ? (
+                                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                                                From the UTT/treasury income you recorded for this period. Check it against the UTT statement before posting.
+                                            </Typography>
+                                        ) : null}
+                                        {earned.recent_references.length > 0 ? (
+                                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                                                Last used: {earned.recent_references.join(", ")}
+                                            </Typography>
+                                        ) : null}
+                                    </Alert>
+                                );
+                            })()
                         ) : earnedError ? (
                             <Alert severity="warning" variant="outlined">
                                 Couldn&apos;t work out what has been earned since the last gawio ({earnedError}). Enter the pool by hand.
