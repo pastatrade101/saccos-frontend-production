@@ -326,6 +326,19 @@ interface DistributionResult {
     failed: { member_no: string; full_name: string; amount: number; reason: string }[];
 }
 
+/** "2026-08-31" -> { code: "AUG2026", label: "August 2026" } — the batch
+ * reference format already on the book. */
+function monthCode(isoDate: string): { code: string; label: string } {
+    const short = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+    const long = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    const [year, month] = isoDate.split("-").map(Number);
+    const index = (month || 1) - 1;
+    return {
+        code: `${short[index] ?? "JAN"}${year}`,
+        label: `${long[index] ?? "January"} ${year}`
+    };
+}
+
 export function DividendsPage() {
     const theme = useTheme();
     const { pushToast } = useToast();
@@ -777,6 +790,13 @@ export function DividendsPage() {
     const [earned, setEarned] = useState<DividendPoolSuggestion | null>(null);
     const [earnedError, setEarnedError] = useState<string | null>(null);
 
+    const [distReference, setDistReference] = useState("");
+    const [distDescription, setDistDescription] = useState("");
+    const [distPreview, setDistPreview] = useState<DistributionPreview | null>(null);
+    const [distBusy, setDistBusy] = useState(false);
+    const [distError, setDistError] = useState<string | null>(null);
+    const [distResult, setDistResult] = useState<DistributionResult | null>(null);
+
     useEffect(() => {
         let cancelled = false;
         void (async () => {
@@ -784,7 +804,24 @@ export function DividendsPage() {
                 const { data } = await api.get<DividendPoolSuggestionResponse>(
                     endpoints.dividends.poolSuggestion()
                 );
-                if (!cancelled) { setEarned(data.data); setEarnedError(null); }
+                if (cancelled) return;
+                setEarned(data.data);
+                setEarnedError(null);
+
+                // Fill the batch fields from the period. The format is already
+                // fixed — July's postings carry DIV-LOANS-JUL2026, with the
+                // member number appended per row by the posting procedure — so
+                // typing it again is transcription, and a typo here is a batch
+                // nobody can find afterwards.
+                //
+                // Only ever fills blanks: anything already typed is the
+                // operator's, and a fetch completing must not overwrite it.
+                const period = monthCode(data.data.end_date);
+                setDistAsOf((current) => current || data.data.end_date);
+                setDistReference((current) => current || `DIV-LOANS-${period.code}`);
+                setDistDescription(
+                    (current) => current || `DIV (Loans ${period.label})`
+                );
             } catch (error) {
                 // Not a toast: this is a convenience on a screen that works
                 // without it, and a red banner on open would suggest the
@@ -794,12 +831,6 @@ export function DividendsPage() {
         })();
         return () => { cancelled = true; };
     }, []);
-    const [distReference, setDistReference] = useState("");
-    const [distDescription, setDistDescription] = useState("");
-    const [distPreview, setDistPreview] = useState<DistributionPreview | null>(null);
-    const [distBusy, setDistBusy] = useState(false);
-    const [distError, setDistError] = useState<string | null>(null);
-    const [distResult, setDistResult] = useState<DistributionResult | null>(null);
 
     const openDistributeDialog = () => {
         setShowDistributeDialog(true);
