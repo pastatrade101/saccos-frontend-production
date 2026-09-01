@@ -134,7 +134,10 @@ const repaySchema = z.object({
     amount: z.coerce.number().positive("Repayment amount is required."),
     allocation: z.enum(["auto", "interest_only", "principal_only"]).default("auto"),
     reference: z.string().max(80).optional().or(z.literal("")),
-    description: z.string().max(255).optional().or(z.literal(""))
+    description: z.string().max(255).optional().or(z.literal("")),
+    // Blank means today. Payments are often taken at the counter and keyed
+    // later, and across a month end that puts the interest in the wrong month.
+    value_date: z.string().optional().or(z.literal(""))
 });
 
 type CreateApplicationValues = z.infer<typeof createApplicationSchema>;
@@ -2689,7 +2692,8 @@ export function LoansPage() {
                     amount: pendingMoneyAction.values.amount,
                     reference: pendingMoneyAction.values.reference || null,
                     description: pendingMoneyAction.values.description || null,
-                    allocation: pendingMoneyAction.values.allocation || "auto"
+                    allocation: pendingMoneyAction.values.allocation || "auto",
+                    value_date: pendingMoneyAction.values.value_date || null
                 };
                 const { data } = await api.post<ApiEnvelope<FinanceResult>>(endpoints.finance.loanRepay(), payload);
                 const repaymentResult = data.data;
@@ -5784,6 +5788,18 @@ export function LoansPage() {
                             </Box>
                         ) : null}
 
+                        <TextField
+                            type="date"
+                            label="Date received"
+                            fullWidth
+                            InputLabelProps={{ shrink: true }}
+                            inputProps={{
+                                max: new Date().toISOString().slice(0, 10),
+                                min: new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10)
+                            }}
+                            {...repayForm.register("value_date")}
+                            helperText="Leave blank for today. Backdate up to 7 days for a payment taken earlier — the audit log still records when it was keyed."
+                        />
                         <TextField
                             label="Reference"
                             fullWidth

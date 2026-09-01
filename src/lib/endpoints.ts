@@ -2246,6 +2246,9 @@ export interface LoanRepaymentRequest {
     reference?: string | null;
     description?: string | null;
     allocation?: LoanRepaymentAllocation;
+    /** Optional backdated date the payment was received. Null or absent posts
+     *  as today. Teller/branch manager/super admin, within 7 days. */
+    value_date?: string | null;
     receipt_ids?: string[];
 }
 
