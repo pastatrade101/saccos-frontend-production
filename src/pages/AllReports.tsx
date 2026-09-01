@@ -29,6 +29,7 @@ import {
     TablePagination,
     TableRow,
     TextField,
+    Tooltip,
     Typography
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
@@ -1463,6 +1464,20 @@ export function AllReportsPage() {
                                                     <Button size="small" onClick={() => setAssignRow({ id: row.id, label: row.label })}>
                                                         Assign member
                                                     </Button>
+                                                ) : row.source === "ledger" ? (
+                                                    // Swept straight from the GL (4025/5015) because no
+                                                    // operations_entries row was ever written for it — a
+                                                    // Weekly Challenge prize, or an expense booked through
+                                                    // the finance screen. Its id is synthetic, so the
+                                                    // reverse endpoint would reject it out of hand; and
+                                                    // even with a real id, reversing another module's
+                                                    // journal from here is not this screen's business.
+                                                    // Reverse it where it was posted.
+                                                    <Tooltip title="Posted directly to the ledger by another part of the system. Reverse it where it was created.">
+                                                        <Typography variant="caption" sx={{ color: "text.disabled" }}>
+                                                            Ledger
+                                                        </Typography>
+                                                    </Tooltip>
                                                 ) : (
                                                     <Button size="small" color="inherit" onClick={() => void reverseOperationsEntry(row.id)}>Reverse</Button>
                                                 )}
