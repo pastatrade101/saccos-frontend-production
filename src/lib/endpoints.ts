@@ -2112,6 +2112,10 @@ export interface FormulaDividendComponentInput {
 export interface DividendPoolSuggestion {
     start_date: string;
     end_date: string;
+    /** The gawio the window is anchored to. Null when none has been paid. */
+    last_dividend_date: string | null;
+    /** True when the server chose the window because none was requested. */
+    defaulted: boolean;
     loan_interest: number;
     treasury_income: number;
     total: number;

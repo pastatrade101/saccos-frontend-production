@@ -769,6 +769,31 @@ export function DividendsPage() {
     const [showDistributeDialog, setShowDistributeDialog] = useState(false);
     const [distAsOf, setDistAsOf] = useState("");
     const [distPool, setDistPool] = useState("");
+
+    // Income earned since members were last paid. Fetched with no dates so the
+    // server anchors the window itself — the period a SACCO wants to share out
+    // is almost always "since the last gawio", and that was the one period the
+    // screen made you look up and type by hand.
+    const [earned, setEarned] = useState<DividendPoolSuggestion | null>(null);
+    const [earnedError, setEarnedError] = useState<string | null>(null);
+
+    useEffect(() => {
+        let cancelled = false;
+        void (async () => {
+            try {
+                const { data } = await api.get<DividendPoolSuggestionResponse>(
+                    endpoints.dividends.poolSuggestion()
+                );
+                if (!cancelled) { setEarned(data.data); setEarnedError(null); }
+            } catch (error) {
+                // Not a toast: this is a convenience on a screen that works
+                // without it, and a red banner on open would suggest the
+                // distribution itself is broken.
+                if (!cancelled) setEarnedError(getApiErrorMessage(error));
+            }
+        })();
+        return () => { cancelled = true; };
+    }, []);
     const [distReference, setDistReference] = useState("");
     const [distDescription, setDistDescription] = useState("");
     const [distPreview, setDistPreview] = useState<DistributionPreview | null>(null);
@@ -1401,6 +1426,39 @@ export function DividendsPage() {
                             chosen date — lifetime contributions plus dividends already received, net of
                             withdrawals. Nothing is posted until you confirm the preview.
                         </Alert>
+
+                        {earned && earned.total > 0 ? (
+                            <Alert
+                                severity="info"
+                                variant="outlined"
+                                action={
+                                    <Button
+                                        size="small"
+                                        variant="contained"
+                                        onClick={() => {
+                                            setDistPool(String(earned.total));
+                                            setDistPreview(null);
+                                        }}
+                                    >
+                                        Use this
+                                    </Button>
+                                }
+                            >
+                                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                                    {formatCurrency(earned.total)} earned since the last gawio
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary">
+                                    Loan interest {formatCurrency(earned.loan_interest)} + UTT/treasury {formatCurrency(earned.treasury_income)}
+                                    {earned.last_dividend_date
+                                        ? ` · ${formatDate(earned.last_dividend_date)} to ${formatDate(earned.end_date)}`
+                                        : ` · everything up to ${formatDate(earned.end_date)}, no dividend paid yet`}
+                                </Typography>
+                            </Alert>
+                        ) : earnedError ? (
+                            <Alert severity="warning" variant="outlined">
+                                Couldn&apos;t work out what has been earned since the last gawio ({earnedError}). Enter the pool by hand.
+                            </Alert>
+                        ) : null}
 
                         <Grid container spacing={1.5}>
                             <Grid size={{ xs: 12, md: 3 }}>
