@@ -1698,6 +1698,9 @@ export interface LoanTransaction {
     amount: number;
     principal_component: number;
     interest_component: number;
+    /** The date the money was received. created_at is when it was keyed —
+     *  a payment taken on the 29th and entered on the 1st has both. */
+    value_date?: string | null;
     running_principal_balance: number;
     running_interest_balance: number;
     reference?: string | null;

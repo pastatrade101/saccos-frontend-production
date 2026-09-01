@@ -2097,7 +2097,7 @@ export function LoansPage() {
         const lines = [
             header.map(escape).join(","),
             ...paymentRows.map((row) => [
-                toDateInputValue(new Date(row.transaction.created_at)),
+                toDateInputValue(new Date(row.transaction.value_date || row.transaction.created_at)),
                 row.transaction.member_no || "",
                 row.transaction.member_name || "",
                 row.transaction.loan_number || "",
@@ -3356,8 +3356,12 @@ export function LoansPage() {
             key: "date",
             header: "Date",
             render: (row) => (
+                // value_date is when the money was received; created_at is
+                // when it was keyed. A payment taken on the 29th and entered
+                // on the 1st has to read as the 29th, or it lands in the
+                // wrong month on every sheet built from this list.
                 <Typography variant="body2" sx={{ fontWeight: 700, ...(row.reversed ? reversedTextSx : {}) }}>
-                    {formatDate(row.transaction.created_at)}
+                    {formatDate(row.transaction.value_date || row.transaction.created_at)}
                 </Typography>
             )
         },
