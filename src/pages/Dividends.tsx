@@ -315,6 +315,9 @@ interface DistributionPreview {
         basis: number;
         share_percent: number;
         amount: number;
+        /** The Operations Fund, which takes a share on its own balance the
+         *  way a member takes one on their savings. */
+        is_operations_fund?: boolean;
     }[];
 }
 
@@ -1666,12 +1669,20 @@ export function DividendsPage() {
                                         </TableHead>
                                         <TableBody>
                                             {distPreview.rows.map((row, index) => (
-                                                <TableRow key={row.member_id} hover>
+                                                // Keyed on member_no, not member_id: the
+                                                // Operations Fund row has no member id.
+                                                <TableRow
+                                                    key={row.member_no || row.member_id}
+                                                    hover
+                                                    sx={row.is_operations_fund ? { bgcolor: "action.hover" } : undefined}
+                                                >
                                                     <TableCell sx={{ color: "text.secondary" }}>{index + 1}</TableCell>
                                                     <TableCell>
                                                         <Typography variant="body2" sx={{ fontWeight: 600 }}>{row.full_name}</Typography>
                                                         <Typography variant="caption" color="text.secondary">
-                                                            {row.member_no}{row.savings_account_id ? "" : " · no savings account"}
+                                                            {row.is_operations_fund
+                                                                ? "Takes a share on the fund's own balance"
+                                                                : `${row.member_no}${row.savings_account_id ? "" : " · no savings account"}`}
                                                         </Typography>
                                                     </TableCell>
                                                     <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>{formatCurrency(row.basis)}</TableCell>
