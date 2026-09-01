@@ -5730,6 +5730,7 @@ export function LoansPage() {
                             </Box>
                         ) : null}
 
+                        <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
                         <TextField
                             label="Repayment Amount"
                             type="number"
@@ -5745,6 +5746,23 @@ export function LoansPage() {
                                         : undefined)
                             }
                         />
+                        {/* Beside the amount rather than below Reference: a
+                            payment keyed days later is a date somebody has to
+                            remember to change, and a field they must scroll to
+                            find is one they will not. */}
+                        <TextField
+                            type="date"
+                            label="Date received"
+                            fullWidth
+                            InputLabelProps={{ shrink: true }}
+                            inputProps={{
+                                max: new Date().toISOString().slice(0, 10),
+                                min: new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10)
+                            }}
+                            {...repayForm.register("value_date")}
+                            helperText="Blank posts today. Up to 7 days back."
+                        />
+                        </Stack>
 
                         {selectedRepaymentLoan ? (
                             <Box
@@ -5788,18 +5806,6 @@ export function LoansPage() {
                             </Box>
                         ) : null}
 
-                        <TextField
-                            type="date"
-                            label="Date received"
-                            fullWidth
-                            InputLabelProps={{ shrink: true }}
-                            inputProps={{
-                                max: new Date().toISOString().slice(0, 10),
-                                min: new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10)
-                            }}
-                            {...repayForm.register("value_date")}
-                            helperText="Leave blank for today. Backdate up to 7 days for a payment taken earlier — the audit log still records when it was keyed."
-                        />
                         <TextField
                             label="Reference"
                             fullWidth
