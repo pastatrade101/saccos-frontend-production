@@ -67,6 +67,8 @@ import {
     TableRow,
     Drawer,
     FormControlLabel,
+    RadioGroup,
+    Radio,
     Grid,
     IconButton,
     InputBase,
@@ -3719,9 +3721,15 @@ export function MemberPortalPage() {
         () => savingsAccounts.reduce((sum, account) => sum + account.locked_balance, 0),
         [savingsAccounts]
     );
-    // One loan at a time: a member who already carries a loan applies for a
-    // top-up, whose total is what they owe today plus the cash they want.
-    const isTopUpApplication = Boolean(topUpQuote?.top_up_required);
+    // The quote answers one question — does this member already carry a loan.
+    // What to do about it is theirs to choose (board decision superseding the
+    // one-loan-at-a-time rule): a second loan alongside, or a top-up whose
+    // total is what they owe today plus the cash they want. This used to read
+    // the quote as the answer to both, which silently turned every attempt at
+    // a new loan into a top-up.
+    const hasOpenLoan = Boolean(topUpQuote?.top_up_required);
+    const chosenLoanCategory = loanApplicationForm.watch("loan_category");
+    const isTopUpApplication = hasOpenLoan && chosenLoanCategory === "top_up";
     const topUpSettlement = Number(topUpQuote?.settlement_amount || 0);
     const topUpNewCash = Number(topUpNewCashInput.replace(/[^\d]/g, "")) || 0;
 
@@ -5494,12 +5502,13 @@ export function MemberPortalPage() {
                 payout_account_number: values.payout_account_number || undefined,
                 declaration_accepted: values.declaration_accepted,
                 repayment_mode: values.repayment_mode,
-                // One loan at a time: when the member already carries a loan the
-                // backend only accepts a top-up, whatever the form defaulted to.
-                loan_category: isTopUpApplication ? "top_up" : values.loan_category,
+                // The member's own choice, sent as they made it. The backend
+                // refuses an unstated category when a loan is already open
+                // rather than assuming one, so there is nothing to default here.
+                loan_category: values.loan_category,
                 top_up_of_loan_id: isTopUpApplication
                     ? (topUpQuote?.loans?.[0]?.loan_id || null)
-                    : (values.loan_category === "top_up" ? (values.top_up_of_loan_id || null) : null),
+                    : null,
                 deposit_purchase_amount: values.deposit_purchase_amount || 0,
                 application_fee_paid: values.application_fee_paid,
                 guarantors: guarantorDrafts.map((row) => ({
@@ -9312,6 +9321,59 @@ export function MemberPortalPage() {
 
                                     {isLoanDetailsStep ? (
                                         <Stack spacing={2}>
+                                    {/* The choice, only where it exists. A member with
+                                        nothing running has one option and should not be
+                                        asked to pick it. */}
+                                    {hasOpenLoan ? (
+                                        <Alert severity="info" variant="outlined">
+                                            <Typography variant="body2" sx={{ fontWeight: 700, mb: 0.5 }}>
+                                                You already have a loan — {formatCurrency(topUpSettlement)} outstanding
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ mb: 1 }}>
+                                                Choose what this application is. Both are allowed; they end
+                                                somewhere different.
+                                            </Typography>
+                                            <RadioGroup
+                                                value={chosenLoanCategory || "top_up"}
+                                                onChange={(event) =>
+                                                    loanApplicationForm.setValue(
+                                                        "loan_category",
+                                                        event.target.value as "new" | "top_up",
+                                                        { shouldValidate: true, shouldDirty: true }
+                                                    )
+                                                }
+                                            >
+                                                <FormControlLabel
+                                                    value="top_up"
+                                                    control={<Radio size="small" />}
+                                                    label={
+                                                        <Typography variant="body2">
+                                                            <strong>Top up.</strong> The {formatCurrency(topUpSettlement)} you owe is
+                                                            settled out of the new loan, so you keep one loan.
+                                                        </Typography>
+                                                    }
+                                                />
+                                                <FormControlLabel
+                                                    value="new"
+                                                    control={<Radio size="small" />}
+                                                    label={
+                                                        <Typography variant="body2">
+                                                            <strong>A second loan.</strong> The loan you have keeps running
+                                                            alongside this one, and you repay both.
+                                                        </Typography>
+                                                    }
+                                                />
+                                            </RadioGroup>
+                                            <Stack spacing={0.25} sx={{ mt: 1 }}>
+                                                {(topUpQuote?.loans || []).map((loan) => (
+                                                    <Typography key={loan.loan_id} variant="caption" color="text.secondary">
+                                                        {loan.loan_number} — {formatCurrency(loan.settle_amount)}{loan.status === "in_arrears" ? " (overdue)" : ""}
+                                                    </Typography>
+                                                ))}
+                                            </Stack>
+                                        </Alert>
+                                    ) : null}
+
                                     {isTopUpApplication ? (
                                         <Alert severity="info" variant="outlined">
                                             <Typography variant="body2" sx={{ fontWeight: 700, mb: 0.5 }}>
@@ -9330,7 +9392,11 @@ export function MemberPortalPage() {
                                         </Alert>
                                     ) : loanCapacity?.has_problem_loans ? (
                                         <Alert severity="error" variant="outlined">
-                                            You have an overdue loan. New applications are not accepted until the overdue amount is cleared.
+                                            {/* A top-up settles the overdue balance rather than
+                                                adding to it, so it stays open to them — the
+                                                backend draws the same line. */}
+                                            You have an overdue loan. You cannot take another loan alongside it, but you can
+                                            apply for a top-up, which settles what is overdue out of the new loan.
                                         </Alert>
                                     ) : null}
                                     {isTopUpApplication ? (
