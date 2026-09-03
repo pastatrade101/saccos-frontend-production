@@ -1264,6 +1264,77 @@ function ProfileField({ label, value }: { label: string; value?: string | number
     );
 }
 
+/**
+ * Where an application has reached, and what is still ahead of it.
+ *
+ * The status cell printed one word — "submitted" — which tells a member their
+ * application exists and nothing else. Every stage it passes through is
+ * already timestamped on the record and already sent to the browser; none of
+ * it was being shown. A member watching for a loan wants to know whether
+ * anyone has looked at it yet, not just that they filed it.
+ *
+ * Rejection is not a stage on this line. It ends the application wherever it
+ * happened to be, so the cell renders the reason instead and never this.
+ */
+function ApplicationProgress({ application }: { application: LoanApplication }) {
+    const stages = [
+        { key: "submitted", label: "Submitted", at: application.submitted_at },
+        { key: "appraised", label: "Appraised", at: application.appraised_at },
+        { key: "approved", label: "Approved", at: application.approved_at },
+        { key: "disbursed", label: "Paid out", at: application.disbursed_at }
+    ];
+
+    // The furthest stage that has actually happened. Timestamps rather than
+    // status, because status names only where it is now and a member wants the
+    // whole path — and because a stage can be reached without the status
+    // stopping there.
+    const doneCount = stages.filter((stage) => Boolean(stage.at)).length;
+
+    return (
+        <Stack spacing={0.75} sx={{ minWidth: 190 }}>
+            <Stack direction="row" alignItems="center" spacing={0}>
+                {stages.map((stage, index) => {
+                    const done = Boolean(stage.at);
+                    const current = !done && index === doneCount;
+                    return (
+                        <Stack key={stage.key} direction="row" alignItems="center" sx={{ flex: index === stages.length - 1 ? "0 0 auto" : 1 }}>
+                            <Box
+                                sx={{
+                                    width: 10,
+                                    height: 10,
+                                    borderRadius: "50%",
+                                    flex: "0 0 auto",
+                                    bgcolor: done ? "success.main" : "transparent",
+                                    border: done ? "none" : "2px solid",
+                                    borderColor: current ? "primary.main" : "divider"
+                                }}
+                            />
+                            {index < stages.length - 1 ? (
+                                <Box
+                                    sx={{
+                                        height: 2,
+                                        flex: 1,
+                                        mx: 0.25,
+                                        // The line to a stage is filled only when that
+                                        // stage is reached, so the fill stops exactly
+                                        // where the application has.
+                                        bgcolor: stages[index + 1].at ? "success.main" : "divider"
+                                    }}
+                                />
+                            ) : null}
+                        </Stack>
+                    );
+                })}
+            </Stack>
+            <Typography variant="caption" color="text.secondary">
+                {doneCount >= stages.length
+                    ? `Paid out ${formatDate(application.disbursed_at)}`
+                    : `${stages[doneCount - 1]?.label ?? "Started"} · next: ${stages[doneCount]?.label ?? "—"}`}
+            </Typography>
+        </Stack>
+    );
+}
+
 export function MemberPortalPage() {
     const theme = useTheme();
     const navigate = useNavigate();
@@ -4959,7 +5030,7 @@ export function MemberPortalPage() {
                         ) : null}
                     </Stack>
                 ) : (
-                    row.status.replace(/_/g, " ")
+                    <ApplicationProgress application={row} />
                 )
         },
         {
