@@ -1335,6 +1335,65 @@ function ApplicationProgress({ application }: { application: LoanApplication }) 
     );
 }
 
+/**
+ * Who the application is actually waiting on.
+ *
+ * "Submitted" says an application exists; it does not say that four people
+ * were asked to guarantee it and none have answered. That is the thing a
+ * member can do something about — the rest they can only wait for — so it is
+ * named first and by name.
+ */
+function ApplicationWaitingOn({ application }: { application: LoanApplication }) {
+    const guarantors = application.loan_guarantors || [];
+    const readiness = application.guarantor_readiness;
+    const pending = guarantors.filter((row) => row.consent_status === "pending");
+    const declined = guarantors.filter((row) => row.consent_status === "rejected");
+
+    if (application.status === "rejected" || application.status === "draft") {
+        return null;
+    }
+
+    // Guarantors first: an application does not move until they answer, and
+    // chasing them is the member's own job.
+    if (!readiness?.complete && (pending.length || declined.length || guarantors.length === 0)) {
+        return (
+            <Stack spacing={0.25}>
+                <Typography variant="caption" sx={{ fontWeight: 700, color: "warning.main" }}>
+                    {guarantors.length === 0
+                        ? "Waiting for you to add guarantors"
+                        : `Waiting for ${pending.length} guarantor${pending.length === 1 ? "" : "s"}`}
+                </Typography>
+                {pending.map((row) => (
+                    <Typography key={row.member_id} variant="caption" color="text.secondary">
+                        {row.members?.full_name || row.guarantor_name || "Member"} — hajajibu
+                    </Typography>
+                ))}
+                {declined.map((row) => (
+                    <Typography key={row.member_id} variant="caption" color="error.main">
+                        {row.members?.full_name || row.guarantor_name || "Member"} — amekataa
+                    </Typography>
+                ))}
+            </Stack>
+        );
+    }
+
+    // Then the SACCOS side, named by the step rather than the person: a member
+    // has no officer to chase, and naming one would invite them to.
+    const next = !application.appraised_at
+        ? "Waiting for the loan officer to appraise it"
+        : !application.approved_at
+            ? "Waiting for branch approval"
+            : !application.disbursed_at
+                ? "Approved — waiting to be paid out"
+                : null;
+
+    return next ? (
+        <Typography variant="caption" color="text.secondary">
+            {next}
+        </Typography>
+    ) : null;
+}
+
 export function MemberPortalPage() {
     const theme = useTheme();
     const navigate = useNavigate();
@@ -5030,7 +5089,10 @@ export function MemberPortalPage() {
                         ) : null}
                     </Stack>
                 ) : (
-                    <ApplicationProgress application={row} />
+                    <Stack spacing={0.5}>
+                        <ApplicationProgress application={row} />
+                        <ApplicationWaitingOn application={row} />
+                    </Stack>
                 )
         },
         {
