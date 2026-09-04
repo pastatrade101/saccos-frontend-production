@@ -9,6 +9,7 @@ import PlaylistAddCheckRoundedIcon from "@mui/icons-material/PlaylistAddCheckRou
 import UndoRoundedIcon from "@mui/icons-material/UndoRounded";
 import PersonAddAltRoundedIcon from "@mui/icons-material/PersonAddAltRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
+import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 import {
     Alert,
     Box,
@@ -41,6 +42,7 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 
 import { useAuth } from "../auth/AuthContext";
+import { downloadLoanApplicationForm } from "../utils/loanApplicationFormPdf";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { DataTable, type Column } from "../components/DataTable";
 import { LoanEligibilitySummary } from "../components/loan-capacity/LoanEligibilitySummary";
@@ -694,7 +696,7 @@ export function LoansPage() {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const { pushToast } = useToast();
-    const { profile, selectedTenantId, selectedBranchId, user } = useAuth();
+    const { profile, selectedTenantId, selectedTenantName, selectedBranchId, user } = useAuth();
     const [members, setMembers] = useState<Member[]>([]);
     const [loanProducts, setLoanProducts] = useState<LoanProduct[]>([]);
     const [applications, setApplications] = useState<LoanApplication[]>([]);
@@ -4958,16 +4960,75 @@ export function LoansPage() {
                                 </Grid>
                             </Grid>
 
+                            {/* Who guaranteed, and where the money goes. Both were
+                                captured on the application and neither was shown:
+                                the guarantors as a bare count, the bank account
+                                only in the disbursement dialog. Officers were
+                                phoning members back for details the member had
+                                already typed in. */}
                             <Grid container spacing={2}>
-                                <Grid size={{ xs: 12, md: 4 }}>
-                                    <TextField
-                                        label="Guarantors"
-                                        value={reviewTarget.loan_guarantors?.length || 0}
-                                        fullWidth
-                                        InputProps={{ readOnly: true }}
-                                    />
+                                <Grid size={{ xs: 12, md: 6 }}>
+                                    <Typography variant="overline" color="text.secondary">Guarantors</Typography>
+                                    {(reviewTarget.loan_guarantors || []).length ? (
+                                        <Stack spacing={0.5} sx={{ mt: 0.5 }}>
+                                            {(reviewTarget.loan_guarantors || []).map((guarantor) => (
+                                                <Stack key={guarantor.member_id} direction="row" spacing={1} justifyContent="space-between">
+                                                    <Typography variant="body2">
+                                                        {guarantor.members?.full_name || "Member"}
+                                                        {guarantor.members?.member_no ? ` · ${guarantor.members.member_no}` : ""}
+                                                    </Typography>
+                                                    <Typography
+                                                        variant="body2"
+                                                        sx={{ whiteSpace: "nowrap" }}
+                                                        color={guarantor.consent_status === "accepted"
+                                                            ? "success.main"
+                                                            : guarantor.consent_status === "rejected"
+                                                                ? "error.main"
+                                                                : "text.secondary"}
+                                                    >
+                                                        {formatCurrency(Number(guarantor.accepted_amount ?? guarantor.guaranteed_amount ?? 0))} · {guarantor.consent_status}
+                                                    </Typography>
+                                                </Stack>
+                                            ))}
+                                        </Stack>
+                                    ) : (
+                                        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                                            None recorded
+                                        </Typography>
+                                    )}
                                 </Grid>
-                                <Grid size={{ xs: 12, md: 4 }}>
+                                <Grid size={{ xs: 12, md: 6 }}>
+                                    <Typography variant="overline" color="text.secondary">Payout details</Typography>
+                                    <Stack spacing={0.25} sx={{ mt: 0.5 }}>
+                                        <Typography variant="body2">
+                                            {reviewTarget.payout_method === "bank_transfer" ? "Bank transfer" : reviewTarget.payout_method === "cash" ? "Cash" : (reviewTarget.payout_method || "—")}
+                                        </Typography>
+                                        {reviewTarget.payout_bank_name ? (
+                                            <Typography variant="body2" color="text.secondary">
+                                                {reviewTarget.payout_bank_name}
+                                                {reviewTarget.payout_bank_branch ? ` — ${reviewTarget.payout_bank_branch}` : ""}
+                                            </Typography>
+                                        ) : null}
+                                        {reviewTarget.payout_account_name ? (
+                                            <Typography variant="body2" color="text.secondary">
+                                                {reviewTarget.payout_account_name}
+                                            </Typography>
+                                        ) : null}
+                                        {reviewTarget.payout_account_number ? (
+                                            <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                                                {reviewTarget.payout_account_number}
+                                            </Typography>
+                                        ) : null}
+                                        <Typography variant="body2" color="text.secondary">
+                                            Repayment: {reviewTarget.requested_term_count} {reviewTarget.requested_repayment_frequency === "monthly" ? "months" : reviewTarget.requested_repayment_frequency}
+                                            {reviewTarget.repayment_mode ? ` · ${reviewTarget.repayment_mode.replace(/_/g, " ")}` : ""}
+                                        </Typography>
+                                    </Stack>
+                                </Grid>
+                            </Grid>
+
+                            <Grid container spacing={2}>
+                                <Grid size={{ xs: 12, md: 6 }}>
                                     <TextField
                                         label="Collateral Items"
                                         value={reviewTarget.collateral_items?.length || 0}
@@ -5034,6 +5095,21 @@ export function LoansPage() {
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setReviewTarget(null)}>Close</Button>
+                    {/* The completed form, as filed. Everything the member
+                        entered in one printable page, so nobody has to ring
+                        them back for an account number they already gave. */}
+                    {reviewTarget ? (
+                        <Button
+                            startIcon={<DownloadRoundedIcon />}
+                            onClick={() => downloadLoanApplicationForm({
+                                application: reviewTarget,
+                                tenantName: selectedTenantName,
+                                generatedBy: profile?.full_name || user?.email || null
+                            })}
+                        >
+                            Download Form
+                        </Button>
+                    ) : null}
                     {reviewTarget
                     && reviewTarget.status === "submitted"
                     && canReject ? (
