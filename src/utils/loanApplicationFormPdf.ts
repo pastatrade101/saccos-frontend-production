@@ -87,6 +87,11 @@ export function buildLoanApplicationFormPdf(payload: LoanApplicationFormPayload)
     const applicant: [string, string][] = [
         ["Member", text(member?.full_name)],
         ["Member number", text(member?.member_no)],
+        // The officer works this form with a phone in the other hand: chasing a
+        // missing document, confirming an account, telling somebody their loan
+        // is ready. Making them go back to the member record for the number was
+        // the whole complaint.
+        ["Phone", text(member?.phone)],
         ["Application date", day(application.submitted_at || application.created_at)],
         ["Purpose", text(application.purpose)]
     ];
@@ -157,17 +162,18 @@ export function buildLoanApplicationFormPdf(payload: LoanApplicationFormPayload)
 
     autoTable(doc, {
         startY: cursor,
-        head: [["Guarantor", "Member no.", "Amount", "Consent"]],
+        head: [["Guarantor", "Member no.", "Phone", "Amount", "Consent"]],
         body: guarantors.length
             ? guarantors.map((row) => [
                 text(row.members?.full_name),
                 text(row.members?.member_no),
+                text(row.members?.phone),
                 money(row.accepted_amount ?? row.guaranteed_amount),
                 label(row.consent_status)
             ])
-            : [["No guarantors recorded", "", "", ""]],
+            : [["No guarantors recorded", "", "", "", ""]],
         foot: required > 0
-            ? [["Accepted", "", money(accepted), `of ${money(required)}`]]
+            ? [["Accepted", "", "", money(accepted), `of ${money(required)}`]]
             : undefined,
         theme: "grid",
         margin: { left: MARGIN, right: MARGIN },

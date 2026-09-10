@@ -688,7 +688,7 @@ export interface LoanGuarantor {
     consented_at?: string | null;
     notes?: string | null;
     guarantor_name?: string | null;
-    members?: Pick<Member, "id" | "full_name" | "member_no"> | null;
+    members?: Pick<Member, "id" | "full_name" | "member_no" | "phone"> | null;
 }
 
 export interface GuarantorReadiness {
