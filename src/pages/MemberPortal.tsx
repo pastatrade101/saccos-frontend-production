@@ -5582,6 +5582,16 @@ export function MemberPortalPage() {
             hasClientValidationError = true;
         }
 
+        // The same rule the server applies, surfaced on the field so the member
+        // sees it where they can fix it rather than as a rejected submission.
+        // On submission only, so filling the form in stages still saves.
+        if (options.submitAfterSave && !values.payout_account_number?.trim()) {
+            loanApplicationForm.setError("payout_account_number", {
+                message: tr("Enter your bank account number.", "Weka namba ya akaunti yako ya benki.")
+            });
+            hasClientValidationError = true;
+        }
+
         if (hasClientValidationError) {
             return;
         }
@@ -9912,6 +9922,19 @@ export function MemberPortalPage() {
                                                 <MenuItem value="direct_deposit">Direct deposit to my account</MenuItem>
                                                 <MenuItem value="bank_transfer">Bank transfer (IFT / EFT / RTGS)</MenuItem>
                                             </TextField>
+                                            {/* The account number is asked of everybody, cash included: the
+                                                board wants it for evaluation and processing, not only as a
+                                                destination for the money. It used to live inside the block below,
+                                                which is hidden for cash — so a cash applicant had nowhere to
+                                                enter the number the server now requires of them. */}
+                                            <TextField
+                                                fullWidth
+                                                required
+                                                label="Account number"
+                                                error={Boolean(loanApplicationForm.formState.errors.payout_account_number)}
+                                                helperText={loanApplicationForm.formState.errors.payout_account_number?.message}
+                                                {...loanApplicationForm.register("payout_account_number")}
+                                            />
                                             {loanApplicationForm.watch("payout_method") !== "cash" ? (
                                                 <Grid container spacing={1.5}>
                                                     <Grid size={{ xs: 12, sm: 6 }}>
@@ -9923,13 +9946,11 @@ export function MemberPortalPage() {
                                                     <Grid size={{ xs: 12, sm: 6 }}>
                                                         <TextField fullWidth label="Account name" {...loanApplicationForm.register("payout_account_name")} />
                                                     </Grid>
-                                                    <Grid size={{ xs: 12, sm: 6 }}>
-                                                        <TextField fullWidth label="Account number" {...loanApplicationForm.register("payout_account_number")} />
-                                                    </Grid>
                                                 </Grid>
                                             ) : null}
                                             <Typography variant="caption" color="text.secondary">
                                                 Disbursement is processed manually by the teller — these details tell them how to pay you.
+                                                Your account number is kept on file for evaluation even when you are paid in cash.
                                             </Typography>
                                         </Stack>
                                     </Paper>
