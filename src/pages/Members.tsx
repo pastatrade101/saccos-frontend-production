@@ -5,6 +5,7 @@ import BadgeRoundedIcon from "@mui/icons-material/BadgeRounded";
 import CreditScoreRoundedIcon from "@mui/icons-material/CreditScoreRounded";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
+import FileDownloadRoundedIcon from "@mui/icons-material/FileDownloadRounded";
 import InsightsRoundedIcon from "@mui/icons-material/InsightsRounded";
 import LockPersonRoundedIcon from "@mui/icons-material/LockPersonRounded";
 import LoginRoundedIcon from "@mui/icons-material/LoginRounded";
@@ -32,6 +33,7 @@ import {
     FormControlLabel,
     Grid,
     InputAdornment,
+    Menu,
     MenuItem,
     Pagination,
     Paper,
@@ -58,6 +60,12 @@ import { AppLoader } from "../components/AppLoader";
 import { DataTable, type Column } from "../components/DataTable";
 import { HeirsSection } from "../components/member-portal/HeirsSection";
 import { useToast } from "../components/Toast";
+import {
+    COHORT_LABEL,
+    downloadMemberRegistryExcel,
+    memberCohort,
+    type MemberCohort
+} from "../utils/memberRegistryExport";
 import { api, getApiErrorMessage } from "../lib/api";
 import {
     type BranchesListResponse,
@@ -78,6 +86,7 @@ import {
     type ProductBootstrapResponse,
     type ResetMemberPasswordRequest,
     type ResetMemberPasswordResponse,
+    type ShareCapitalSettingsResponse,
     type TemporaryCredentialResponse,
     type UpdateMemberRequest,
     type UpdateMemberResponse
@@ -464,6 +473,8 @@ export function MembersPage() {
     const [viewAll, setViewAll] = useState(false);
     const [serverTotalMembers, setServerTotalMembers] = useState(0);
     const [serverSummary, setServerSummary] = useState<MembersSummaryData | null>(null);
+    const [exportAnchor, setExportAnchor] = useState<HTMLElement | null>(null);
+    const [exportingCohort, setExportingCohort] = useState<MemberCohort | "all" | null>(null);
     const deferredSearch = useDeferredValue(search);
     const pageSize = 8;
     // "View all" loads every member in one page so the count can be eyeballed.
@@ -1204,6 +1215,76 @@ export function MembersPage() {
 
     const isSuperAdmin = profile?.role === "super_admin";
 
+    /**
+     * The registrar's member sheet, for a whole cohort.
+     *
+     * Deliberately fetches its own rows rather than exporting what is on
+     * screen: the table is paginated and filtered, so the visible `members`
+     * array is usually eight people. A register that silently exported the
+     * current page would be worse than no register at all.
+     */
+    const handleExportRegistry = async (cohort: MemberCohort | "all") => {
+        setExportAnchor(null);
+        if (!selectedTenantId) return;
+
+        setExportingCohort(cohort);
+        try {
+            const pageLimit = 500;
+            const collected: Member[] = [];
+            for (let pageNumber = 1; ; pageNumber += 1) {
+                const { data } = await api.get<MembersResponse>(endpoints.members.list(), {
+                    params: { tenant_id: selectedTenantId, page: pageNumber, limit: pageLimit }
+                });
+                const batch = data.data || [];
+                collected.push(...batch);
+                if (batch.length < pageLimit) break;
+            }
+
+            // The share count comes from the board's own settings rather than a
+            // constant, so a future change to the requirement reaches the sheet
+            // without anybody remembering this file exists.
+            const { data: shareSettings } = await api.get<ShareCapitalSettingsResponse>(
+                endpoints.saccoSettings.shareCapital(),
+                { params: { tenant_id: selectedTenantId } }
+            );
+            const requiredShares = Number(shareSettings.data?.current?.required_shares || 0);
+
+            const rowCount = cohort === "all"
+                ? collected.length
+                : collected.filter((member) => memberCohort(member) === cohort).length;
+
+            if (!rowCount) {
+                pushToast({
+                    type: "info",
+                    title: "Nothing to export",
+                    message: `No members fall under "${cohort === "all" ? "All members" : COHORT_LABEL[cohort]}".`
+                });
+                return;
+            }
+
+            await downloadMemberRegistryExcel({
+                members: collected,
+                cohort,
+                requiredShares,
+                tenantName: selectedTenantName
+            });
+
+            pushToast({
+                type: "success",
+                title: "Register exported",
+                message: `${rowCount} member(s) — ${cohort === "all" ? "all members" : COHORT_LABEL[cohort].toLowerCase()}.`
+            });
+        } catch (error) {
+            pushToast({
+                type: "error",
+                title: "Export failed",
+                message: getApiErrorMessage(error)
+            });
+        } finally {
+            setExportingCohort(null);
+        }
+    };
+
     const handleImpersonate = async (member: MemberWithAccount) => {
         setImpersonatingMemberId(member.id);
         try {
@@ -1872,7 +1953,35 @@ export function MembersPage() {
                                                         Update Existing
                                                     </Button>
                                                 </Grid>
+                                                <Grid size={{ xs: 12, sm: 6 }}>
+                                                    <Button
+                                                        fullWidth
+                                                        variant="outlined"
+                                                        disabled={exportingCohort !== null}
+                                                        startIcon={<FileDownloadRoundedIcon />}
+                                                        onClick={(event) => setExportAnchor(event.currentTarget)}
+                                                        sx={{ justifyContent: "flex-start", py: 1.15, borderRadius: 1.5 }}
+                                                    >
+                                                        {exportingCohort ? "Exporting…" : "Export Register"}
+                                                    </Button>
+                                                </Grid>
                                             </Grid>
+
+                                            <Menu
+                                                anchorEl={exportAnchor}
+                                                open={Boolean(exportAnchor)}
+                                                onClose={() => setExportAnchor(null)}
+                                            >
+                                                <MenuItem onClick={() => handleExportRegistry("founder")}>
+                                                    {COHORT_LABEL.founder}
+                                                </MenuItem>
+                                                <MenuItem onClick={() => handleExportRegistry("new")}>
+                                                    {COHORT_LABEL.new}
+                                                </MenuItem>
+                                                <MenuItem onClick={() => handleExportRegistry("all")}>
+                                                    All members
+                                                </MenuItem>
+                                            </Menu>
                                         </Stack>
                                     </Box>
                                 </Grid>

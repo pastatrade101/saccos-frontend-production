@@ -497,6 +497,14 @@ export interface Member {
     branch_id: string;
     user_id?: string | null;
     full_name: string;
+    /**
+     * Sent by the API on every member read, but added after the first import,
+     * so a record can carry only a full_name. Anything rendering a split name
+     * needs a fallback to splitting full_name.
+     */
+    first_name?: string | null;
+    middle_name?: string | null;
+    last_name?: string | null;
     gender?: "male" | "female" | "other" | null;
     marital_status?: "single" | "married" | "divorced" | "widowed" | null;
     occupation?: string | null;
