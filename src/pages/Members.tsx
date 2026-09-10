@@ -142,7 +142,7 @@ type MemberWithAccount = Member & { account?: MemberAccount | null };
  * these rows means nothing saved rather than nothing known.
  */
 interface MemberPositionsExportData {
-    rows: { member_no: string | null; savings_balance: number }[];
+    rows: { member_no: string | null; savings_balance: number; share_balance: number }[];
 }
 
 const provisionAccountSchema = z.object({
@@ -1261,24 +1261,27 @@ export function MembersPage() {
             );
             const requiredShares = Number(shareSettings.data?.current?.required_shares || 0);
 
-            // What each member actually holds in savings today, as Member
-            // Positions reports it. Restricted to super admins, branch managers
-            // and auditors, so a caller without that access still gets the
-            // sheet — with the column blank rather than a wrong zero, since a
-            // blank says "not available" and a zero says "saved nothing".
-            let savingsByMemberNo: Map<string, number> | undefined;
+            // What each member actually holds today, as Member Positions
+            // reports it. Restricted to super admins, branch managers and
+            // auditors, so a caller without that access still gets the sheet —
+            // with the money columns blank rather than a wrong zero, since a
+            // blank says "not available" and a zero says "holds nothing".
+            let positionsByMemberNo: Map<string, { savings: number; shares: number }> | undefined;
             try {
                 const { data: positions } = await api.get<{ data: MemberPositionsExportData }>(
                     endpoints.allReports.memberPositions(),
                     { params: { tenant_id: selectedTenantId } }
                 );
-                savingsByMemberNo = new Map(
+                positionsByMemberNo = new Map(
                     (positions.data?.rows || [])
                         .filter((row) => row.member_no)
-                        .map((row) => [row.member_no as string, Number(row.savings_balance || 0)])
+                        .map((row) => [
+                            row.member_no as string,
+                            { savings: Number(row.savings_balance || 0), shares: Number(row.share_balance || 0) }
+                        ])
                 );
             } catch {
-                savingsByMemberNo = undefined;
+                positionsByMemberNo = undefined;
             }
 
             const rowCount = cohort === "all"
@@ -1298,16 +1301,16 @@ export function MembersPage() {
                 members: collected,
                 cohort,
                 requiredShares,
-                savingsByMemberNo,
+                positionsByMemberNo,
                 tenantName: selectedTenantName
             });
 
             pushToast({
-                type: savingsByMemberNo ? "success" : "info",
+                type: positionsByMemberNo ? "success" : "info",
                 title: "Register exported",
-                message: savingsByMemberNo
+                message: positionsByMemberNo
                     ? `${rowCount} member(s) — ${cohort === "all" ? "all members" : COHORT_LABEL[cohort].toLowerCase()}.`
-                    : `${rowCount} member(s), but savings could not be read — that column is blank.`
+                    : `${rowCount} member(s), but savings and shares could not be read — those columns are blank.`
             });
         } catch (error) {
             pushToast({

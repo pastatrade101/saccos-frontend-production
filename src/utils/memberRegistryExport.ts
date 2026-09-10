@@ -23,7 +23,14 @@ const HEADERS = [
     "email",
     "gender",
     "nin",
-    "registrationType"
+    "registrationType",
+    // Appended after the registrar's thirteen rather than beside noOfShares,
+    // which is where it belongs by meaning. Their importer reads a fixed
+    // template, so the columns it knows about must keep both their names and
+    // their positions; a fourteenth on the end is ignored by a positional
+    // reader and can be deleted before filing. noOfShares is a count of shares
+    // owed, this is the money actually held against them.
+    "shareAmount"
 ] as const;
 
 /**
@@ -128,21 +135,21 @@ export interface MemberRegistryExportPayload {
      */
     requiredShares: number;
     /**
-     * All-time savings per member number, as the Contributions Summary reports
-     * it — contributions in, less withdrawals and reversals. Keyed by member
-     * number rather than id because that is what the report returns, and it is
-     * unique within a tenant.
+     * What each member holds today, per member number, as Member Positions
+     * reports it: "In savings" and "In shares". Keyed by member number rather
+     * than id because that is what the report returns, and it is unique within
+     * a tenant.
      *
      * Optional: the report is restricted to super admins, branch managers and
-     * auditors, so a caller without that access exports the sheet with the
-     * column blank rather than not at all.
+     * auditors, so a caller without that access exports the sheet with both
+     * money columns blank rather than not at all.
      */
-    savingsByMemberNo?: Map<string, number>;
+    positionsByMemberNo?: Map<string, { savings: number; shares: number }>;
     tenantName?: string | null;
 }
 
 export function buildMemberRegistryRows(payload: MemberRegistryExportPayload): (string | number)[][] {
-    const { members, cohort, requiredShares, savingsByMemberNo } = payload;
+    const { members, cohort, requiredShares, positionsByMemberNo } = payload;
 
     const selected = cohort === "all"
         ? members
@@ -153,6 +160,14 @@ export function buildMemberRegistryRows(payload: MemberRegistryExportPayload): (
         .sort((left, right) => (left.member_no || "").localeCompare(right.member_no || ""))
         .map((member) => {
             const { firstName, middleName, lastName } = splitMemberName(member);
+            // Numbers rather than formatted strings, so the recipient can sum
+            // and sort the columns. A member holding nothing gets a real 0,
+            // which is the answer to the question the column asks; a blank
+            // means the figure was not available to whoever ran the export.
+            const held = positionsByMemberNo?.get(member.member_no || "");
+            const savings = positionsByMemberNo ? Number(held?.savings || 0) : "";
+            const shares = positionsByMemberNo ? Number(held?.shares || 0) : "";
+
             return [
                 firstName,
                 middleName,
@@ -161,18 +176,13 @@ export function buildMemberRegistryRows(payload: MemberRegistryExportPayload): (
                 member.tin_no || "",
                 flatten(member.residential_address || member.address_line1),
                 isoDate(member.dob),
-                // Left as a number, not a formatted string, so the recipient can
-                // sum and sort the column. A member with nothing saved gets a
-                // real 0 rather than a gap, which is the answer to the question
-                // the column asks; a blank means the figure was unavailable.
-                savingsByMemberNo
-                    ? Number(savingsByMemberNo.get(member.member_no || "") || 0)
-                    : "",
+                savings,
                 requiredShares,
                 member.email || "",
                 (member.gender || "").toUpperCase(),
                 nationalIdNumber(member),
-                "MEMBER"
+                "MEMBER",
+                shares
             ];
         });
 }
@@ -188,8 +198,8 @@ export async function downloadMemberRegistryExcel(payload: MemberRegistryExportP
 
     sheet["!cols"] = [
         { wch: 18 }, { wch: 18 }, { wch: 20 }, { wch: 16 }, { wch: 14 },
-        { wch: 28 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 26 },
-        { wch: 10 }, { wch: 22 }, { wch: 18 }
+        { wch: 28 }, { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 26 },
+        { wch: 10 }, { wch: 22 }, { wch: 18 }, { wch: 16 }
     ];
 
     const workbook = XLSX.utils.book_new();
