@@ -133,6 +133,18 @@ const schema = z.object({
 type MemberFormValues = z.infer<typeof schema>;
 type MemberWithAccount = Member & { account?: MemberAccount | null };
 
+/**
+ * The two fields the register export needs out of Member Positions.
+ *
+ * Narrower than the report's own row on purpose: this page has no business
+ * knowing about dividends or the operations sweep, and the report drops any
+ * member whose cumulative position is zero, so a member number missing from
+ * these rows means nothing saved rather than nothing known.
+ */
+interface MemberPositionsExportData {
+    rows: { member_no: string | null; savings_balance: number }[];
+}
+
 const provisionAccountSchema = z.object({
     product_type: z.enum(["savings", "shares"]).default("savings"),
     savings_product_id: z.string().optional().or(z.literal("")),
@@ -1249,6 +1261,26 @@ export function MembersPage() {
             );
             const requiredShares = Number(shareSettings.data?.current?.required_shares || 0);
 
+            // What each member actually holds in savings today, as Member
+            // Positions reports it. Restricted to super admins, branch managers
+            // and auditors, so a caller without that access still gets the
+            // sheet — with the column blank rather than a wrong zero, since a
+            // blank says "not available" and a zero says "saved nothing".
+            let savingsByMemberNo: Map<string, number> | undefined;
+            try {
+                const { data: positions } = await api.get<{ data: MemberPositionsExportData }>(
+                    endpoints.allReports.memberPositions(),
+                    { params: { tenant_id: selectedTenantId } }
+                );
+                savingsByMemberNo = new Map(
+                    (positions.data?.rows || [])
+                        .filter((row) => row.member_no)
+                        .map((row) => [row.member_no as string, Number(row.savings_balance || 0)])
+                );
+            } catch {
+                savingsByMemberNo = undefined;
+            }
+
             const rowCount = cohort === "all"
                 ? collected.length
                 : collected.filter((member) => memberCohort(member) === cohort).length;
@@ -1266,13 +1298,16 @@ export function MembersPage() {
                 members: collected,
                 cohort,
                 requiredShares,
+                savingsByMemberNo,
                 tenantName: selectedTenantName
             });
 
             pushToast({
-                type: "success",
+                type: savingsByMemberNo ? "success" : "info",
                 title: "Register exported",
-                message: `${rowCount} member(s) — ${cohort === "all" ? "all members" : COHORT_LABEL[cohort].toLowerCase()}.`
+                message: savingsByMemberNo
+                    ? `${rowCount} member(s) — ${cohort === "all" ? "all members" : COHORT_LABEL[cohort].toLowerCase()}.`
+                    : `${rowCount} member(s), but savings could not be read — that column is blank.`
             });
         } catch (error) {
             pushToast({

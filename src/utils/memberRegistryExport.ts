@@ -127,11 +127,22 @@ export interface MemberRegistryExportPayload {
      * price twice already and will change the count eventually.
      */
     requiredShares: number;
+    /**
+     * All-time savings per member number, as the Contributions Summary reports
+     * it — contributions in, less withdrawals and reversals. Keyed by member
+     * number rather than id because that is what the report returns, and it is
+     * unique within a tenant.
+     *
+     * Optional: the report is restricted to super admins, branch managers and
+     * auditors, so a caller without that access exports the sheet with the
+     * column blank rather than not at all.
+     */
+    savingsByMemberNo?: Map<string, number>;
     tenantName?: string | null;
 }
 
 export function buildMemberRegistryRows(payload: MemberRegistryExportPayload): (string | number)[][] {
-    const { members, cohort, requiredShares } = payload;
+    const { members, cohort, requiredShares, savingsByMemberNo } = payload;
 
     const selected = cohort === "all"
         ? members
@@ -150,11 +161,13 @@ export function buildMemberRegistryRows(payload: MemberRegistryExportPayload): (
                 member.tin_no || "",
                 flatten(member.residential_address || member.address_line1),
                 isoDate(member.dob),
-                // The registrar's template carries this column but the SACCO
-                // does not file a figure in it, so it is deliberately left for
-                // them to complete rather than guessed at from a savings
-                // balance whose meaning here is not established.
-                "",
+                // Left as a number, not a formatted string, so the recipient can
+                // sum and sort the column. A member with nothing saved gets a
+                // real 0 rather than a gap, which is the answer to the question
+                // the column asks; a blank means the figure was unavailable.
+                savingsByMemberNo
+                    ? Number(savingsByMemberNo.get(member.member_no || "") || 0)
+                    : "",
                 requiredShares,
                 member.email || "",
                 (member.gender || "").toUpperCase(),
