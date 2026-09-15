@@ -7156,6 +7156,7 @@ export function MemberPortalPage() {
             <MemberLoanWorkspaceCard
                 selectedLoan={selectedLoan}
                 loans={filteredLoans}
+                allLoans={loans}
                 loanSchedules={loanSchedules}
                 loanTransactions={loanTransactions}
                 loanDetailId={loanDetailId}

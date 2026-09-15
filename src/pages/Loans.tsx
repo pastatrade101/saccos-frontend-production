@@ -49,6 +49,7 @@ import { LoanEligibilitySummary } from "../components/loan-capacity/LoanEligibil
 import { SearchableSelect } from "../components/SearchableSelect";
 import { TwoFactorStepUpDialog, type TwoFactorStepUpPayload } from "../components/TwoFactorStepUpDialog";
 import { useToast } from "../components/Toast";
+import { topUpBreakdown } from "../utils/loanLineage";
 import { api, getApiErrorCode, getApiErrorDetails, getApiErrorMessage } from "../lib/api";
 import {
     endpoints,
@@ -3188,6 +3189,7 @@ export function LoansPage() {
             header: "Loan",
             render: (row) => {
                 const member = members.find((entry) => entry.id === row.member_id);
+                const loanTopUp = topUpBreakdown(row);
 
                 return (
                     <Stack spacing={0.25}>
@@ -3202,6 +3204,20 @@ export function LoansPage() {
                         <Typography variant="caption" color="text.secondary">
                             {member?.full_name || "Unknown member"}
                         </Typography>
+                        {/* A top-up's principal is not what the member received, and a
+                            closed loan in a chain was not repaid — neither was visible
+                            from the list, so both are said here rather than only on the
+                            detail screen. */}
+                        {loanTopUp ? (
+                            <Typography variant="caption" color="text.secondary">
+                                Top-up · {formatCurrency(loanTopUp.newCash)} released
+                            </Typography>
+                        ) : null}
+                        {row.superseded_by_loan_id ? (
+                            <Typography variant="caption" color="text.secondary">
+                                Replaced by a later top-up
+                            </Typography>
+                        ) : null}
                     </Stack>
                 );
             }

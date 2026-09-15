@@ -24,6 +24,8 @@ import { useAuth } from "../auth/AuthContext";
 import { AppLoader } from "../components/AppLoader";
 import { DataTable, type Column } from "../components/DataTable";
 import { useToast } from "../components/Toast";
+import { LoanTopUpSummary } from "../components/loans/LoanTopUpSummary";
+import { topUpBreakdown } from "../utils/loanLineage";
 import { api, getApiErrorMessage } from "../lib/api";
 import {
     endpoints,
@@ -158,7 +160,15 @@ export function LoanDetailPage() {
     const [member, setMember] = useState<Member | null>(null);
     const [schedules, setSchedules] = useState<LoanSchedule[]>([]);
     const [transactions, setTransactions] = useState<LoanTransaction[]>([]);
+    // Every loan this member has had, so a top-up chain can be walked in both
+    // directions. The loan itself is fetched by id and knows only its successor.
+    const [memberLoans, setMemberLoans] = useState<Loan[]>([]);
     const [loading, setLoading] = useState(true);
+
+    // "Original disbursed amount" is false for a top-up: most of the facility
+    // is paid straight back out to settle the loan it replaced and never
+    // reaches the member.
+    const loanTopUp = useMemo(() => topUpBreakdown(loan), [loan]);
 
     useEffect(() => {
         const loadLoanDetails = async () => {
@@ -190,6 +200,16 @@ export function LoanDetailPage() {
 
                 setLoan(resolvedLoan);
                 setMember(resolvedMember);
+
+                if (resolvedLoan?.member_id) {
+                    const { data: memberLoansResponse } = await api.get<LoansResponse>(
+                        endpoints.finance.loanPortfolio(),
+                        { params: { tenant_id: selectedTenantId, member_id: resolvedLoan.member_id, page: 1, limit: 100 } }
+                    );
+                    setMemberLoans(memberLoansResponse.data || []);
+                } else {
+                    setMemberLoans([]);
+                }
                 setSchedules(schedulesResponse.data || []);
                 setTransactions(transactionsResponse.data || []);
             } catch (error) {
@@ -636,8 +656,10 @@ export function LoanDetailPage() {
                     <MetricCard
                         title="Principal"
                         value={formatCurrency(loan.principal_amount)}
-                        helper="Original disbursed amount."
-                        status="Booked value"
+                        helper={loanTopUp
+                            ? `${formatCurrency(loanTopUp.newCash)} reached the member; ${formatCurrency(loanTopUp.settlement)} settled the previous loan.`
+                            : "Original disbursed amount."}
+                        status={loanTopUp ? "Top-up facility" : "Booked value"}
                         tone="neutral"
                         icon={<CreditScoreRoundedIcon fontSize="small" />}
                     />
@@ -673,6 +695,12 @@ export function LoanDetailPage() {
                     />
                 </Grid>
             </Grid>
+
+            <LoanTopUpSummary
+                loan={loan}
+                memberLoans={memberLoans}
+                onOpenLoan={(id) => navigate(`/loans/${id}`)}
+            />
 
             <Grid container spacing={1.5}>
                 <Grid size={{ xs: 12, lg: 7 }}>

@@ -6,6 +6,7 @@ import PrintRoundedIcon from "@mui/icons-material/PrintRounded";
 import ScheduleRoundedIcon from "@mui/icons-material/ScheduleRounded";
 import TaskAltRoundedIcon from "@mui/icons-material/TaskAltRounded";
 import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
+import { LoanTopUpSummary } from "../loans/LoanTopUpSummary";
 import {
     Alert,
     Box,
@@ -39,6 +40,12 @@ import { formatMonthlyLoanRate } from "../../utils/loanInterest";
 interface MemberLoanWorkspaceCardProps {
     selectedLoan: Loan | null;
     loans: Loan[];
+    /**
+     * Every loan the member has ever had, unfiltered. `loans` above is the
+     * date-filtered list the picker shows; a top-up chain has to be walked
+     * across all of them or a date range would hide half the history.
+     */
+    allLoans: Loan[];
     loanSchedules: LoanSchedule[];
     loanTransactions: LoanTransaction[];
     loanDetailId: string;
@@ -203,6 +210,7 @@ function LoanMiniMetric({
 export function MemberLoanWorkspaceCard({
     selectedLoan,
     loans,
+    allLoans,
     loanSchedules,
     loanTransactions,
     loanDetailId,
@@ -582,6 +590,12 @@ export function MemberLoanWorkspaceCard({
                     `selectedLoanTransactions` into a single "last paid" chip — so the
                     detail a member actually reconciles against a paper receipt never
                     reached the page. Matches the mobile loan detail screen. */}
+                {selectedLoan ? (
+                    <Box sx={{ mt: 2.25 }}>
+                        <LoanTopUpSummary loan={selectedLoan} memberLoans={allLoans} audience="member" />
+                    </Box>
+                ) : null}
+
                 {selectedLoan ? (
                     <>
                         <Divider sx={{ my: 2.5 }} />

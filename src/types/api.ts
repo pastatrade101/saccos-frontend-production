@@ -1668,6 +1668,28 @@ export interface Loan {
     last_interest_accrual_at?: string | null;
     disbursed_at?: string | null;
     created_at: string;
+    application_id?: string | null;
+    /**
+     * Set when a top-up replaced this loan: the facility that settled it and
+     * carried the balance forward. The reverse direction is not stored — find
+     * the loan this one replaced by looking for the member's loan whose
+     * superseded_by_loan_id is this one.
+     */
+    superseded_by_loan_id?: string | null;
+    /** "top_up" when a top-up closed it, rather than the member paying it off. */
+    closure_reason?: string | null;
+    /**
+     * The application this loan was booked from, for the top-up split.
+     * principal_amount is the whole facility; top_up_settlement_amount went
+     * straight back out to clear the old loan and only top_up_new_cash_amount
+     * reached the member.
+     */
+    loan_applications?: {
+        external_reference?: string | null;
+        loan_category?: "new" | "top_up" | null;
+        top_up_settlement_amount?: number | null;
+        top_up_new_cash_amount?: number | null;
+    } | null;
 }
 
 export interface LoanSchedule {
