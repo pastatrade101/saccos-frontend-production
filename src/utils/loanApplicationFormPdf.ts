@@ -3,6 +3,7 @@ import autoTable from "jspdf-autotable";
 
 import type { LoanApplication } from "../types/api";
 import { formatMonthlyLoanRate } from "./loanInterest";
+import { applicationTopUpBreakdown } from "./loanLineage";
 
 /**
  * The completed application, as a form that can be printed or filed.
@@ -120,6 +121,15 @@ export function buildLoanApplicationFormPdf(payload: LoanApplicationFormPayload)
         ["Repayment mode", label(application.repayment_mode)],
         ["Application type", application.loan_category === "top_up" ? "Top-up of an existing loan" : "New loan"]
     ];
+
+    // On a top-up the requested amount is not what anybody hands over: most of
+    // it settles the loan being replaced. A filed form showing only the gross
+    // is what sends a teller to the safe for the wrong figure.
+    const topUp = applicationTopUpBreakdown(application);
+    if (topUp) {
+        terms.push(["Settles existing loan", money(topUp.settlement)]);
+        terms.push(["Released to member", money(topUp.newCash)]);
+    }
 
     autoTable(doc, {
         startY: cursor,

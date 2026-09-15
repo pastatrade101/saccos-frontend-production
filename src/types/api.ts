@@ -1237,6 +1237,13 @@ export interface LoanApplication {
     repayment_mode?: "check_off" | "standing_order" | null;
     loan_category?: "new" | "top_up" | null;
     top_up_of_loan_id?: string | null;
+    /**
+     * How the requested amount divides on a top-up. requested_amount is the
+     * whole facility; the settlement goes straight back out to clear the loan
+     * being replaced and only the new cash is handed over.
+     */
+    top_up_settlement_amount?: number | null;
+    top_up_new_cash_amount?: number | null;
     deposit_purchase_amount?: number | null;
     application_fee_paid?: boolean | null;
     attachments?: LoanApplicationAttachment[];

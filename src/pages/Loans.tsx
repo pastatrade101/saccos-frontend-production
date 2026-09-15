@@ -49,7 +49,7 @@ import { LoanEligibilitySummary } from "../components/loan-capacity/LoanEligibil
 import { SearchableSelect } from "../components/SearchableSelect";
 import { TwoFactorStepUpDialog, type TwoFactorStepUpPayload } from "../components/TwoFactorStepUpDialog";
 import { useToast } from "../components/Toast";
-import { topUpBreakdown } from "../utils/loanLineage";
+import { applicationTopUpBreakdown, topUpBreakdown } from "../utils/loanLineage";
 import { api, getApiErrorCode, getApiErrorDetails, getApiErrorMessage } from "../lib/api";
 import {
     endpoints,
@@ -713,11 +713,20 @@ export function LoansPage() {
     const [runningDefaultDetection, setRunningDefaultDetection] = useState(false);
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [reviewTarget, setReviewTarget] = useState<LoanApplication | null>(null);
+    // What the officer is actually approving, and the teller actually paying.
+    const reviewTopUp = useMemo(() => applicationTopUpBreakdown(reviewTarget), [reviewTarget]);
     const [appraisalTarget, setAppraisalTarget] = useState<LoanApplication | null>(null);
     const [appraisalGuarantors, setAppraisalGuarantors] = useState<Array<Pick<LoanGuarantor, "member_id" | "guaranteed_amount" | "notes">>>([]);
     const [approvalTarget, setApprovalTarget] = useState<LoanApplication | null>(null);
     const [rejectionTarget, setRejectionTarget] = useState<LoanApplication | null>(null);
     const [disbursementTarget, setDisbursementTarget] = useState<LoanApplication | null>(null);
+    const disbursementTopUp = useMemo(() => applicationTopUpBreakdown(disbursementTarget), [disbursementTarget]);
+    // What the loan will actually be booked at: the appraiser's recommendation
+    // when there is one, otherwise what the member asked for.
+    const disbursementBookedAmount = useMemo(
+        () => Number(disbursementTarget?.recommended_amount || disbursementTarget?.requested_amount || 0),
+        [disbursementTarget]
+    );
     const [trackedLoanDisbursementOrder, setTrackedLoanDisbursementOrder] = useState<LoanDisbursementOrder | null>(null);
     const [checkingLoanDisbursementStatus, setCheckingLoanDisbursementStatus] = useState(false);
     const [showRepayModal, setShowRepayModal] = useState(false);
@@ -4923,13 +4932,57 @@ export function LoansPage() {
                                 </Grid>
                             </Grid>
 
+                            {/* Said before the amount tiles, because "Requested Amount"
+                                on a top-up is not what anybody hands over. This
+                                application asked for 37,680,000, of which 25,680,000
+                                clears the existing loan and 12,000,000 is the cash. An
+                                officer reading only the tile approves the right facility
+                                and a teller pays out three times too much. */}
+                            {reviewTopUp ? (
+                                <Alert severity="info" icon={false} sx={{ borderRadius: 2 }}>
+                                    <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 0.75 }}>
+                                        This is a top-up, not a new loan
+                                    </Typography>
+                                    <Stack
+                                        direction={{ xs: "column", sm: "row" }}
+                                        spacing={{ xs: 1, sm: 3 }}
+                                        divider={<Divider orientation="vertical" flexItem />}
+                                    >
+                                        <Box>
+                                            <Typography variant="caption" color="text.secondary">Facility applied for</Typography>
+                                            <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                                                {formatCurrency(reviewTarget.requested_amount)}
+                                            </Typography>
+                                        </Box>
+                                        <Box>
+                                            <Typography variant="caption" color="text.secondary">Settles the existing loan</Typography>
+                                            <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                                                −{formatCurrency(reviewTopUp.settlement)}
+                                            </Typography>
+                                        </Box>
+                                        <Box>
+                                            <Typography variant="caption" color="text.secondary">Release to the member</Typography>
+                                            <Typography variant="body2" sx={{ fontWeight: 800, color: "success.main" }}>
+                                                {formatCurrency(reviewTopUp.newCash)}
+                                            </Typography>
+                                        </Box>
+                                    </Stack>
+                                    <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 0.75 }}>
+                                        Interest is charged on the whole facility. Only the released amount leaves the SACCO as cash.
+                                    </Typography>
+                                </Alert>
+                            ) : null}
+
                             <Grid container spacing={2}>
                                 <Grid size={{ xs: 12, md: 4 }}>
                                     <TextField
-                                        label="Requested Amount"
+                                        label={reviewTopUp ? "Facility applied for" : "Requested Amount"}
                                         value={formatCurrency(reviewTarget.requested_amount)}
                                         fullWidth
                                         InputProps={{ readOnly: true }}
+                                        helperText={reviewTopUp
+                                            ? `${formatCurrency(reviewTopUp.newCash)} is the cash to release`
+                                            : undefined}
                                     />
                                 </Grid>
                                 <Grid size={{ xs: 12, md: 4 }}>
@@ -5675,6 +5728,51 @@ export function LoansPage() {
                         <Alert severity="warning" variant="outlined">
                             This is the money-posting step. The teller pays the member manually and records it here — a balanced journal, loan account, and repayment schedule are created when you confirm.
                         </Alert>
+                        {/* The dialog named no amount at all, which is survivable on an
+                            ordinary loan and not on a top-up: the teller is counting
+                            out cash and the facility figure is the wrong one. The
+                            backend books recommended_amount when an appraiser set one,
+                            so that is the figure quoted here too. */}
+                        {disbursementTarget ? (
+                            <Box sx={{ p: 1.75, border: 1, borderColor: "divider", borderRadius: 2 }}>
+                                {disbursementTopUp ? (
+                                    <Stack spacing={1}>
+                                        <Typography variant="overline" color="text.secondary">Top-up — do not pay the facility amount</Typography>
+                                        <Stack
+                                            direction={{ xs: "column", sm: "row" }}
+                                            spacing={{ xs: 1, sm: 3 }}
+                                            divider={<Divider orientation="vertical" flexItem />}
+                                        >
+                                            <Box>
+                                                <Typography variant="caption" color="text.secondary">Facility booked</Typography>
+                                                <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                                                    {formatCurrency(disbursementBookedAmount)}
+                                                </Typography>
+                                            </Box>
+                                            <Box>
+                                                <Typography variant="caption" color="text.secondary">Settles the existing loan</Typography>
+                                                <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                                                    −{formatCurrency(disbursementTopUp.settlement)}
+                                                </Typography>
+                                            </Box>
+                                            <Box>
+                                                <Typography variant="caption" color="text.secondary">Hand over to the member</Typography>
+                                                <Typography variant="h6" sx={{ fontWeight: 800, color: "success.main", lineHeight: 1.2 }}>
+                                                    {formatCurrency(disbursementTopUp.newCash)}
+                                                </Typography>
+                                            </Box>
+                                        </Stack>
+                                    </Stack>
+                                ) : (
+                                    <Box>
+                                        <Typography variant="overline" color="text.secondary">Hand over to the member</Typography>
+                                        <Typography variant="h6" sx={{ fontWeight: 800, lineHeight: 1.2 }}>
+                                            {formatCurrency(disbursementBookedAmount)}
+                                        </Typography>
+                                    </Box>
+                                )}
+                            </Box>
+                        ) : null}
                         {disbursementPayoutInstructions ? (
                             <Alert severity="info" variant="outlined" sx={darkAccentInfoAlertSx}>
                                 <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>Payout instructions from the application</Typography>

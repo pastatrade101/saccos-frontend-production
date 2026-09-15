@@ -1,4 +1,4 @@
-import type { Loan } from "../types/api";
+import type { Loan, LoanApplication } from "../types/api";
 
 /**
  * What a top-up actually did, as opposed to what it was booked at.
@@ -99,4 +99,26 @@ export function buildLoanLineage(loan: Loan | null | undefined, memberLoans: Loa
 /** True when this loan was closed by a top-up rather than being repaid. */
 export function wasClosedByTopUp(loan: Loan | null | undefined): boolean {
     return Boolean(loan?.superseded_by_loan_id) || loan?.closure_reason === "top_up";
+}
+
+/**
+ * The same split, read off the application rather than the booked loan.
+ *
+ * The review and disbursement screens work from the application, before a loan
+ * exists — and that is precisely where the figure matters most, since it is
+ * what an officer approves and a teller pays out against.
+ */
+export function applicationTopUpBreakdown(
+    application: LoanApplication | null | undefined
+): { requested: number; settlement: number; newCash: number } | null {
+    if (!application || application.loan_category !== "top_up") return null;
+
+    const settlement = Number(application.top_up_settlement_amount || 0);
+    const newCash = Number(application.top_up_new_cash_amount || 0);
+    // An older application flagged top_up but carrying neither figure predates
+    // the split being recorded; a breakdown of zeros would tell the teller to
+    // hand over nothing.
+    if (!settlement && !newCash) return null;
+
+    return { requested: Number(application.requested_amount || 0), settlement, newCash };
 }
