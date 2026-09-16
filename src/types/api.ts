@@ -1244,6 +1244,17 @@ export interface LoanApplication {
      */
     top_up_settlement_amount?: number | null;
     top_up_new_cash_amount?: number | null;
+    /**
+     * Overdue or written-off loans the applicant already carries, excluding
+     * the loan this application itself created. Empty unless the SACCO lets
+     * members in arrears apply; the appraiser is the one who has to see it.
+     */
+    applicant_problem_loans?: {
+        loan_id: string;
+        loan_number: string;
+        status: "in_arrears" | "written_off";
+        outstanding_principal: number;
+    }[];
     deposit_purchase_amount?: number | null;
     application_fee_paid?: boolean | null;
     attachments?: LoanApplicationAttachment[];
@@ -1338,6 +1349,12 @@ export interface LoanCapacitySummary {
     contribution_limit: number;
     contribution_headroom?: number;
     has_problem_loans?: boolean;
+    /**
+     * Whether those problem loans stop a new application under the SACCO's
+     * policy. has_problem_loans stays true either way, for the appraiser.
+     * Absent from an older backend, where arrears always blocked.
+     */
+    problem_loans_block_application?: boolean;
     product_limit: number;
     liquidity_limit: number;
     borrow_limit: number;

@@ -4938,6 +4938,24 @@ export function LoansPage() {
                                 clears the existing loan and 12,000,000 is the cash. An
                                 officer reading only the tile approves the right facility
                                 and a teller pays out three times too much. */}
+                            {/* Only reachable since the SACCO can let members in arrears
+                                apply (migration 176). The member was told the officer would
+                                see it; this is where they do, before any figure below. */}
+                            {reviewTarget.applicant_problem_loans?.length ? (
+                                <Alert severity="warning" sx={{ borderRadius: 2 }}>
+                                    <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 0.5 }}>
+                                        Applicant already has {reviewTarget.applicant_problem_loans.length === 1 ? "a loan" : "loans"} in arrears
+                                    </Typography>
+                                    <Stack spacing={0.25}>
+                                        {reviewTarget.applicant_problem_loans.map((problem) => (
+                                            <Typography key={problem.loan_id} variant="body2">
+                                                {problem.loan_number} · {problem.status === "written_off" ? "written off" : "in arrears"} · {formatCurrency(problem.outstanding_principal)} outstanding
+                                            </Typography>
+                                        ))}
+                                    </Stack>
+                                </Alert>
+                            ) : null}
+
                             {reviewTopUp ? (
                                 <Alert severity="info" icon={false} sx={{ borderRadius: 2 }}>
                                     <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 0.75 }}>
@@ -5214,6 +5232,24 @@ export function LoansPage() {
                 <DialogTitle>{appraisalTarget?.status === "appraised" ? "Update Loan Appraisal" : "Appraise Loan Application"}</DialogTitle>
                 <DialogContent dividers>
                     <Box component="form" id="loan-appraisal-form" onSubmit={saveAppraisal} sx={{ display: "grid", gap: 2, pt: 0.5 }}>
+                        {/* The appraisal is where lending to a member in arrears gets
+                            decided now that the form no longer refuses them, so the
+                            arrears lead the dialog rather than sitting in a list. */}
+                        {appraisalTarget?.applicant_problem_loans?.length ? (
+                            <Alert severity="warning" sx={{ borderRadius: 2 }}>
+                                <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 0.5 }}>
+                                    Applicant already has {appraisalTarget.applicant_problem_loans.length === 1 ? "a loan" : "loans"} in arrears
+                                </Typography>
+                                {appraisalTarget.applicant_problem_loans.map((problem) => (
+                                    <Typography key={problem.loan_id} variant="body2">
+                                        {problem.loan_number} · {problem.status === "written_off" ? "written off" : "in arrears"} · {formatCurrency(problem.outstanding_principal)} outstanding
+                                    </Typography>
+                                ))}
+                                <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 0.5 }}>
+                                    Weigh this in the risk rating and recommended amount.
+                                </Typography>
+                            </Alert>
+                        ) : null}
                         <Paper variant="outlined" sx={{ p: 2, borderRadius: 2.5 }}>
                             <Stack spacing={1}>
                                 <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>

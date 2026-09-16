@@ -104,9 +104,18 @@ export function LoanEligibilitySummary({
                             </Alert>
                         ) : null}
                         {summary.has_problem_loans ? (
-                            <Alert severity="error" variant="outlined">
-                                You have an overdue loan. New loan applications are not accepted until the overdue amount is cleared.
-                            </Alert>
+                            // Whether the arrears block anything is the SACCO's policy,
+                            // reported by the server; saying "not accepted" when the
+                            // application would go through sends the member away.
+                            (summary.problem_loans_block_application ?? true) ? (
+                                <Alert severity="error" variant="outlined">
+                                    You have an overdue loan. New loan applications are not accepted until the overdue amount is cleared.
+                                </Alert>
+                            ) : (
+                                <Alert severity="warning" variant="outlined">
+                                    You have an overdue loan. You can still apply — the loan officer will see it during appraisal.
+                                </Alert>
+                            )
                         ) : null}
                         <Grid container spacing={1.5}>
                             <Grid size={{ xs: 12, md: 6 }}>

@@ -2199,10 +2199,29 @@ export function MemberPortalPage() {
         editingLoanApplicationId &&
         deletingLoanApplicationId === editingLoanApplicationId
     );
-    const memberHasProblemLoan = useMemo(
-        () => loans.some((loan) => ["in_arrears", "written_off"].includes(loan.status)),
-        [loans]
-    );
+    // The quote answers one question — does this member already carry a loan.
+    // What to do about it is theirs to choose (board decision superseding the
+    // one-loan-at-a-time rule): a second loan alongside, or a top-up whose
+    // total is what they owe today plus the cash they want. This used to read
+    // the quote as the answer to both, which silently turned every attempt at
+    // a new loan into a top-up.
+    const hasOpenLoan = Boolean(topUpQuote?.top_up_required);
+    const chosenLoanCategory = loanApplicationForm.watch("loan_category");
+    const isTopUpApplication = hasOpenLoan && chosenLoanCategory === "top_up";
+    // Whether arrears stop THIS application, which is the server's call, not
+    // the portal's. The SACCO's policy may let a member in arrears apply
+    // (ILBORU does, from 16 September 2026), and a top-up is always allowed
+    // through arrears because it is how the overdue balance gets settled.
+    // This used to be worked out here from the member's loan statuses alone,
+    // which locked the form whatever the policy said — and locked top-ups too,
+    // while the same screen told the member a top-up was open to them.
+    //
+    // Nothing is gated until the capacity read has answered: the server still
+    // refuses anything it should, and a guess here only ever blocks wrongly.
+    const problemLoanBlocksApplication = useMemo(() => {
+        if (isTopUpApplication || !loanCapacity) return false;
+        return loanCapacity.problem_loans_block_application ?? Boolean(loanCapacity.has_problem_loans);
+    }, [isTopUpApplication, loanCapacity]);
     // View model for the monthly mandatory savings status. States:
     //   loading — first fetch in flight; show nothing, gate nothing client-side
     //   error   — status could not be verified; say so, never claim "unpaid"
@@ -2263,7 +2282,7 @@ export function MemberPortalPage() {
             locks.push("Your member profile is not active, so loan submission is locked.");
         }
 
-        if (memberHasProblemLoan) {
+        if (problemLoanBlocksApplication) {
             locks.push("You have an in-arrears or written-off loan that must be resolved first.");
         }
 
@@ -2277,7 +2296,7 @@ export function MemberPortalPage() {
 
         return locks;
     }, [
-        memberHasProblemLoan,
+        problemLoanBlocksApplication,
         memberRecord?.status,
         monthlyCommitment,
         selectedLoanConflict,
@@ -3851,15 +3870,6 @@ export function MemberPortalPage() {
         () => savingsAccounts.reduce((sum, account) => sum + account.locked_balance, 0),
         [savingsAccounts]
     );
-    // The quote answers one question — does this member already carry a loan.
-    // What to do about it is theirs to choose (board decision superseding the
-    // one-loan-at-a-time rule): a second loan alongside, or a top-up whose
-    // total is what they owe today plus the cash they want. This used to read
-    // the quote as the answer to both, which silently turned every attempt at
-    // a new loan into a top-up.
-    const hasOpenLoan = Boolean(topUpQuote?.top_up_required);
-    const chosenLoanCategory = loanApplicationForm.watch("loan_category");
-    const isTopUpApplication = hasOpenLoan && chosenLoanCategory === "top_up";
     const topUpSettlement = Number(topUpQuote?.settlement_amount || 0);
     const topUpNewCash = Number(topUpNewCashInput.replace(/[^\d]/g, "")) || 0;
 
@@ -5545,7 +5555,7 @@ export function MemberPortalPage() {
             return;
         }
 
-        if (options.submitAfterSave && memberHasProblemLoan) {
+        if (options.submitAfterSave && problemLoanBlocksApplication) {
             pushToast({
                 type: "error",
                 title: tr("Loan blocked", "Maombi yamezuiliwa"),
@@ -5599,7 +5609,7 @@ export function MemberPortalPage() {
         // Guarantor plan checks (board process): at least one guarantor on
         // submission; the excess above savings must be exactly covered.
         if (options.submitAfterSave) {
-            if (loanCapacity?.has_problem_loans) {
+            if (problemLoanBlocksApplication) {
                 pushToast({
                     type: "error",
                     title: tr("Overdue loan", "Mkopo uliochelewa"),
@@ -9534,13 +9544,21 @@ export function MemberPortalPage() {
                                                 ))}
                                             </Stack>
                                         </Alert>
-                                    ) : loanCapacity?.has_problem_loans ? (
+                                    ) : problemLoanBlocksApplication ? (
                                         <Alert severity="error" variant="outlined">
                                             {/* A top-up settles the overdue balance rather than
                                                 adding to it, so it stays open to them — the
                                                 backend draws the same line. */}
                                             You have an overdue loan. You cannot take another loan alongside it, but you can
                                             apply for a top-up, which settles what is overdue out of the new loan.
+                                        </Alert>
+                                    ) : loanCapacity?.has_problem_loans ? (
+                                        <Alert severity="warning" variant="outlined">
+                                            {/* Allowed to apply, and told plainly that the arrears
+                                                are on the record the officer reads. */}
+                                            You have an overdue loan. You can still apply, but the loan officer will see it
+                                            when your application is appraised. A top-up would settle the overdue balance
+                                            out of the new loan.
                                         </Alert>
                                     ) : null}
                                     {isTopUpApplication ? (

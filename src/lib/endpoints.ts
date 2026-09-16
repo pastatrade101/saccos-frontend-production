@@ -1512,6 +1512,8 @@ export interface GuarantorPolicySettings {
     max_guarantors_per_application: number;
     guarantor_release_mode: "on_close" | "proportional";
     guarantor_block_encumbered_withdrawals: boolean;
+    /** Refuse a new (non top-up) application from a member with an in-arrears or written-off loan. */
+    block_applications_with_problem_loans: boolean;
 }
 
 export type GuarantorPolicySettingsResponse = ApiEnvelope<GuarantorPolicySettings>;
@@ -1524,6 +1526,7 @@ export interface UpdateGuarantorPolicyRequest {
     max_guarantors_per_application?: number;
     guarantor_release_mode?: "on_close" | "proportional";
     guarantor_block_encumbered_withdrawals?: boolean;
+    block_applications_with_problem_loans?: boolean;
 }
 
 export interface LoanMultiplierProduct {

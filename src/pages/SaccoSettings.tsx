@@ -104,7 +104,8 @@ export function SaccoSettingsPage() {
         guarantor_capacity_base: "savings" as "savings" | "savings_shares",
         max_guarantors_per_application: 5,
         guarantor_release_mode: "on_close" as "on_close" | "proportional",
-        guarantor_block_encumbered_withdrawals: true
+        guarantor_block_encumbered_withdrawals: true,
+        block_applications_with_problem_loans: true
     });
     const [savingGuarantorPolicy, setSavingGuarantorPolicy] = useState(false);
     const [loanMultiplier, setLoanMultiplier] = useState<LoanMultiplierSettings | null>(null);
@@ -228,7 +229,10 @@ export function SaccoSettingsPage() {
                         guarantor_capacity_base: policyData.guarantor_capacity_base,
                         max_guarantors_per_application: policyData.max_guarantors_per_application,
                         guarantor_release_mode: policyData.guarantor_release_mode,
-                        guarantor_block_encumbered_withdrawals: policyData.guarantor_block_encumbered_withdrawals
+                        guarantor_block_encumbered_withdrawals: policyData.guarantor_block_encumbered_withdrawals,
+                        // Absent from a backend older than migration 176, where
+                        // arrears always blocked.
+                        block_applications_with_problem_loans: policyData.block_applications_with_problem_loans ?? true
                     });
                 }
                 if (loanMultiplierResult?.data?.data) {
@@ -407,7 +411,8 @@ export function SaccoSettingsPage() {
                 guarantor_capacity_base: guarantorDraft.guarantor_capacity_base,
                 max_guarantors_per_application: guarantorDraft.max_guarantors_per_application,
                 guarantor_release_mode: guarantorDraft.guarantor_release_mode,
-                guarantor_block_encumbered_withdrawals: guarantorDraft.guarantor_block_encumbered_withdrawals
+                guarantor_block_encumbered_withdrawals: guarantorDraft.guarantor_block_encumbered_withdrawals,
+                block_applications_with_problem_loans: guarantorDraft.block_applications_with_problem_loans
             };
             const { data } = await api.patch<GuarantorPolicySettingsResponse>(endpoints.saccoSettings.guarantorPolicy(), payload);
             setGuarantorPolicy(data.data);
@@ -1444,6 +1449,22 @@ export function SaccoSettingsPage() {
                                 }
                                 label="Enforce guarantor capacity limits"
                             />
+                            <FormControlLabel
+                                control={
+                                    <Switch
+                                        checked={guarantorDraft.block_applications_with_problem_loans}
+                                        onChange={(event) => setGuarantorDraft((prev) => ({
+                                            ...prev,
+                                            block_applications_with_problem_loans: event.target.checked
+                                        }))}
+                                        disabled={savingGuarantorPolicy}
+                                    />
+                                }
+                                label="Stop members with an overdue or written-off loan from applying"
+                            />
+                            <Typography variant="caption" color="text.secondary" component="p" sx={{ ml: 6 }}>
+                                When off, they can apply and the loan officer sees the arrears at appraisal. Top-ups are always allowed.
+                            </Typography>
                         </Box>
 
                         <Button
