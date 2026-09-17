@@ -6,6 +6,7 @@ import CreditScoreRoundedIcon from "@mui/icons-material/CreditScoreRounded";
 import PaymentsRoundedIcon from "@mui/icons-material/PaymentsRounded";
 import PendingActionsRoundedIcon from "@mui/icons-material/PendingActionsRounded";
 import PlaylistAddCheckRoundedIcon from "@mui/icons-material/PlaylistAddCheckRounded";
+import HistoryEduRoundedIcon from "@mui/icons-material/HistoryEduRounded";
 import UndoRoundedIcon from "@mui/icons-material/UndoRounded";
 import PersonAddAltRoundedIcon from "@mui/icons-material/PersonAddAltRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
@@ -50,6 +51,7 @@ import { SearchableSelect } from "../components/SearchableSelect";
 import { TwoFactorStepUpDialog, type TwoFactorStepUpPayload } from "../components/TwoFactorStepUpDialog";
 import { useToast } from "../components/Toast";
 import { applicationTopUpBreakdown, topUpBreakdown } from "../utils/loanLineage";
+import { HistoricalLoanDialog } from "../components/loans/HistoricalLoanDialog";
 import { api, getApiErrorCode, getApiErrorDetails, getApiErrorMessage } from "../lib/api";
 import {
     endpoints,
@@ -803,6 +805,11 @@ export function LoansPage() {
     // Consolidating a member who already carries more than one loan — the
     // legacy state the one-loan-at-a-time rule cannot fix by itself.
     const canMergeLoans = ["loan_officer", "branch_manager", "super_admin"].includes(role);
+    // Booking a loan that was paid out and never entered. The loan officer is
+    // who finds these; the backend confines them to their own branches and
+    // records the reason they give.
+    const canRecordPastLoans = ["loan_officer", "branch_manager", "super_admin"].includes(role);
+    const [showHistoricalLoan, setShowHistoricalLoan] = useState(false);
     const canAppraise = role === "loan_officer";
     const canApprove = role === "branch_manager";
     const canReject = role === "branch_manager" || role === "loan_officer";
@@ -1359,10 +1366,10 @@ export function LoansPage() {
     }, [trackedLoanDisbursementOrder?.id, trackedLoanDisbursementOrder?.status]);
 
     useEffect(() => {
-        if ((showCreateModal || showRepayModal || Boolean(appraisalTarget)) && !referencesLoaded && !referencesLoading) {
+        if ((showCreateModal || showRepayModal || showHistoricalLoan || Boolean(appraisalTarget)) && !referencesLoaded && !referencesLoading) {
             void loadReferenceData({ silent: true });
         }
-    }, [appraisalTarget, referencesLoaded, referencesLoading, showCreateModal, showRepayModal]);
+    }, [appraisalTarget, referencesLoaded, referencesLoading, showCreateModal, showHistoricalLoan, showRepayModal]);
 
     const memberOptions = useMemo(
         () =>
@@ -3691,6 +3698,16 @@ export function LoansPage() {
                                         Merge Loans
                                     </Button>
                                 ) : null}
+                                {canRecordPastLoans ? (
+                                    <Button
+                                        variant="outlined"
+                                        startIcon={<HistoryEduRoundedIcon />}
+                                        onClick={() => setShowHistoricalLoan(true)}
+                                        sx={darkAccentOutlinedSx}
+                                    >
+                                        Record Past Loan
+                                    </Button>
+                                ) : null}
                                 <Button
                                     variant="outlined"
                                     startIcon={<PendingActionsRoundedIcon />}
@@ -5756,6 +5773,25 @@ export function LoansPage() {
                     </Button>
                 </DialogActions>
             </MotionModal>
+
+            <HistoricalLoanDialog
+                open={showHistoricalLoan}
+                onClose={() => setShowHistoricalLoan(false)}
+                tenantId={selectedTenantId}
+                members={members}
+                products={loanProducts}
+                onRecorded={(result) => {
+                    setShowHistoricalLoan(false);
+                    const status = result.loan.status === "in_arrears" ? " It is already in arrears." : "";
+                    pushToast({
+                        type: "success",
+                        title: "Past loan recorded",
+                        message: `${result.loan.loan_number} for ${result.member.full_name}.${status}`
+                    });
+                    void loadWorkspace();
+                    navigate(`/loans/${result.loan.id}`);
+                }}
+            />
 
             <MotionModal open={Boolean(disbursementTarget)} onClose={processing ? undefined : () => setDisbursementTarget(null)} maxWidth="sm" fullWidth>
                 <DialogTitle>Disburse Approved Application</DialogTitle>
