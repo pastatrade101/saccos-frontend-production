@@ -1442,9 +1442,15 @@ export interface GuarantorCapacityLookup {
     full_name: string;
     member_no: string;
     is_active: boolean;
-    available_amount: number;
-    committed_amount: number;
-    eligible: boolean;
+    /**
+     * Staff only. A member looking another member up gets a name and nothing
+     * else: what someone can afford to guarantee is their own business, and
+     * under the capacity rule anyone carrying a loan reads as zero, so even
+     * `eligible` would say they are in debt.
+     */
+    available_amount?: number;
+    committed_amount?: number;
+    eligible?: boolean;
     policy: {
         max_commitment_ratio: number;
         capacity_base: "savings" | "savings_shares";
@@ -1675,6 +1681,13 @@ export interface GuarantorRequestItem {
     consented_at?: string | null;
     notes?: string | null;
     created_at: string;
+    /**
+     * What this guarantor could cover if they accepted, from their own savings
+     * less what they owe and have already pledged. Their figure, on their own
+     * screen — the applicant is never shown it.
+     */
+    your_available_amount?: number;
+    can_respond?: boolean;
     borrower?: Pick<Member, "id" | "full_name" | "member_no"> | null;
     loan_application?: {
         id: string;

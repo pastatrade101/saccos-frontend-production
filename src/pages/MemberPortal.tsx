@@ -1419,7 +1419,6 @@ export function MemberPortalPage() {
         member_id: string;
         member_no: string;
         full_name: string;
-        available_amount: number | null;
         guaranteed_amount: number;
     }>>([]);
     const [guarantorLookupNo, setGuarantorLookupNo] = useState("");
@@ -5333,7 +5332,6 @@ export function MemberPortalPage() {
                 member_id: row.member_id,
                 member_no: row.members?.member_no || "",
                 full_name: row.members?.full_name || row.guarantor_name || "Member",
-                available_amount: null,
                 guaranteed_amount: Number(row.guaranteed_amount || 0)
             })));
             loanApplicationForm.reset({
@@ -5917,23 +5915,16 @@ export function MemberPortalPage() {
                 pushToast({ type: "error", title: "Member not eligible", message: `${lookup.full_name} is not an active member.` });
                 return;
             }
-            if (activeRequiredGuarantee > 0 && lookup.available_amount <= 0) {
-                pushToast({
-                    type: "error",
-                    title: tr("No guarantee capacity", "Hana uwezo wa kudhamini"),
-                    message: `${lookup.full_name} has no remaining guarantee capacity right now, so they cannot be selected.`
-                });
-                return;
-            }
-
-            const suggested = activeRequiredGuarantee > 0
-                ? Math.min(lookup.available_amount, activeRemainingGuarantee)
-                : 0;
+            // No capacity gate here any more. What this member can afford is
+            // their own business, and refusing the pick announced it — under the
+            // capacity rule anyone carrying a loan reads as zero, so "no
+            // capacity" told the applicant they are in debt. Ask them; they
+            // answer on their own screen, where the figures are theirs.
+            const suggested = activeRequiredGuarantee > 0 ? activeRemainingGuarantee : 0;
             setGuarantorDrafts((prev) => [...prev, {
                 member_id: lookup.member_id,
                 member_no: lookup.member_no,
                 full_name: lookup.full_name,
-                available_amount: lookup.available_amount,
                 guaranteed_amount: Math.max(0, Math.round(suggested * 100) / 100)
             }]);
             setGuarantorLookupNo("");
@@ -5958,7 +5949,6 @@ export function MemberPortalPage() {
                 member_id: row.member_id,
                 member_no: row.members?.member_no || "",
                 full_name: row.members?.full_name || row.guarantor_name || "Member",
-                available_amount: null,
                 guaranteed_amount: Number(row.guaranteed_amount || 0)
             })));
     };
@@ -7003,6 +6993,16 @@ export function MemberPortalPage() {
                         <Typography variant="body2">
                             {guarantorAcceptTarget?.borrower?.full_name || "The borrower"} asked you to guarantee{" "}
                             <strong>{formatCurrency(guarantorAcceptTarget?.guaranteed_amount || 0)}</strong>.
+                        </Typography>
+                        {/* Their own figure, so they can answer without guessing.
+                            The borrower asks for what they need; whether it can be
+                            covered is the guarantor's to know and to say. */}
+                        <Typography variant="body2" color={Number(guarantorAcceptTarget?.your_available_amount || 0) > 0 ? "text.secondary" : "error.main"}>
+                            {guarantorAcceptTarget?.your_available_amount === undefined
+                                ? ""
+                                : Number(guarantorAcceptTarget.your_available_amount) > 0
+                                    ? `You can guarantee up to ${formatCurrency(guarantorAcceptTarget.your_available_amount)} right now.`
+                                    : "Your savings are already committed, so you cannot take this on right now. You can decline."}
                             You can accept the full amount or enter the amount you are able to cover.
                         </Typography>
                         <TextField
@@ -7012,6 +7012,8 @@ export function MemberPortalPage() {
                             value={guarantorAcceptAmount}
                             onChange={(event) => setGuarantorAcceptAmount(event.target.value)}
                             helperText={`Maximum ${formatCurrency(guarantorAcceptTarget?.guaranteed_amount || 0)}. This amount stays locked in your savings until the loan is repaid.`}
+                            error={Boolean(guarantorAcceptTarget?.your_available_amount !== undefined
+                                && Number(guarantorAcceptAmount) > Number(guarantorAcceptTarget.your_available_amount))}
                         />
                     </Stack>
                 </DialogContent>
@@ -7107,9 +7109,7 @@ export function MemberPortalPage() {
                                     <Box sx={{ minWidth: 0 }}>
                                         <Typography variant="body2" sx={{ fontWeight: 700 }}>{row.full_name}</Typography>
                                         <Typography variant="caption" color="text.secondary">
-                                            {row.member_no}{row.available_amount !== null && activeRequiredGuarantee > 0
-                                                ? ` · can guarantee up to ${formatCurrency(row.available_amount)}`
-                                                : ""}
+                                            {row.member_no}
                                         </Typography>
                                     </Box>
                                     <Stack direction="row" spacing={1} alignItems="center">
@@ -10049,9 +10049,7 @@ export function MemberPortalPage() {
                                                                         {row.full_name}
                                                                     </Typography>
                                                                     <Typography variant="caption" color="text.secondary">
-                                                                        {row.member_no}{row.available_amount !== null && requiredGuaranteeAmount > 0
-                                                                            ? ` · can guarantee up to ${formatCurrency(row.available_amount)}`
-                                                                            : ""}
+                                                                        {row.member_no}
                                                                     </Typography>
                                                                 </Box>
                                                                 <Stack direction="row" spacing={1} alignItems="center">
@@ -10066,10 +10064,7 @@ export function MemberPortalPage() {
                                                                                 setGuarantorDrafts((prev) => prev.map((item, itemIndex) =>
                                                                                     itemIndex === index ? { ...item, guaranteed_amount: nextValue } : item));
                                                                             }}
-                                                                            error={row.available_amount !== null && row.guaranteed_amount > row.available_amount}
-                                                                            helperText={row.available_amount !== null && row.guaranteed_amount > row.available_amount
-                                                                                ? "Exceeds their capacity"
-                                                                                : undefined}
+                                                                            helperText="They will confirm whether they can cover it"
                                                                             sx={{ width: 160 }}
                                                                         />
                                                                     ) : (
