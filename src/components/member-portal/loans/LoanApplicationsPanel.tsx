@@ -151,7 +151,19 @@ export function LoanApplicationsPanel({
                 </p>
             )}
 
-            {tableSlot ? <div className={styles.tableSlot}>{tableSlot}</div> : null}
+            {tableSlot ? (
+                <div className={styles.tableSlot}>
+                    {/* The cards above are the three most recent; this is
+                        everything, with the guarantors and the progress line.
+                        Unlabelled, the two read as the same list printed
+                        twice — which is exactly how it looked on a phone once
+                        the table below started rendering as cards too. */}
+                    <h3 className={styles.tableSlotTitle}>
+                        {t("All applications", "Maombi yote")}
+                    </h3>
+                    {tableSlot}
+                </div>
+            ) : null}
         </section>
     );
 }

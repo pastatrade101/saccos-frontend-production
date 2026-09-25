@@ -1,4 +1,4 @@
-import { Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from "@mui/material";
+import { Box, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography, useMediaQuery } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import type { ReactNode } from "react";
 import { brandColors } from "../theme/colors";
@@ -29,6 +29,7 @@ export function DataTable<T>({
     const theme = useTheme();
     const isDarkMode = theme.palette.mode === "dark";
     const accent = isDarkMode ? "#D9B273" : theme.palette.primary.main;
+    const isPhone = useMediaQuery(theme.breakpoints.down("sm"));
 
     if (!rows.length) {
         if (typeof emptyMessage === "string" && /^loading\b/i.test(emptyMessage.trim())) {
@@ -45,6 +46,55 @@ export function DataTable<T>({
                     {emptyMessage}
                 </Typography>
             </MotionCard>
+        );
+    }
+
+    // On a phone the table used to keep its 680px minimum and scroll
+    // sideways inside a 390px screen, so a member saw the first two columns
+    // of six and had to drag the rest into view a piece at a time. Every
+    // table in the portal is this component, so every one of them did it.
+    //
+    // Below `sm` each row becomes a card instead: the column headers are the
+    // labels, stacked, nothing cropped and nothing to scroll horizontally.
+    // The cells render exactly as they do in the table — same chips, same
+    // buttons, same progress lines — because they are the same renderers.
+    if (isPhone) {
+        return (
+            <Stack spacing={1.25}>
+                {rows.map((row, index) => (
+                    <MotionCard key={index} variant="outlined" inView sx={{ p: 1.75 }}>
+                        <Stack spacing={1.25}>
+                            {columns.map((column) => {
+                                const value = column.render(row);
+                                // A column with nothing in it earns no label.
+                                if (value === null || value === undefined || value === "") {
+                                    return null;
+                                }
+                                return (
+                                    <Box key={column.key}>
+                                        <Typography
+                                            component="div"
+                                            sx={{
+                                                textTransform: "uppercase",
+                                                letterSpacing: "0.08em",
+                                                fontSize: 10.5,
+                                                fontWeight: 700,
+                                                color: accent,
+                                                mb: 0.35
+                                            }}
+                                        >
+                                            {column.header}
+                                        </Typography>
+                                        <Box sx={{ fontSize: 14, minWidth: 0, overflowWrap: "anywhere" }}>
+                                            {value}
+                                        </Box>
+                                    </Box>
+                                );
+                            })}
+                        </Stack>
+                    </MotionCard>
+                ))}
+            </Stack>
         );
     }
 
