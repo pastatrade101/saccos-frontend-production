@@ -25,6 +25,11 @@ interface LoanEligibilitySummaryProps {
     title?: string;
     helperText?: string;
     compact?: boolean;
+    /** What the member is asking for, so the guarantee consequence can be named. */
+    requestedAmount?: number;
+    /** Balance an open loan would settle; excluded on a top-up, which settles it. */
+    openLoanSettlement?: number;
+    isTopUp?: boolean;
 }
 
 function MetricCard({
@@ -63,9 +68,22 @@ export function LoanEligibilitySummary({
     error = null,
     title = "Loan Eligibility",
     helperText = "These indicators are calculated from your savings balance, the selected product rules, and current SACCO branch liquidity.",
-    compact = false
+    compact = false,
+    requestedAmount = 0,
+    openLoanSettlement = 0,
+    isTopUp = false
 }: LoanEligibilitySummaryProps) {
     const theme = useTheme();
+    // The server's own formula, from the server's own figures: what the loan
+    // asks for, less the member's money that is free to secure it.
+    const securedByOwnMoney = Math.max(
+        0,
+        Number(summary?.guarantee_base_amount ?? summary?.total_contributions ?? 0)
+            - (isTopUp ? 0 : openLoanSettlement)
+    );
+    const requiredGuarantee = requestedAmount > 0
+        ? Math.max(0, Math.ceil(requestedAmount - securedByOwnMoney))
+        : 0;
 
     return (
         <Card
@@ -203,6 +221,19 @@ export function LoanEligibilitySummary({
                                             ? ", after deducting what you still owe on existing loans."
                                             : ", based on your savings, product rules, and SACCO liquidity."}
                                     </Typography>
+                                    {/* The second gate, named on the same panel as
+                                        the first. "Maximum you can borrow" reads as
+                                        permission to go ahead, and a member who
+                                        clears it by a wide margin is then stopped
+                                        by a requirement this screen never
+                                        mentioned. Being allowed to borrow and
+                                        having the loan secured are different
+                                        questions, and only one of them was here. */}
+                                    {requiredGuarantee > 0 ? (
+                                        <Typography variant="body2" sx={{ mt: 1.2, fontWeight: 700 }} color="warning.main">
+                                            {`Being allowed to borrow it is not the same as having it secured. At ${formatCurrency(requestedAmount)}, ${formatCurrency(requiredGuarantee)} sits above your own money and needs guarantors.`}
+                                        </Typography>
+                                    ) : null}
                                 </Box>
                             </Grid>
                         </Grid>

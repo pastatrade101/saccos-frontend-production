@@ -1342,6 +1342,8 @@ export interface LoanCapacitySummary {
     member_id: string;
     loan_product_id: string;
     total_contributions: number;
+    /** What of the member's own money secures a loan — shares included only where the board says so. */
+    guarantee_base_amount?: number;
     locked_savings: number;
     withdrawable_balance: number;
     current_loan_exposure: number;

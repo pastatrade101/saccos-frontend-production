@@ -4080,14 +4080,13 @@ export function MemberPortalPage() {
     const requiredGuaranteeAmount = useMemo(
         () => {
             const committedToOpenLoans = isTopUpApplication ? 0 : topUpSettlement;
-            // The server's contribution base, not a local sum of the savings
-            // accounts. The two differ by the member's share capital: the
-            // capacity engine honours the board's
-            // `share_capital_counts_as_savings` setting and ILBORU has it on,
-            // so the Eligibility step showed Alban 115,002,000 while this line
-            // used 114,001,999.97 — one screen, two answers for the same
-            // money, a million apart.
-            const contributionBase = Number(loanCapacity?.total_contributions ?? totalSavings);
+            // The server's security base, which is NOT the contribution base
+            // the borrow limit uses: the board keeps share capital in the
+            // multiple and out of security. Taken from the server rather than
+            // summed here, because a local sum cannot know the setting — and
+            // when it tried, this line and the Eligibility panel above it
+            // disagreed by exactly a member's shares.
+            const contributionBase = Number(loanCapacity?.guarantee_base_amount ?? totalSavings);
             const savingsAvailableToSecure = Math.max(0, contributionBase - committedToOpenLoans);
             return Math.max(0, Math.ceil((Number(requestedLoanAmount) || 0) - savingsAvailableToSecure));
         },
@@ -9817,6 +9816,9 @@ export function MemberPortalPage() {
                                                     error={loanCapacityError}
                                                     title="Loan Eligibility"
                                                     compact
+                                                    requestedAmount={Number(requestedLoanAmount) || 0}
+                                                    openLoanSettlement={topUpSettlement}
+                                                    isTopUp={isTopUpApplication}
                                                 />
                                             </Box>
                                         ) : (
