@@ -1418,12 +1418,12 @@ function ApplicationWaitingOn({ application }: { application: LoanApplication })
                 </Typography>
                 {pending.map((row) => (
                     <Typography key={row.member_id} variant="caption" color="text.secondary">
-                        {row.members?.full_name || row.guarantor_name || "Member"} — hajajibu
+                        {row.members?.member_no || "Member"} — hajajibu
                     </Typography>
                 ))}
                 {declined.map((row) => (
                     <Typography key={row.member_id} variant="caption" color="error.main">
-                        {row.members?.full_name || row.guarantor_name || "Member"} — amekataa
+                        {row.members?.member_no || "Member"} — amekataa
                     </Typography>
                 ))}
             </Stack>
@@ -1442,12 +1442,12 @@ function ApplicationWaitingOn({ application }: { application: LoanApplication })
                 </Typography>
                 {pending.map((row) => (
                     <Typography key={row.member_id} variant="caption" color="text.secondary">
-                        {row.members?.full_name || row.guarantor_name || "Member"} — hajajibu
+                        {row.members?.member_no || "Member"} — hajajibu
                     </Typography>
                 ))}
                 {declined.map((row) => (
                     <Typography key={row.member_id} variant="caption" color="error.main">
-                        {row.members?.full_name || row.guarantor_name || "Member"} — amekataa
+                        {row.members?.member_no || "Member"} — amekataa
                     </Typography>
                 ))}
             </Stack>
@@ -5205,7 +5205,10 @@ export function MemberPortalPage() {
                                 variant="caption"
                                 color={item.consent_status === "accepted" ? "success.main" : item.consent_status === "rejected" ? "error.main" : "text.secondary"}
                             >
-                                {(item.members?.full_name || item.guarantor_name || "Member")}
+                                {/* Member number, not name: the applicant
+                                    named this person by number and the server
+                                    no longer returns who it is. */}
+                                {(item.members?.member_no || "Member")}
                                 {Number(item.guaranteed_amount) > 0 ? ` · ${formatCurrency(Number(item.accepted_amount ?? item.guaranteed_amount))}` : ""}
                                 {" — "}{item.consent_status === "accepted" ? "amekubali" : item.consent_status === "rejected" ? "amekataa" : "anasubiri"}
                             </Typography>
@@ -5434,7 +5437,7 @@ export function MemberPortalPage() {
             setGuarantorDrafts((application.loan_guarantors || []).map((row) => ({
                 member_id: row.member_id,
                 member_no: row.members?.member_no || "",
-                full_name: row.members?.full_name || row.guarantor_name || "Member",
+                full_name: row.members?.member_no || "Member",
                 guaranteed_amount: Number(row.guaranteed_amount || 0)
             })));
             loanApplicationForm.reset({
@@ -6038,46 +6041,19 @@ export function MemberPortalPage() {
         }
     };
 
-    // Type-ahead: search active members by name or member number as the
-    // applicant types, so nobody needs to know member numbers by heart.
+    // The name type-ahead is gone. It searched `full_name`, so two letters
+    // returned a list of members by name — a membership directory inside the
+    // loan form. An applicant now reaches a guarantor by the exact member
+    // number, which they have to have been given by the person themselves.
+    //
+    // The suggestion state is kept and held empty rather than unpicked from
+    // the dialogs below: there is nothing to suggest, and an empty list
+    // renders as nothing.
     useEffect(() => {
-        const query = guarantorLookupNo.trim();
-        if (query.length < 2 || !profile) {
-            setGuarantorSuggestions([]);
-            setGuarantorSearchState("idle");
-            setGuarantorSearchError("");
-            return;
-        }
-
-        let cancelled = false;
-        setGuarantorSearchState("searching");
-        const timer = window.setTimeout(async () => {
-            try {
-                const { data } = await api.get<GuarantorSearchResponse>(endpoints.loanApplications.guarantorSearch(), {
-                    params: { tenant_id: profile.tenant_id, q: query }
-                });
-                if (!cancelled) {
-                    const chosen = new Set(guarantorDrafts.map((row) => row.member_id));
-                    setGuarantorSuggestions((data.data || []).filter((hit) => !chosen.has(hit.member_id)));
-                    setGuarantorSearchState("done");
-                    setGuarantorSearchError("");
-                }
-            } catch (searchError) {
-                if (!cancelled) {
-                    setGuarantorSuggestions([]);
-                    setGuarantorSearchState("error");
-                    setGuarantorSearchError(getApiErrorMessage(searchError, "Member lookup failed."));
-                }
-            }
-        }, 350);
-
-        return () => {
-            cancelled = true;
-            window.clearTimeout(timer);
-        };
-        // guarantorDrafts intentionally read fresh inside the timer via closure;
-        // re-running on draft changes just re-filters the list.
-    }, [guarantorLookupNo, profile, guarantorDrafts]);
+        setGuarantorSuggestions([]);
+        setGuarantorSearchState("idle");
+        setGuarantorSearchError("");
+    }, [guarantorLookupNo]);
 
     const lookupGuarantorByMemberNo = async (hit?: GuarantorSearchHit) => {
         const memberNo = guarantorLookupNo.trim();
@@ -6104,11 +6080,11 @@ export function MemberPortalPage() {
             setGuarantorMaxCount(lookup.policy.max_guarantors_per_application || 5);
 
             if (guarantorDrafts.some((row) => row.member_id === lookup.member_id)) {
-                pushToast({ type: "error", title: "Already selected", message: `${lookup.full_name} is already on your guarantor list.` });
+                pushToast({ type: "error", title: "Already selected", message: `Member ${lookup.member_no} is already on your guarantor list.` });
                 return;
             }
             if (!lookup.is_active) {
-                pushToast({ type: "error", title: "Member not eligible", message: `${lookup.full_name} is not an active member.` });
+                pushToast({ type: "error", title: "Member not eligible", message: `Member ${lookup.member_no} is not an active member.` });
                 return;
             }
             // No capacity gate here any more. What this member can afford is
@@ -6120,7 +6096,9 @@ export function MemberPortalPage() {
             setGuarantorDrafts((prev) => [...prev, {
                 member_id: lookup.member_id,
                 member_no: lookup.member_no,
-                full_name: lookup.full_name,
+                // The lookup returns no name to an applicant, so the row
+                // is labelled by the number they typed.
+                full_name: lookup.member_no,
                 guaranteed_amount: Math.max(0, Math.round(suggested * 100) / 100)
             }]);
             setGuarantorLookupNo("");
@@ -6144,7 +6122,7 @@ export function MemberPortalPage() {
             .map((row) => ({
                 member_id: row.member_id,
                 member_no: row.members?.member_no || "",
-                full_name: row.members?.full_name || row.guarantor_name || "Member",
+                full_name: row.members?.member_no || "Member",
                 guaranteed_amount: Number(row.guaranteed_amount || 0)
             })));
     };
@@ -7252,7 +7230,8 @@ export function MemberPortalPage() {
                             <TextField
                                 fullWidth
                                 size="small"
-                                label="Search guarantor by name or member number"
+                                label="Guarantor's member number"
+                                helperText="Ask them for it — names are not searchable."
                                 value={guarantorLookupNo}
                                 onChange={(event) => setGuarantorLookupNo(event.target.value)}
                                 onKeyDown={(event) => {
@@ -7271,42 +7250,18 @@ export function MemberPortalPage() {
                                 {guarantorLookupBusy ? "Checking..." : "Add"}
                             </Button>
                         </Stack>
-                        {guarantorSuggestions.length ? (
-                            <Paper variant="outlined" sx={{ borderRadius: 1 }}>
-                                {guarantorSuggestions.map((hit) => (
-                                    <Button
-                                        key={hit.member_id}
-                                        fullWidth
-                                        onClick={() => void lookupGuarantorByMemberNo(hit)}
-                                        disabled={guarantorLookupBusy}
-                                        sx={{ justifyContent: "space-between", textTransform: "none", px: 1.5 }}
-                                    >
-                                        <Typography variant="body2" sx={{ fontWeight: 600 }}>{hit.full_name}</Typography>
-                                        <Typography variant="caption" color="text.secondary">{hit.member_no}</Typography>
-                                    </Button>
-                                ))}
-                            </Paper>
-                        ) : guarantorSearchState === "searching" ? (
-                            <Typography variant="caption" color="text.secondary">
-                                Searching members...
-                            </Typography>
-                        ) : guarantorSearchState === "error" ? (
+                        {guarantorSearchState === "error" ? (
                             <Alert severity="error" variant="outlined" sx={{ py: 0.35 }}>
                                 {guarantorSearchError}
                             </Alert>
-                        ) : guarantorSearchState === "done" ? (
-                            <Typography variant="caption" color="text.secondary">
-                                No other active member matches "{guarantorLookupNo.trim()}". Try a surname or the full member number — you cannot guarantee your own loan, so your own name will not appear.
-                            </Typography>
                         ) : null}
                         {guarantorDrafts.map((row, index) => (
                             <Paper key={row.member_id} variant="outlined" sx={{ p: 1.25, borderRadius: 1 }}>
                                 <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ sm: "center" }} justifyContent="space-between">
                                     <Box sx={{ minWidth: 0 }}>
-                                        <Typography variant="body2" sx={{ fontWeight: 700 }}>{row.full_name}</Typography>
-                                        <Typography variant="caption" color="text.secondary">
-                                            {row.member_no}
-                                        </Typography>
+                                        {/* The number is the whole identity an
+                                            applicant holds for their guarantor. */}
+                                        <Typography variant="body2" sx={{ fontWeight: 700 }}>{row.member_no}</Typography>
                                     </Box>
                                     <Stack direction="row" spacing={1} alignItems="center">
                                         {activeRequiredGuarantee > 0 ? (
@@ -10187,7 +10142,8 @@ export function MemberPortalPage() {
                                                 <TextField
                                                     fullWidth
                                                     size="small"
-                                                    label="Search guarantor by name or member number"
+                                                    label="Guarantor's member number"
+                                helperText="Ask them for it — names are not searchable."
                                                     placeholder="e.g. Erick or ILS24-F00002"
                                                     value={guarantorLookupNo}
                                                     onChange={(event) => setGuarantorLookupNo(event.target.value)}
@@ -10207,33 +10163,10 @@ export function MemberPortalPage() {
                                                     {guarantorLookupBusy ? "Checking..." : "Add Guarantor"}
                                                 </Button>
                                             </Stack>
-                                            {guarantorSuggestions.length ? (
-                                                <Paper variant="outlined" sx={{ borderRadius: 1 }}>
-                                                    {guarantorSuggestions.map((hit) => (
-                                                        <Button
-                                                            key={hit.member_id}
-                                                            fullWidth
-                                                            onClick={() => void lookupGuarantorByMemberNo(hit)}
-                                                            disabled={guarantorLookupBusy}
-                                                            sx={{ justifyContent: "space-between", textTransform: "none", px: 1.5 }}
-                                                        >
-                                                            <Typography variant="body2" sx={{ fontWeight: 600 }}>{hit.full_name}</Typography>
-                                                            <Typography variant="caption" color="text.secondary">{hit.member_no}</Typography>
-                                                        </Button>
-                                                    ))}
-                                                </Paper>
-                                            ) : guarantorSearchState === "searching" ? (
-                                                <Typography variant="caption" color="text.secondary">
-                                                    Searching members...
-                                                </Typography>
-                                            ) : guarantorSearchState === "error" ? (
+                                            {guarantorSearchState === "error" ? (
                                                 <Alert severity="error" variant="outlined" sx={{ py: 0.35 }}>
                                                     {guarantorSearchError}
                                                 </Alert>
-                                            ) : guarantorSearchState === "done" ? (
-                                                <Typography variant="caption" color="text.secondary">
-                                                    No other active member matches "{guarantorLookupNo.trim()}". Try a surname or the full member number — you cannot guarantee your own loan, so your own name will not appear.
-                                                </Typography>
                                             ) : null}
                                             {guarantorDrafts.length ? (
                                                 <Stack spacing={1}>
@@ -10242,9 +10175,6 @@ export function MemberPortalPage() {
                                                             <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ sm: "center" }} justifyContent="space-between">
                                                                 <Box sx={{ minWidth: 0 }}>
                                                                     <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                                                                        {row.full_name}
-                                                                    </Typography>
-                                                                    <Typography variant="caption" color="text.secondary">
                                                                         {row.member_no}
                                                                     </Typography>
                                                                 </Box>
