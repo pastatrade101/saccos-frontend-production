@@ -1368,7 +1368,15 @@ function ApplicationWaitingOn({ application }: { application: LoanApplication })
     // fall short, and a plan can be short before anybody has answered.
     const required = Number(readiness?.required_amount ?? application.required_guarantee_amount ?? 0);
     const allocated = Number(readiness?.allocated_amount ?? 0);
-    const shortfall = required > 0 ? Math.max(0, required - allocated) : 0;
+    // The same slack the server allows: one shilling, plus one per guarantor,
+    // since every row is a rounded figure. Without it this line reported
+    // "Guarantees are TSh 1 short" on an application the server would have
+    // accepted — and the member could not fix it, because raising by one
+    // shilling tripped the excess check on the other side.
+    const shortfall = required > 0
+        && required - allocated > 1 + guarantors.length
+        ? Math.ceil(required - allocated)
+        : 0;
 
     if (application.status === "rejected") {
         return null;
@@ -3970,7 +3978,15 @@ export function MemberPortalPage() {
         () => Math.round(guarantorDrafts.reduce((sum, row) => sum + (Number(row.guaranteed_amount) || 0), 0) * 100) / 100,
         [guarantorDrafts]
     );
-    const remainingGuaranteeAmount = Math.max(0, Math.round((requiredGuaranteeAmount - allocatedGuaranteeAmount) * 100) / 100);
+    // Whole shillings, rounded up. The requirement comes off a savings balance
+    // carrying cents, so the leftover used to be suggested as figures like
+    // 3,977,406.07 — which no guarantor can accept, because they type whole
+    // shillings. The seven cents then held the application short for ever.
+    const remainingGuaranteeAmount = Math.max(0, Math.ceil(requiredGuaranteeAmount - allocatedGuaranteeAmount));
+    // Matches the server: one shilling, plus one per guarantor, because each
+    // row is a rounded figure of its own. Small enough that it cannot
+    // under-secure a loan in the tens of millions.
+    const guaranteeTolerance = 1 + guarantorDrafts.length;
     // When the "Manage Guarantors" dialog is open, coverage is measured against
     // THAT application's required amount instead of the apply-form draft.
     const activeRequiredGuarantee = manageGuarantorsTarget
@@ -3979,7 +3995,7 @@ export function MemberPortalPage() {
             ?? (manageGuarantorsTarget.requested_amount - totalSavings)
         ) * 100) / 100)
         : requiredGuaranteeAmount;
-    const activeRemainingGuarantee = Math.max(0, Math.round((activeRequiredGuarantee - allocatedGuaranteeAmount) * 100) / 100);
+    const activeRemainingGuarantee = Math.max(0, Math.ceil(activeRequiredGuarantee - allocatedGuaranteeAmount));
     // Share capital has always been collected into savings; no member's share
     // account has ever been credited, which is why this was hardcoded to zero
     // and every screen quoting it showed "TSh 0".
@@ -5224,7 +5240,7 @@ export function MemberPortalPage() {
                             assumes they are waiting on people, when what they
                             are short of is the plan. */}
                         {requiredAmount > 0 && readiness
-                            && Number(readiness.allocated_amount) < requiredAmount - 1 ? (
+                            && Number(readiness.allocated_amount) < requiredAmount - (1 + guarantors.length) ? (
                             <Typography variant="caption" color="error.main" sx={{ fontWeight: 700 }}>
                                 {`Only ${formatCurrency(readiness.allocated_amount)} has been asked for — ${formatCurrency(requiredAmount - Number(readiness.allocated_amount))} short`}
                             </Typography>
@@ -5779,7 +5795,8 @@ export function MemberPortalPage() {
                 });
                 return;
             }
-            if (requiredGuaranteeAmount > 0 && Math.abs(allocatedGuaranteeAmount - requiredGuaranteeAmount) > 0.01) {
+            if (requiredGuaranteeAmount > 0
+                && Math.abs(allocatedGuaranteeAmount - requiredGuaranteeAmount) > guaranteeTolerance) {
                 pushToast({
                     type: "error",
                     title: allocatedGuaranteeAmount < requiredGuaranteeAmount ? "Guarantee not fully covered" : "Guarantee amounts too high",
@@ -5878,7 +5895,7 @@ export function MemberPortalPage() {
             // fixing it. Saving is still allowed — assembling an application
             // over several sittings is the point of a draft — but it no longer
             // passes without comment.
-            const savedShort = remainingGuaranteeAmount > 0;
+            const savedShort = remainingGuaranteeAmount > guaranteeTolerance;
             pushToast({
                 type: savedShort
                     ? "warning"
