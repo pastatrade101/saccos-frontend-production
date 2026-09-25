@@ -1363,6 +1363,12 @@ function ApplicationWaitingOn({ application }: { application: LoanApplication })
     const readiness = application.guarantor_readiness;
     const pending = guarantors.filter((row) => row.consent_status === "pending");
     const declined = guarantors.filter((row) => row.consent_status === "rejected");
+    // What the guarantors have been ASKED for, against what the loan needs.
+    // Separate from accepted_amount: a plan can be fully accepted and still
+    // fall short, and a plan can be short before anybody has answered.
+    const required = Number(readiness?.required_amount ?? application.required_guarantee_amount ?? 0);
+    const allocated = Number(readiness?.allocated_amount ?? 0);
+    const shortfall = required > 0 ? Math.max(0, required - allocated) : 0;
 
     if (application.status === "rejected") {
         return null;
@@ -1377,6 +1383,25 @@ function ApplicationWaitingOn({ application }: { application: LoanApplication })
                 <Typography variant="caption" sx={{ fontWeight: 700, color: "warning.main" }}>
                     Add your guarantors to continue
                 </Typography>
+            );
+        }
+        // Said before "waiting for N guarantors", because it outranks it: a
+        // plan that falls short of the required guarantee cannot be submitted
+        // however many people accept it. One member built five drafts in
+        // under an hour, every one of them short, each time reading that it
+        // was waiting on somebody else — so they abandoned it and started
+        // again. Nothing on the page told them the plan itself was the
+        // problem.
+        if (shortfall > 0) {
+            return (
+                <Stack spacing={0.25}>
+                    <Typography variant="caption" sx={{ fontWeight: 700, color: "error.main" }}>
+                        {`Guarantees are ${formatCurrency(shortfall)} short`}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                        {`You have allocated ${formatCurrency(allocated)} of the ${formatCurrency(required)} required. Open the draft and raise an amount, or add another guarantor — this cannot be sent until it balances.`}
+                    </Typography>
+                </Stack>
             );
         }
         if (readiness?.complete) {
@@ -5190,6 +5215,17 @@ export function MemberPortalPage() {
                                 {formatCurrency(readiness.accepted_amount)} / {formatCurrency(requiredAmount)} guaranteed
                             </Typography>
                         ) : null}
+                        {/* Accepted against required says how far the answers
+                            have got. It does not say whether the plan can ever
+                            get there — so a member reading "0 / 60,998,001"
+                            assumes they are waiting on people, when what they
+                            are short of is the plan. */}
+                        {requiredAmount > 0 && readiness
+                            && Number(readiness.allocated_amount) < requiredAmount - 1 ? (
+                            <Typography variant="caption" color="error.main" sx={{ fontWeight: 700 }}>
+                                {`Only ${formatCurrency(readiness.allocated_amount)} has been asked for — ${formatCurrency(requiredAmount - Number(readiness.allocated_amount))} short`}
+                            </Typography>
+                        ) : null}
                         {row.status === "submitted" && (rejected > 0 || (readiness && !readiness.complete && readiness.pending_count === 0)) ? (
                             <Typography variant="caption" color="error.main">
                                 Update your guarantors to continue.
@@ -5833,25 +5869,48 @@ export function MemberPortalPage() {
                 }
             }
 
+            // A draft saved short is the state that produced five abandoned
+            // applications from one member in under an hour: nothing said the
+            // plan could not go through, so they started again instead of
+            // fixing it. Saving is still allowed — assembling an application
+            // over several sittings is the point of a draft — but it no longer
+            // passes without comment.
+            const savedShort = remainingGuaranteeAmount > 0;
             pushToast({
-                type: submitted || !options.submitAfterSave ? "success" : "info",
+                type: savedShort
+                    ? "warning"
+                    : submitted || !options.submitAfterSave ? "success" : "info",
                 title: submitted
                     ? editingLoanApplicationId
                         ? "Loan application updated"
                         : "Loan application submitted"
                     : options.submitAfterSave
-                        ? tr("Guarantors have been asked", "Wadhamini wameulizwa")
-                        : "Draft loan application saved",
+                        ? remainingGuaranteeAmount > 0
+                            ? tr("Saved, but the guarantees are short", "Imehifadhiwa, lakini dhamana hazitoshi")
+                            : tr("Guarantors have been asked", "Wadhamini wameulizwa")
+                        : savedShort
+                            ? tr("Draft saved — guarantees still short", "Rasimu imehifadhiwa — dhamana bado hazitoshi")
+                            : "Draft loan application saved",
                 message: submitted
                     ? editingLoanApplicationId
                         ? "Your corrected application has been resubmitted for appraisal."
                         : "Your application is now waiting for appraisal."
                     : options.submitAfterSave
-                        ? tr(
-                            "Your application is ready and each guarantor has been asked to accept. Send it to the SACCOS once they all have.",
-                            "Maombi yako yapo tayari na kila mdhamini ameulizwa akubali. Yatume SACCOS watakapokubali wote."
-                        )
-                        : "Your draft changes were saved. You can submit the application once the current lock is cleared."
+                        ? remainingGuaranteeAmount > 0
+                            ? tr(
+                                `Your guarantors cover ${formatCurrency(allocatedGuaranteeAmount)} of the ${formatCurrency(requiredGuaranteeAmount)} required — ${formatCurrency(remainingGuaranteeAmount)} short. Open the draft and raise an amount or add another guarantor; it cannot be sent until it balances.`,
+                                `Wadhamini wako wanafunika ${formatCurrency(allocatedGuaranteeAmount)} kati ya ${formatCurrency(requiredGuaranteeAmount)} inayohitajika — pungufu ${formatCurrency(remainingGuaranteeAmount)}. Fungua rasimu uongeze kiasi au mdhamini mwingine; haiwezi kutumwa mpaka ilingane.`
+                            )
+                            : tr(
+                                "Your application is ready and each guarantor has been asked to accept. Send it to the SACCOS once they all have.",
+                                "Maombi yako yapo tayari na kila mdhamini ameulizwa akubali. Yatume SACCOS watakapokubali wote."
+                            )
+                        : savedShort
+                            ? tr(
+                                `Saved. Your guarantors cover ${formatCurrency(allocatedGuaranteeAmount)} of the ${formatCurrency(requiredGuaranteeAmount)} required — ${formatCurrency(remainingGuaranteeAmount)} short. The application cannot be sent until it balances.`,
+                                `Imehifadhiwa. Wadhamini wako wanafunika ${formatCurrency(allocatedGuaranteeAmount)} kati ya ${formatCurrency(requiredGuaranteeAmount)} inayohitajika — pungufu ${formatCurrency(remainingGuaranteeAmount)}. Maombi hayawezi kutumwa mpaka yalingane.`
+                            )
+                            : "Your draft changes were saved."
             });
             closeLoanApplicationDialog();
             await reloadLoanApplications(profile.tenant_id);
