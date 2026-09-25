@@ -5283,6 +5283,17 @@ export function MemberPortalPage() {
                                 {submittingDraftId === row.id ? "Sending..." : "Send to SACCOS"}
                             </Button>
                         ) : null}
+                        {/* The draft is where guarantors are assembled now, so
+                            it is the one status that most needs this — and it
+                            was the one status without it, because the button
+                            was written when guarantors were asked only after
+                            submission. Reaching them meant walking the whole
+                            form again from the top. */}
+                        {(row.loan_guarantors || []).length ? (
+                            <Button size="small" variant="outlined" onClick={() => openManageGuarantorsDialog(row)}>
+                                Guarantors
+                            </Button>
+                        ) : null}
                         <Button size="small" variant="outlined" onClick={() => openLoanApplicationEditor(row)}>
                             Continue Draft
                         </Button>
@@ -7240,7 +7251,17 @@ export function MemberPortalPage() {
                     <Stack spacing={1.5} sx={{ pt: 0.5 }}>
                         <Alert severity="info" variant="outlined">
                             {activeRequiredGuarantee > 0
-                                ? `Your guarantors must cover ${formatCurrency(activeRequiredGuarantee)} in total. Guarantors who declined have been removed — replace them or adjust amounts, and changed guarantors will be asked to accept again.`
+                                ? [
+                                    `Your guarantors must cover ${formatCurrency(activeRequiredGuarantee)} in total.`,
+                                    activeRemainingGuarantee > 0
+                                        ? `${formatCurrency(allocatedGuaranteeAmount)} has been asked for so far — ${formatCurrency(activeRemainingGuarantee)} still to allocate.`
+                                        : "That is covered.",
+                                    // The old copy said any change re-asks. It
+                                    // is only an increase that does: lowering
+                                    // what somebody already agreed to is not a
+                                    // new question, so their acceptance stands.
+                                    "Anyone who declined has been removed. Raising an amount asks that guarantor again; lowering one does not."
+                                ].join(" ")
                                 : "This loan is fully covered by your savings — guarantors are witnesses only."}
                         </Alert>
                         <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
