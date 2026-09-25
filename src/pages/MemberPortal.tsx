@@ -3970,9 +3970,24 @@ export function MemberPortalPage() {
 
     // Board process: only the portion of the loan above the member's own savings
     // needs guaranteed amounts; a fully self-covered loan takes nominal guarantors.
+    //
+    // Savings already securing an open loan do NOT count here — they cannot
+    // secure two loans at once. This line omitted that and the server did not,
+    // so the two disagreed by exactly the member's outstanding balance: the
+    // form told Alban Robert Kimario he needed 35,998,000 in guarantees, he
+    // collected it, and the server answered that he needed 60,998,001. The
+    // form said complete, the submission said 25,000,001 short.
+    //
+    // A top-up subtracts nothing, and must not: the balance it would subtract
+    // is the very balance it settles. Math.ceil, like the server, because the
+    // savings balance carries cents and guarantees are whole shillings.
     const requiredGuaranteeAmount = useMemo(
-        () => Math.max(0, Math.round(((Number(requestedLoanAmount) || 0) - totalSavings) * 100) / 100),
-        [requestedLoanAmount, totalSavings]
+        () => {
+            const committedToOpenLoans = isTopUpApplication ? 0 : topUpSettlement;
+            const savingsAvailableToSecure = Math.max(0, totalSavings - committedToOpenLoans);
+            return Math.max(0, Math.ceil((Number(requestedLoanAmount) || 0) - savingsAvailableToSecure));
+        },
+        [requestedLoanAmount, totalSavings, topUpSettlement, isTopUpApplication]
     );
     const allocatedGuaranteeAmount = useMemo(
         () => Math.round(guarantorDrafts.reduce((sum, row) => sum + (Number(row.guaranteed_amount) || 0), 0) * 100) / 100,
@@ -3990,10 +4005,13 @@ export function MemberPortalPage() {
     // When the "Manage Guarantors" dialog is open, coverage is measured against
     // THAT application's required amount instead of the apply-form draft.
     const activeRequiredGuarantee = manageGuarantorsTarget
-        ? Math.max(0, Math.round(Number(
+        ? Math.max(0, Math.ceil(Number(
             manageGuarantorsTarget.required_guarantee_amount
-            ?? (manageGuarantorsTarget.requested_amount - totalSavings)
-        ) * 100) / 100)
+            // Same fallback shape as the server, for an application saved
+            // before the figure was stored.
+            ?? (manageGuarantorsTarget.requested_amount
+                - Math.max(0, totalSavings - (manageGuarantorsTarget.loan_category === "top_up" ? 0 : topUpSettlement)))
+        )))
         : requiredGuaranteeAmount;
     const activeRemainingGuarantee = Math.max(0, Math.ceil(activeRequiredGuarantee - allocatedGuaranteeAmount));
     // Share capital has always been collected into savings; no member's share
