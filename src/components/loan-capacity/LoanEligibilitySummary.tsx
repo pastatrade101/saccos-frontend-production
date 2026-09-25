@@ -14,6 +14,10 @@ import { alpha, useTheme } from "@mui/material/styles";
 import type { LoanCapacitySummary } from "../../types/api";
 import { formatCurrency } from "../../utils/format";
 
+/// Mirrors DEFAULT_UNBOUNDED_PRODUCT_LIMIT on the server: what a product
+/// carries when it has no maximum of its own.
+const UNBOUNDED_PRODUCT_LIMIT = 9999999999999;
+
 interface LoanEligibilitySummaryProps {
     summary?: LoanCapacitySummary | null;
     loading?: boolean;
@@ -150,7 +154,19 @@ export function LoanEligibilitySummary({
                                 </>
                             ) : null}
                             <Grid size={{ xs: 12, md: 6 }}>
-                                <MetricCard label="Loan Product Limit" value={formatCurrency(summary.product_limit)} compact={compact} />
+                                {/* A product with no ceiling of its own carries
+                                    a sentinel of 9,999,999,999,999.99, and it
+                                    was being printed at a member as "TSh
+                                    10,000,000,000,000" — a figure that tells
+                                    them nothing except that something is
+                                    wrong. */}
+                                <MetricCard
+                                    label="Loan Product Limit"
+                                    value={summary.product_limit >= UNBOUNDED_PRODUCT_LIMIT
+                                        ? "No cap on this product"
+                                        : formatCurrency(summary.product_limit)}
+                                    compact={compact}
+                                />
                             </Grid>
                             <Grid size={{ xs: 12, md: 6 }}>
                                 <MetricCard label="SACCO Liquidity Limit" value={formatCurrency(summary.liquidity_limit)} compact={compact} />

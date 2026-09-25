@@ -4080,10 +4080,18 @@ export function MemberPortalPage() {
     const requiredGuaranteeAmount = useMemo(
         () => {
             const committedToOpenLoans = isTopUpApplication ? 0 : topUpSettlement;
-            const savingsAvailableToSecure = Math.max(0, totalSavings - committedToOpenLoans);
+            // The server's contribution base, not a local sum of the savings
+            // accounts. The two differ by the member's share capital: the
+            // capacity engine honours the board's
+            // `share_capital_counts_as_savings` setting and ILBORU has it on,
+            // so the Eligibility step showed Alban 115,002,000 while this line
+            // used 114,001,999.97 — one screen, two answers for the same
+            // money, a million apart.
+            const contributionBase = Number(loanCapacity?.total_contributions ?? totalSavings);
+            const savingsAvailableToSecure = Math.max(0, contributionBase - committedToOpenLoans);
             return Math.max(0, Math.ceil((Number(requestedLoanAmount) || 0) - savingsAvailableToSecure));
         },
-        [requestedLoanAmount, totalSavings, topUpSettlement, isTopUpApplication]
+        [requestedLoanAmount, totalSavings, loanCapacity, topUpSettlement, isTopUpApplication]
     );
     const allocatedGuaranteeAmount = useMemo(
         () => Math.round(guarantorDrafts.reduce((sum, row) => sum + (Number(row.guaranteed_amount) || 0), 0) * 100) / 100,
