@@ -1351,6 +1351,101 @@ function ApplicationProgress({ application }: { application: LoanApplication }) 
 }
 
 /**
+ * The working behind "you need TSh 60,998,001 in guarantees".
+ *
+ * The figure arrives as a conclusion and the member has no way to check it, so
+ * the one that surprises them — the deduction for a loan they already carry —
+ * is invisible. Alban Robert Kimario read that he was 25,000,001 short and had
+ * no way to discover that 25,000,001 was his own outstanding balance.
+ *
+ * Every line is a number he can recognise, in the order the SACCOS works them
+ * out, ending on the two that decide whether he can send the application.
+ */
+function GuaranteeBreakdown({
+    requested,
+    savings,
+    committedToOpenLoans,
+    required,
+    allocated,
+    isTopUp
+}: {
+    requested: number;
+    savings: number;
+    committedToOpenLoans: number;
+    required: number;
+    allocated: number;
+    isTopUp: boolean;
+}) {
+    const savingsAvailable = Math.max(0, savings - (isTopUp ? 0 : committedToOpenLoans));
+    const outstanding = Math.max(0, remaining(required, allocated));
+    const rows: Array<{ label: string; value: number; sign?: "minus"; note?: string; strong?: boolean }> = [
+        { label: "Loan you are asking for", value: requested },
+        { label: "Your savings", value: savings }
+    ];
+    if (committedToOpenLoans > 0) {
+        rows.push(isTopUp
+            ? {
+                label: "Securing the loan you already have",
+                value: 0,
+                note: "A top-up settles it out of this facility, so none of your savings are tied to it."
+            }
+            : {
+                label: "Securing the loan you already have",
+                value: committedToOpenLoans,
+                sign: "minus",
+                note: "The same savings cannot secure two loans at once."
+            });
+    }
+    rows.push({ label: "Savings that can secure this loan", value: savingsAvailable });
+    rows.push({ label: "So this much needs guarantors", value: required, strong: true });
+    rows.push({ label: "Asked of your guarantors so far", value: allocated });
+
+    return (
+        <Stack spacing={0.5} sx={{ mt: 0.75 }}>
+            {rows.map((row) => (
+                <Box key={row.label}>
+                    <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="baseline">
+                        <Typography variant="caption" sx={{ fontWeight: row.strong ? 700 : 400 }} color="text.secondary">
+                            {row.label}
+                        </Typography>
+                        <Typography
+                            variant="caption"
+                            sx={{ fontWeight: row.strong ? 700 : 600, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}
+                        >
+                            {row.sign === "minus" ? `− ${formatCurrency(row.value)}` : formatCurrency(row.value)}
+                        </Typography>
+                    </Stack>
+                    {row.note ? (
+                        <Typography variant="caption" color="text.disabled" sx={{ display: "block", fontSize: 11 }}>
+                            {row.note}
+                        </Typography>
+                    ) : null}
+                </Box>
+            ))}
+            <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="baseline" sx={{ pt: 0.5, borderTop: "1px solid", borderColor: "divider" }}>
+                <Typography variant="caption" sx={{ fontWeight: 700 }} color={outstanding > 0 ? "error.main" : "success.main"}>
+                    {outstanding > 0 ? "Still to allocate" : "Covered"}
+                </Typography>
+                <Typography variant="caption" sx={{ fontWeight: 700, fontVariantNumeric: "tabular-nums" }} color={outstanding > 0 ? "error.main" : "success.main"}>
+                    {outstanding > 0 ? formatCurrency(outstanding) : "—"}
+                </Typography>
+            </Stack>
+            {!isTopUp && committedToOpenLoans > 0 && outstanding > 0 ? (
+                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+                    {`A top-up would settle your ${formatCurrency(committedToOpenLoans)} out of this loan instead of leaving it alongside — then all your savings would count, and only ${formatCurrency(Math.max(0, Math.ceil(requested - savings)))} would need guarantors.`}
+                </Typography>
+            ) : null}
+        </Stack>
+    );
+}
+
+/** Whole shillings still to find, with the tolerance the server allows. */
+function remaining(required: number, allocated: number) {
+    const gap = required - allocated;
+    return gap > 1 ? Math.ceil(gap) : 0;
+}
+
+/**
  * Who the application is actually waiting on.
  *
  * "Submitted" says an application exists; it does not say that four people
@@ -1543,6 +1638,7 @@ export function MemberPortalPage() {
     const [editingLoanApplicationId, setEditingLoanApplicationId] = useState<string | null>(null);
     const [deletingLoanApplicationId, setDeletingLoanApplicationId] = useState<string | null>(null);
     const [submittingDraftId, setSubmittingDraftId] = useState<string | null>(null);
+    const [breakdownApplicationId, setBreakdownApplicationId] = useState<string | null>(null);
     const [pendingDraftDeletion, setPendingDraftDeletion] = useState<LoanApplication | null>(null);
     const [loanFormStep, setLoanFormStep] = useState(0);
     const [loanDocuments, setLoanDocuments] = useState<{ national_id: File | null; supporting_document: File | null; guarantor_id: File | null }>({
@@ -5213,6 +5309,34 @@ export function MemberPortalPage() {
                     <Stack spacing={0.5}>
                         <ApplicationProgress application={row} />
                         <ApplicationWaitingOn application={row} />
+                        {/* The working, folded away. A member who accepts the
+                            figure never opens it; the one who cannot see where
+                            it came from — which is everybody the deduction for
+                            an existing loan surprises — can. */}
+                        {Number(row.required_guarantee_amount || 0) > 0 ? (
+                            <>
+                                <Button
+                                    size="small"
+                                    variant="text"
+                                    sx={{ alignSelf: "flex-start", px: 0.5, minWidth: 0 }}
+                                    onClick={() => setBreakdownApplicationId(
+                                        breakdownApplicationId === row.id ? null : row.id
+                                    )}
+                                >
+                                    {breakdownApplicationId === row.id ? "Hide the working" : "How is this worked out?"}
+                                </Button>
+                                {breakdownApplicationId === row.id ? (
+                                    <GuaranteeBreakdown
+                                        requested={Number(row.requested_amount || 0)}
+                                        savings={totalSavings}
+                                        committedToOpenLoans={topUpSettlement}
+                                        required={Number(row.required_guarantee_amount || 0)}
+                                        allocated={Number(row.guarantor_readiness?.allocated_amount || 0)}
+                                        isTopUp={row.loan_category === "top_up"}
+                                    />
+                                ) : null}
+                            </>
+                        ) : null}
                     </Stack>
                 )
         },
@@ -7282,6 +7406,20 @@ export function MemberPortalPage() {
                                 ].join(" ")
                                 : "This loan is fully covered by your savings — guarantors are witnesses only."}
                         </Alert>
+                        {/* Shown open here, not folded: this is the screen where
+                            the member is deciding how much to ask of whom, and
+                            the deduction for a loan they already carry is the
+                            number that decides it. */}
+                        {manageGuarantorsTarget && activeRequiredGuarantee > 0 ? (
+                            <GuaranteeBreakdown
+                                requested={Number(manageGuarantorsTarget.requested_amount || 0)}
+                                savings={totalSavings}
+                                committedToOpenLoans={topUpSettlement}
+                                required={activeRequiredGuarantee}
+                                allocated={allocatedGuaranteeAmount}
+                                isTopUp={manageGuarantorsTarget.loan_category === "top_up"}
+                            />
+                        ) : null}
                         <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
                             <TextField
                                 fullWidth
