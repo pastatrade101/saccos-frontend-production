@@ -1277,7 +1277,22 @@ function ProfileField({ label, value }: { label: string; value?: string | number
  * happened to be, so the cell renders the reason instead and never this.
  */
 function ApplicationProgress({ application }: { application: LoanApplication }) {
+    // Guarantors answer on the draft now, so their consent is a stage of its
+    // own and it comes BEFORE submission. Dated by the last acceptance, and
+    // only once the accepted amounts actually cover the guarantee — a partly
+    // answered application has not reached this stage.
+    const guarantors = application.loan_guarantors || [];
+    const guaranteedAt = application.guarantor_readiness?.complete
+        ? guarantors
+            .map((row) => row.consented_at)
+            .filter((value): value is string => Boolean(value))
+            .sort()
+            .pop() ?? application.submitted_at
+        : null;
+
     const stages = [
+        { key: "prepared", label: "Prepared", at: application.created_at },
+        { key: "guaranteed", label: "Guarantors", at: guaranteedAt },
         { key: "submitted", label: "Submitted", at: application.submitted_at },
         { key: "appraised", label: "Appraised", at: application.appraised_at },
         { key: "approved", label: "Approved", at: application.approved_at },
@@ -1349,8 +1364,45 @@ function ApplicationWaitingOn({ application }: { application: LoanApplication })
     const pending = guarantors.filter((row) => row.consent_status === "pending");
     const declined = guarantors.filter((row) => row.consent_status === "rejected");
 
-    if (application.status === "rejected" || application.status === "draft") {
+    if (application.status === "rejected") {
         return null;
+    }
+
+    // A draft is no longer a private scratchpad: it is where the guarantors
+    // are asked. Saying nothing here left the member watching a row that
+    // looked idle while four people were being waited on.
+    if (application.status === "draft") {
+        if (!guarantors.length) {
+            return (
+                <Typography variant="caption" sx={{ fontWeight: 700, color: "warning.main" }}>
+                    Add your guarantors to continue
+                </Typography>
+            );
+        }
+        if (readiness?.complete) {
+            return (
+                <Typography variant="caption" sx={{ fontWeight: 700, color: "success.main" }}>
+                    Everyone has accepted — send it to the SACCOS
+                </Typography>
+            );
+        }
+        return (
+            <Stack spacing={0.25}>
+                <Typography variant="caption" sx={{ fontWeight: 700, color: "warning.main" }}>
+                    {`Waiting for ${pending.length} guarantor${pending.length === 1 ? "" : "s"} to accept`}
+                </Typography>
+                {pending.map((row) => (
+                    <Typography key={row.member_id} variant="caption" color="text.secondary">
+                        {row.members?.full_name || row.guarantor_name || "Member"} — hajajibu
+                    </Typography>
+                ))}
+                {declined.map((row) => (
+                    <Typography key={row.member_id} variant="caption" color="error.main">
+                        {row.members?.full_name || row.guarantor_name || "Member"} — amekataa
+                    </Typography>
+                ))}
+            </Stack>
+        );
     }
 
     // Guarantors first: an application does not move until they answer, and
@@ -1457,6 +1509,7 @@ export function MemberPortalPage() {
     const [showApplyDialog, setShowApplyDialog] = useState(false);
     const [editingLoanApplicationId, setEditingLoanApplicationId] = useState<string | null>(null);
     const [deletingLoanApplicationId, setDeletingLoanApplicationId] = useState<string | null>(null);
+    const [submittingDraftId, setSubmittingDraftId] = useState<string | null>(null);
     const [pendingDraftDeletion, setPendingDraftDeletion] = useState<LoanApplication | null>(null);
     const [loanFormStep, setLoanFormStep] = useState(0);
     const [loanDocuments, setLoanDocuments] = useState<{ national_id: File | null; supporting_document: File | null; guarantor_id: File | null }>({
@@ -5161,6 +5214,20 @@ export function MemberPortalPage() {
                     </Button>
                 ) : row.status === "draft" ? (
                     <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                        {/* Sending it in is now a separate, deliberate act, and
+                            it only appears once the guarantors have actually
+                            accepted. That is the whole point of the new order:
+                            nothing incomplete reaches a loan officer. */}
+                        {row.guarantor_readiness?.complete ? (
+                            <Button
+                                size="small"
+                                variant="contained"
+                                onClick={() => void submitDraftApplication(row)}
+                                disabled={submittingDraftId === row.id}
+                            >
+                                {submittingDraftId === row.id ? "Sending..." : "Send to SACCOS"}
+                            </Button>
+                        ) : null}
                         <Button size="small" variant="outlined" onClick={() => openLoanApplicationEditor(row)}>
                             Continue Draft
                         </Button>
@@ -5418,6 +5485,56 @@ export function MemberPortalPage() {
         setGuarantorLookupNo("");
         setTopUpNewCashInput("");
         loanApplicationForm.reset();
+    };
+
+    /**
+     * Sends a completed draft in for appraisal.
+     *
+     * Separate from saving the draft, because the two are now separate acts:
+     * the member assembles the application and their guarantors answer it,
+     * and only then does it go to the SACCOS. The server refuses a submission
+     * whose guarantors have not all accepted, so the two error codes below are
+     * not failures to apologise for — they are the answer to "is it ready?",
+     * and they are shown as such.
+     */
+    const submitDraftApplication = async (application: LoanApplication) => {
+        if (!profile || application.status !== "draft") {
+            return;
+        }
+
+        setSubmittingDraftId(application.id);
+        try {
+            await api.post<LoanApplicationResponse>(endpoints.loanApplications.submit(application.id), {});
+            pushToast({
+                type: "success",
+                title: tr("Application sent", "Maombi yametumwa"),
+                message: tr(
+                    "Your application is now with the SACCOS and waiting for appraisal.",
+                    "Maombi yako sasa yapo SACCOS yanasubiri tathmini."
+                )
+            });
+            await reloadLoanApplications(profile.tenant_id);
+        } catch (submitError) {
+            const code = getApiErrorCode(submitError);
+            if (code === "GUARANTOR_CONSENT_PENDING" || code === "GUARANTOR_COVERAGE_INCOMPLETE") {
+                pushToast({
+                    type: "info",
+                    title: tr("Not ready yet", "Bado hayajakamilika"),
+                    message: tr(
+                        "Your guarantors have not all accepted yet. The application goes in once they have.",
+                        "Wadhamini wako bado hawajakubali wote. Maombi yataenda baada ya kukubali."
+                    )
+                });
+            } else {
+                pushToast({
+                    type: "error",
+                    title: tr("Could not send", "Imeshindikana kutuma"),
+                    message: getApiErrorMessage(submitError)
+                });
+            }
+        } finally {
+            setSubmittingDraftId(null);
+        }
     };
 
     const confirmDeleteLoanApplicationDraft = async () => {
@@ -5699,22 +5816,42 @@ export function MemberPortalPage() {
                 }
             }
 
+            // Pressing Apply no longer files the application: the guarantors
+            // named on it have to accept first. So the submit is attempted and
+            // its "not ready" answer is expected, not an error — the draft is
+            // saved either way, and the member is told what it is waiting for.
+            let submitted = false;
             if (options.submitAfterSave) {
-                await api.post<LoanApplicationResponse>(endpoints.loanApplications.submit(applicationId), {});
+                try {
+                    await api.post<LoanApplicationResponse>(endpoints.loanApplications.submit(applicationId), {});
+                    submitted = true;
+                } catch (submitError) {
+                    const submitCode = getApiErrorCode(submitError);
+                    if (submitCode !== "GUARANTOR_CONSENT_PENDING" && submitCode !== "GUARANTOR_COVERAGE_INCOMPLETE") {
+                        throw submitError;
+                    }
+                }
             }
 
             pushToast({
-                type: "success",
-                title: options.submitAfterSave
+                type: submitted || !options.submitAfterSave ? "success" : "info",
+                title: submitted
                     ? editingLoanApplicationId
                         ? "Loan application updated"
                         : "Loan application submitted"
-                    : "Draft loan application saved",
-                message: options.submitAfterSave
+                    : options.submitAfterSave
+                        ? tr("Guarantors have been asked", "Wadhamini wameulizwa")
+                        : "Draft loan application saved",
+                message: submitted
                     ? editingLoanApplicationId
                         ? "Your corrected application has been resubmitted for appraisal."
                         : "Your application is now waiting for appraisal."
-                    : "Your draft changes were saved. You can submit the application once the current lock is cleared."
+                    : options.submitAfterSave
+                        ? tr(
+                            "Your application is ready and each guarantor has been asked to accept. Send it to the SACCOS once they all have.",
+                            "Maombi yako yapo tayari na kila mdhamini ameulizwa akubali. Yatume SACCOS watakapokubali wote."
+                        )
+                        : "Your draft changes were saved. You can submit the application once the current lock is cleared."
             });
             closeLoanApplicationDialog();
             await reloadLoanApplications(profile.tenant_id);
