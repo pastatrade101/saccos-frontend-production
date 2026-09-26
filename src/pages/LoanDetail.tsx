@@ -25,6 +25,7 @@ import { AppLoader } from "../components/AppLoader";
 import { DataTable, type Column } from "../components/DataTable";
 import { useToast } from "../components/Toast";
 import { LoanTopUpSummary } from "../components/loans/LoanTopUpSummary";
+import { LoanGuarantorsCard } from "../components/loans/LoanGuarantorsCard";
 import { topUpBreakdown } from "../utils/loanLineage";
 import { api, getApiErrorMessage } from "../lib/api";
 import {
@@ -155,7 +156,7 @@ export function LoanDetailPage() {
     const navigate = useNavigate();
     const { loanId } = useParams<{ loanId: string }>();
     const { pushToast } = useToast();
-    const { selectedTenantId } = useAuth();
+    const { profile, selectedTenantId } = useAuth();
     const [loan, setLoan] = useState<Loan | null>(null);
     const [member, setMember] = useState<Member | null>(null);
     const [schedules, setSchedules] = useState<LoanSchedule[]>([]);
@@ -701,6 +702,18 @@ export function LoanDetailPage() {
                 memberLoans={memberLoans}
                 onOpenLoan={(id) => navigate(`/loans/${id}`)}
             />
+
+            {/* Most live loans predate the software or were keyed in from a
+                file, and their signed guarantee forms never reached it. Until
+                they do the guarantee does nothing: it holds no savings and
+                cannot be claimed against. */}
+            {selectedTenantId ? (
+                <LoanGuarantorsCard
+                    loan={loan}
+                    tenantId={selectedTenantId}
+                    canEdit={profile?.role === "branch_manager" || profile?.role === "super_admin"}
+                />
+            ) : null}
 
             <Grid container spacing={1.5}>
                 <Grid size={{ xs: 12, lg: 7 }}>

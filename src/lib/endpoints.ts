@@ -210,7 +210,9 @@ const routeMap = {
         guarantorSearch: "/loan-applications/guarantor-search",
         topUpQuote: "/loan-applications/top-up-quote",
         mergeLoans: "/loan-applications/merge",
-        guarantorConsent: (applicationId: string) => `/loan-applications/${applicationId}/guarantor-consent`
+        guarantorConsent: (applicationId: string) => `/loan-applications/${applicationId}/guarantor-consent`,
+        // Guarantors for a loan already on the books — branch manager and above.
+        loanGuarantors: (loanId: string) => `/loan-applications/loans/${loanId}/guarantors`
     },
     loanCapacity: {
         capacity: "/loans/capacity",
@@ -549,7 +551,8 @@ export const endpoints = {
         guarantorSearch: () => routeMap.loanApplications.guarantorSearch,
         topUpQuote: () => routeMap.loanApplications.topUpQuote,
         mergeLoans: () => routeMap.loanApplications.mergeLoans,
-        guarantorConsent: (applicationId: string) => routeMap.loanApplications.guarantorConsent(applicationId)
+        guarantorConsent: (applicationId: string) => routeMap.loanApplications.guarantorConsent(applicationId),
+        loanGuarantors: (loanId: string) => routeMap.loanApplications.loanGuarantors(loanId)
     },
     loanCapacity: {
         capacity: () => routeMap.loanCapacity.capacity,
