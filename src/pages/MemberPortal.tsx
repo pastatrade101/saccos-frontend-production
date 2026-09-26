@@ -6353,6 +6353,15 @@ export function MemberPortalPage() {
         }
     };
 
+    // Who this member is already standing for. Every row of their own
+    // guarantor-request list that they said yes to — the same data the table
+    // above shows, gathered so the decision can be made without leaving the
+    // dialog.
+    const myGuarantees = useMemo(
+        () => guarantorRequests.filter((row) => row.consent_status === "accepted"),
+        [guarantorRequests]
+    );
+
     // The three figures the accept dialog turns on.
     //
     // The ceiling is the larger of what they were asked for and what the loan
@@ -7433,15 +7442,76 @@ export function MemberPortalPage() {
                             {guarantorAcceptTarget?.borrower?.full_name || "The borrower"} asked you to guarantee{" "}
                             <strong>{formatCurrency(guarantorAcceptTarget?.guaranteed_amount || 0)}</strong>.
                         </Typography>
-                        {/* Their own figure, so they can answer without guessing.
-                            The borrower asks for what they need; whether it can be
-                            covered is the guarantor's to know and to say. */}
+                        {/* Their own position, with the working shown. "Your
+                            savings are already committed" is a conclusion; a
+                            member deciding whether to stand for one more person
+                            needs the figures it came from, and the names they
+                            are already standing for. This is the moment the
+                            decision is made — everything needed to make it
+                            belongs here, not on another screen. */}
+                        {guarantorAcceptTarget?.your_capacity_amount !== undefined ? (
+                            <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 1 }}>
+                                <Typography variant="caption" sx={{ fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }} color="text.secondary">
+                                    {tr("What you can guarantee", "Unachoweza kudhamini")}
+                                </Typography>
+                                <Stack spacing={0.35} sx={{ mt: 0.75 }}>
+                                    {[
+                                        [tr("Your limit", "Kikomo chako"), Number(guarantorAcceptTarget.your_capacity_amount || 0), false],
+                                        [tr("Already pledged", "Ulizoahidi"), Number(guarantorAcceptTarget.your_committed_amount || 0), false],
+                                        ...(Number(guarantorAcceptTarget.your_invoked_amount || 0) > 0
+                                            ? [[tr("Claimed against you", "Zilizodaiwa"), Number(guarantorAcceptTarget.your_invoked_amount || 0), false] as const]
+                                            : []),
+                                        [tr("Free to pledge now", "Zilizobaki huru"), Number(guarantorAcceptTarget.your_available_amount || 0), true]
+                                    ].map(([label, value, strong]) => (
+                                        <Stack key={String(label)} direction="row" justifyContent="space-between" alignItems="baseline" spacing={1}>
+                                            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: strong ? 700 : 400 }}>
+                                                {label}
+                                            </Typography>
+                                            <Typography
+                                                variant="caption"
+                                                sx={{ fontWeight: strong ? 700 : 600, fontVariantNumeric: "tabular-nums" }}
+                                                color={strong ? (Number(value) > 0 ? "success.main" : "error.main") : "text.primary"}
+                                            >
+                                                {formatCurrency(Number(value))}
+                                            </Typography>
+                                        </Stack>
+                                    ))}
+                                </Stack>
+
+                                {myGuarantees.length ? (
+                                    <>
+                                        <Typography variant="caption" sx={{ fontWeight: 700, display: "block", mt: 1.25 }} color="text.secondary">
+                                            {tr(
+                                                `You are already standing for ${myGuarantees.length} ${myGuarantees.length === 1 ? "member" : "members"}`,
+                                                `Tayari unawadhamini wanachama ${myGuarantees.length}`
+                                            )}
+                                        </Typography>
+                                        <Stack spacing={0.25} sx={{ mt: 0.5 }}>
+                                            {myGuarantees.map((item) => (
+                                                <Stack key={item.id} direction="row" justifyContent="space-between" alignItems="baseline" spacing={1}>
+                                                    <Typography variant="caption" color="text.secondary" sx={{ minWidth: 0 }}>
+                                                        {item.borrower?.full_name || "Member"}
+                                                    </Typography>
+                                                    <Typography variant="caption" sx={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                                                        {formatCurrency(Number(item.accepted_amount ?? item.guaranteed_amount ?? 0))}
+                                                    </Typography>
+                                                </Stack>
+                                            ))}
+                                        </Stack>
+                                    </>
+                                ) : null}
+                            </Paper>
+                        ) : null}
+
                         <Typography variant="body2" color={Number(guarantorAcceptTarget?.your_available_amount || 0) > 0 ? "text.secondary" : "error.main"}>
                             {guarantorAcceptTarget?.your_available_amount === undefined
                                 ? "You can accept the full amount or enter the amount you are able to cover."
                                 : Number(guarantorAcceptTarget.your_available_amount) > 0
-                                    ? `You can guarantee up to ${formatCurrency(guarantorAcceptTarget.your_available_amount)} right now. You can accept the full amount or enter the amount you are able to cover.`
-                                    : "Your savings are already committed, so you cannot take this on right now. You can decline."}
+                                    ? "You can accept the full amount or enter the amount you are able to cover."
+                                    : tr(
+                                        "Everything you can pledge is already pledged, so you cannot take this on right now. You can decline.",
+                                        "Kila unachoweza kuahidi kimeshaahidiwa, kwa hiyo huwezi kuchukua hili sasa. Unaweza kukataa."
+                                    )}
                         </Typography>
 
                         {/* What standing for this costs them, in the one currency

@@ -1689,6 +1689,11 @@ export interface GuarantorRequestItem {
      * less what they owe and have already pledged. Their figure, on their own
      * screen — the applicant is never shown it.
      */
+    /** The guarantor's own position: what they can pledge in total, what is
+     *  already pledged, what claims have been invoked, and what is left. */
+    your_capacity_amount?: number;
+    your_committed_amount?: number;
+    your_invoked_amount?: number;
     your_available_amount?: number;
     /** What the loan still needs guaranteed, once everyone else's acceptances
      *  are counted and this member's own row is left out. */
