@@ -236,7 +236,7 @@ export function OverviewSection({
                 </div>
             </section>
 
-            <div className={ui.grid4} data-tour="member-portal-stat-grid">
+            <div className={styles.kpiGrid} data-tour="member-portal-stat-grid">
                 {kpis.map((kpi) => (
                     <div key={kpi.id} className={`${styles.kpi} ${KPI_TONE[kpi.tone]}`}>
                         <div className={styles.kpiHead}>

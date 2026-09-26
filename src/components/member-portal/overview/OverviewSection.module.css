@@ -390,3 +390,34 @@
     padding: 16px;
   }
 }
+
+/* The headline figures, all on one line.
+ *
+ * They used to share the generic .grid4 (min 200px), which fits five across a
+ * desktop and drops the sixth onto a row of its own — where "Loans" read as a
+ * different kind of thing rather than the last of six. These are one set of
+ * numbers and belong on one line, so the row gets its own track size instead
+ * of loosening .grid4 for the five other sections that use it.
+ *
+ * Below a laptop they wrap as before: six of these will not fit a tablet, and
+ * squeezing them would cost more than the wrap does.
+ */
+.kpiGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 16px;
+  min-width: 0;
+}
+
+@media (min-width: 1180px) {
+  .kpiGrid {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+  }
+
+  /* Tighter cards, since each one now has about a sixth of the width. */
+  .kpiGrid .kpi {
+    padding: 13px;
+    gap: 6px;
+  }
+}
