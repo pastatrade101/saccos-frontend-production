@@ -6327,6 +6327,32 @@ export function MemberPortalPage() {
         }
     };
 
+    // The three figures the accept dialog turns on.
+    //
+    // The ceiling is the larger of what they were asked for and what the loan
+    // still needs: a guarantor may cover more than their slice, and may never
+    // push the loan past what it needs secured.
+    const guaranteeStillNeeded = Math.max(0, Number(guarantorAcceptTarget?.still_needed_amount || 0));
+    const guaranteeAcceptCeiling = Math.max(
+        Number(guarantorAcceptTarget?.guaranteed_amount || 0),
+        guaranteeStillNeeded
+    );
+    // What a guarantee costs them in their own borrowing. Guarantees come off
+    // the contribution base before the multiplier, so the multiplier is read
+    // back out of their own capacity figures rather than assumed: it is set
+    // per product and a hardcoded 3 would quietly lie on any SACCOS that
+    // changed it.
+    const guaranteeBorrowCost = useMemo(() => {
+        const amount = Number(guarantorAcceptAmount) || 0;
+        const base = Number(loanCapacity?.total_contributions || 0)
+            - Number(loanCapacity?.guarantor_exposure || 0);
+        const limit = Number(loanCapacity?.contribution_limit || 0);
+        if (!(amount > 0) || !(base > 0) || !(limit > 0)) {
+            return 0;
+        }
+        return Math.round(amount * (limit / base));
+    }, [guarantorAcceptAmount, loanCapacity]);
+
     const openManageGuarantorsDialog = (application: LoanApplication) => {
         setManageGuarantorsTarget(application);
         setGuarantorLookupNo("");
@@ -7386,19 +7412,63 @@ export function MemberPortalPage() {
                             covered is the guarantor's to know and to say. */}
                         <Typography variant="body2" color={Number(guarantorAcceptTarget?.your_available_amount || 0) > 0 ? "text.secondary" : "error.main"}>
                             {guarantorAcceptTarget?.your_available_amount === undefined
-                                ? ""
+                                ? "You can accept the full amount or enter the amount you are able to cover."
                                 : Number(guarantorAcceptTarget.your_available_amount) > 0
-                                    ? `You can guarantee up to ${formatCurrency(guarantorAcceptTarget.your_available_amount)} right now.`
+                                    ? `You can guarantee up to ${formatCurrency(guarantorAcceptTarget.your_available_amount)} right now. You can accept the full amount or enter the amount you are able to cover.`
                                     : "Your savings are already committed, so you cannot take this on right now. You can decline."}
-                            You can accept the full amount or enter the amount you are able to cover.
                         </Typography>
+
+                        {/* What standing for this costs them, in the one currency
+                            they will notice: their own borrowing. Guarantees are
+                            taken off the contribution base BEFORE the multiplier,
+                            so a shilling guaranteed is several shillings they can
+                            no longer borrow — which is exactly the trap of saying
+                            yes to everyone and finding the door shut when your own
+                            turn comes. */}
+                        {guaranteeBorrowCost > 0 ? (
+                            <Alert severity="warning" variant="outlined" sx={{ py: 0.5 }}>
+                                {tr(
+                                    `Standing for ${formatCurrency(Number(guarantorAcceptAmount) || 0)} lowers what you yourself can borrow by about ${formatCurrency(guaranteeBorrowCost)}.`,
+                                    `Kudhamini ${formatCurrency(Number(guarantorAcceptAmount) || 0)} kunapunguza unachoweza kukopa wewe kwa takriban ${formatCurrency(guaranteeBorrowCost)}.`
+                                )}
+                            </Alert>
+                        ) : null}
+
+                        {/* How close saying yes gets the borrower. Without it a
+                            guarantor covers their slice, the borrower is still
+                            short and goes looking for another name — when the
+                            person reading this could have finished it. */}
+                        {guaranteeStillNeeded > 0 ? (
+                            <Stack spacing={0.5}>
+                                <Typography variant="body2" color="text.secondary">
+                                    {tr(
+                                        `This loan still needs ${formatCurrency(guaranteeStillNeeded)} guaranteed in total.`,
+                                        `Mkopo huu bado unahitaji jumla ya ${formatCurrency(guaranteeStillNeeded)} kudhaminiwa.`
+                                    )}
+                                </Typography>
+                                {guaranteeStillNeeded > Number(guarantorAcceptTarget?.guaranteed_amount || 0) ? (
+                                    <Button
+                                        size="small"
+                                        variant="text"
+                                        sx={{ alignSelf: "flex-start", px: 0.5 }}
+                                        onClick={() => setGuarantorAcceptAmount(String(Math.round(guaranteeStillNeeded)))}
+                                    >
+                                        {tr("Cover all of it", "Nifunike yote")}
+                                    </Button>
+                                ) : null}
+                            </Stack>
+                        ) : null}
+
                         <TextField
                             fullWidth
                             type="number"
                             label="Amount you agree to guarantee"
                             value={guarantorAcceptAmount}
                             onChange={(event) => setGuarantorAcceptAmount(event.target.value)}
-                            helperText={`Maximum ${formatCurrency(guarantorAcceptTarget?.guaranteed_amount || 0)}. This amount stays locked in your savings until the loan is repaid.`}
+                            helperText={tr(
+                                `Up to ${formatCurrency(guaranteeAcceptCeiling)} — this loan cannot take more than it still needs. The amount stays locked in your savings until the loan is repaid.`,
+                                `Hadi ${formatCurrency(guaranteeAcceptCeiling)} — mkopo hauwezi kupokea zaidi ya unavyohitaji. Kiasi hicho kinabaki kimefungwa kwenye akiba yako hadi mkopo ulipwe.`
+                            )}
                             error={Boolean(guarantorAcceptTarget?.your_available_amount !== undefined
                                 && Number(guarantorAcceptAmount) > Number(guarantorAcceptTarget.your_available_amount))}
                         />
@@ -7412,7 +7482,7 @@ export function MemberPortalPage() {
                             !guarantorAcceptTarget
                             || processingGuarantorRequestId === guarantorAcceptTarget.id
                             || !(Number(guarantorAcceptAmount) > 0)
-                            || Number(guarantorAcceptAmount) > Number(guarantorAcceptTarget.guaranteed_amount || 0)
+                            || Number(guarantorAcceptAmount) > guaranteeAcceptCeiling + 1
                         }
                         onClick={() => {
                             if (guarantorAcceptTarget) {

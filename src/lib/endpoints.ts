@@ -1690,6 +1690,9 @@ export interface GuarantorRequestItem {
      * screen — the applicant is never shown it.
      */
     your_available_amount?: number;
+    /** What the loan still needs guaranteed, once everyone else's acceptances
+     *  are counted and this member's own row is left out. */
+    still_needed_amount?: number | null;
     can_respond?: boolean;
     borrower?: Pick<Member, "id" | "full_name" | "member_no"> | null;
     loan_application?: {
