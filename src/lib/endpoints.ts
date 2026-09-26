@@ -1689,8 +1689,13 @@ export interface GuarantorRequestItem {
      * less what they owe and have already pledged. Their figure, on their own
      * screen — the applicant is never shown it.
      */
-    /** The guarantor's own position: what they can pledge in total, what is
+    /** The guarantor's own position: how the limit was arrived at, what is
      *  already pledged, what claims have been invoked, and what is left. */
+    your_savings_amount?: number;
+    your_own_debt_amount?: number;
+    your_free_savings_amount?: number;
+    /** Share of free savings the board allows to be pledged, e.g. 0.4. */
+    your_commitment_ratio?: number;
     your_capacity_amount?: number;
     your_committed_amount?: number;
     your_invoked_amount?: number;

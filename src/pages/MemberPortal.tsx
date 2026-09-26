@@ -7460,10 +7460,35 @@ export function MemberPortalPage() {
                                 </Typography>
                                 <Stack spacing={0.35} sx={{ mt: 0.75 }}>
                                     {[
-                                        [tr("Your limit", "Kikomo chako"), Number(guarantorAcceptTarget.your_capacity_amount || 0), false],
-                                        [tr("Already pledged", "Ulizoahidi"), Number(guarantorAcceptTarget.your_committed_amount || 0), false],
+                                        // From their savings down to the limit,
+                                        // in the order the SACCOS works it out.
+                                        // "Your limit is 30,312,568" on its own
+                                        // cannot say whether it is small because
+                                        // they have little saved or because they
+                                        // already owe — and those call for very
+                                        // different decisions.
+                                        ...(guarantorAcceptTarget.your_savings_amount !== undefined
+                                            ? [
+                                                [tr("Your savings", "Akiba yako"), Number(guarantorAcceptTarget.your_savings_amount || 0), false] as const,
+                                                ...(Number(guarantorAcceptTarget.your_own_debt_amount || 0) > 0
+                                                    ? [
+                                                        [tr("Less your own loan", "Toa mkopo wako mwenyewe"), -Number(guarantorAcceptTarget.your_own_debt_amount || 0), false] as const,
+                                                        [tr("Savings free to back others", "Akiba iliyo huru kudhamini"), Number(guarantorAcceptTarget.your_free_savings_amount || 0), false] as const
+                                                    ]
+                                                    : []),
+                                                [
+                                                    tr(
+                                                        `Your limit — ${Math.round(Number(guarantorAcceptTarget.your_commitment_ratio || 0) * 100)}% of that`,
+                                                        `Kikomo chako — ${Math.round(Number(guarantorAcceptTarget.your_commitment_ratio || 0) * 100)}% ya hiyo`
+                                                    ),
+                                                    Number(guarantorAcceptTarget.your_capacity_amount || 0),
+                                                    false
+                                                ] as const
+                                            ]
+                                            : [[tr("Your limit", "Kikomo chako"), Number(guarantorAcceptTarget.your_capacity_amount || 0), false] as const]),
+                                        [tr("Already pledged", "Ulizoahidi"), -Number(guarantorAcceptTarget.your_committed_amount || 0), false],
                                         ...(Number(guarantorAcceptTarget.your_invoked_amount || 0) > 0
-                                            ? [[tr("Claimed against you", "Zilizodaiwa"), Number(guarantorAcceptTarget.your_invoked_amount || 0), false] as const]
+                                            ? [[tr("Claimed against you", "Zilizodaiwa"), -Number(guarantorAcceptTarget.your_invoked_amount || 0), false] as const]
                                             : []),
                                         [tr("Free to pledge now", "Zilizobaki huru"), Number(guarantorAcceptTarget.your_available_amount || 0), true]
                                     ].map(([label, value, strong]) => (
@@ -7473,10 +7498,17 @@ export function MemberPortalPage() {
                                             </Typography>
                                             <Typography
                                                 variant="caption"
-                                                sx={{ fontWeight: strong ? 700 : 600, fontVariantNumeric: "tabular-nums" }}
-                                                color={strong ? (Number(value) > 0 ? "success.main" : "error.main") : "text.primary"}
+                                                sx={{ fontWeight: strong ? 700 : 600, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}
+                                                color={strong
+                                                    ? (Number(value) > 0 ? "success.main" : "error.main")
+                                                    : Number(value) < 0 ? "text.secondary" : "text.primary"}
                                             >
-                                                {formatCurrency(Number(value))}
+                                                {/* Deductions carry their sign, so the
+                                                    column reads as a sum rather than a
+                                                    list of unrelated figures. */}
+                                                {Number(value) < 0
+                                                    ? `− ${formatCurrency(Math.abs(Number(value)))}`
+                                                    : formatCurrency(Number(value))}
                                             </Typography>
                                         </Stack>
                                     ))}
