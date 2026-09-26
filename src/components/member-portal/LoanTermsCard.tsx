@@ -121,7 +121,7 @@ export function LoanTermsCard({ product, recommended = false }: LoanTermsCardPro
                 bgcolor: recommended ? "var(--m-gold-soft)" : "var(--m-surface)"
             }}
         >
-            <CardContent sx={{ display: "grid", gap: 1.5 }}>
+            <CardContent sx={{ display: "grid", gap: 1.25, p: { xs: 2, lg: 1.75 } }}>
                 <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1} flexWrap="wrap" useFlexGap>
                     <Box sx={{ minWidth: 0 }}>
                         {recommended ? (
@@ -142,7 +142,22 @@ export function LoanTermsCard({ product, recommended = false }: LoanTermsCardPro
                         ) : null}
                         <Typography variant="subtitle1" sx={{ fontWeight: 800, lineHeight: 1.15 }}>{product.name}</Typography>
                         {product.description ? (
-                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>{product.description}</Typography>
+                            <Typography
+                                variant="body2"
+                                color="text.secondary"
+                                sx={{
+                                    mt: 0.25,
+                                    // Two lines. The tiers describe themselves in
+                                    // a sentence and a half, and a third line on
+                                    // one card only was what made the row ragged.
+                                    display: "-webkit-box",
+                                    WebkitLineClamp: 2,
+                                    WebkitBoxOrient: "vertical",
+                                    overflow: "hidden"
+                                }}
+                            >
+                                {product.description}
+                            </Typography>
                         ) : null}
                     </Box>
                     <Chip
@@ -152,31 +167,31 @@ export function LoanTermsCard({ product, recommended = false }: LoanTermsCardPro
                     />
                 </Stack>
 
-                <Grid container spacing={1.5}>
-                    <Grid size={{ xs: 12, sm: 6 }}>
+                <Grid container spacing={{ xs: 1.5, lg: 1 }}>
+                    <Grid size={{ xs: 12, sm: 6, lg: 12 }}>
                         <TermRow icon={<AccountBalanceRoundedIcon fontSize="small" />} label="Loan amount" value={amountLabel(product)} />
                     </Grid>
-                    <Grid size={{ xs: 12, sm: 6 }}>
+                    <Grid size={{ xs: 12, sm: 6, lg: 12 }}>
                         <TermRow icon={<PercentRoundedIcon fontSize="small" />} label="Interest rate" value={formatMonthlyLoanRate(product.annual_interest_rate)} />
                     </Grid>
-                    <Grid size={{ xs: 12, sm: 6 }}>
+                    <Grid size={{ xs: 12, sm: 6, lg: 12 }}>
                         <TermRow icon={<CalendarMonthRoundedIcon fontSize="small" />} label="Maximum repayment time" value={termLabel(product)} />
                     </Grid>
-                    <Grid size={{ xs: 12, sm: 6 }}>
+                    <Grid size={{ xs: 12, sm: 6, lg: 12 }}>
                         <TermRow icon={<CalendarMonthRoundedIcon fontSize="small" />} label="Repayment frequency" value={titleCase(product.repayment_frequency)} />
                     </Grid>
-                    <Grid size={{ xs: 12, sm: 6 }}>
+                    <Grid size={{ xs: 12, sm: 6, lg: 12 }}>
                         <TermRow icon={<GroupsRoundedIcon fontSize="small" />} label="Guarantors" value={guarantorsLabel} />
                     </Grid>
-                    <Grid size={{ xs: 12, sm: 6 }}>
+                    <Grid size={{ xs: 12, sm: 6, lg: 12 }}>
                         <TermRow icon={<ReceiptLongRoundedIcon fontSize="small" />} label="Processing fee" value={processingFeeLabel(product)} />
                     </Grid>
                     {product.insurance_rate > 0 ? (
-                        <Grid size={{ xs: 12, sm: 6 }}>
+                        <Grid size={{ xs: 12, sm: 6, lg: 12 }}>
                             <TermRow icon={<ShieldRoundedIcon fontSize="small" />} label="Insurance" value={`${product.insurance_rate}% of the loan`} />
                         </Grid>
                     ) : null}
-                    <Grid size={{ xs: 12, sm: 6 }}>
+                    <Grid size={{ xs: 12, sm: 6, lg: 12 }}>
                         <TermRow
                             icon={<VerifiedUserRoundedIcon fontSize="small" />}
                             label="Borrowing limit"
@@ -184,7 +199,7 @@ export function LoanTermsCard({ product, recommended = false }: LoanTermsCardPro
                         />
                     </Grid>
                     {product.minimum_membership_duration_months > 0 ? (
-                        <Grid size={{ xs: 12, sm: 6 }}>
+                        <Grid size={{ xs: 12, sm: 6, lg: 12 }}>
                             <TermRow
                                 icon={<VerifiedUserRoundedIcon fontSize="small" />}
                                 label="Membership required"
@@ -192,7 +207,7 @@ export function LoanTermsCard({ product, recommended = false }: LoanTermsCardPro
                             />
                         </Grid>
                     ) : null}
-                    <Grid size={{ xs: 12, sm: 6 }}>
+                    <Grid size={{ xs: 12, sm: 6, lg: 12 }}>
                         <TermRow
                             icon={<CalendarMonthRoundedIcon fontSize="small" />}
                             label="Early repayment"
@@ -202,7 +217,7 @@ export function LoanTermsCard({ product, recommended = false }: LoanTermsCardPro
                         />
                     </Grid>
                     {latePenaltyLabel ? (
-                        <Grid size={{ xs: 12, sm: 6 }}>
+                        <Grid size={{ xs: 12, sm: 6, lg: 12 }}>
                             <TermRow icon={<ReceiptLongRoundedIcon fontSize="small" />} label="Late payment penalty" value={latePenaltyLabel} />
                         </Grid>
                     ) : null}

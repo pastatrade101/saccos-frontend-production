@@ -7326,8 +7326,12 @@ export function MemberPortalPage() {
                             </Accordion>
                         ) : null}
                         <Grid container spacing={2}>
+                            {/* Three across, so the tiers read as one comparison
+                                rather than two and a stray. Grid items stretch,
+                                so the card carrying "Best for you" no longer
+                                stands taller than the others. */}
                             {activeLoanProducts.map((product) => (
-                                <Grid key={product.id} size={{ xs: 12, lg: 6 }}>
+                                <Grid key={product.id} size={{ xs: 12, sm: 6, lg: 4 }}>
                                     <LoanTermsCard
                                         product={product}
                                         recommended={Boolean(
