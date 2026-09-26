@@ -429,6 +429,11 @@ const routeMap = {
 } as const;
 
 export const endpoints = {
+    agm: {
+        board: () => "/agm",
+        responses: (eventId: string) => `/agm/${eventId}/responses`,
+        register: (eventId: string) => `/agm/${eventId}/register`
+    },
     auth: {
         backendSignIn: () => routeMap.auth.backendSignIn,
         twoFactorSetup: () => routeMap.auth.twoFactorSetup,

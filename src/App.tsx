@@ -48,6 +48,7 @@ const PerformanceTargetsPage = lazy(() => import("./pages/PerformanceTargets").t
 const LeaguesPage = lazy(() => import("./pages/Leagues").then((m) => ({ default: m.LeaguesPage })));
 const WeeklyChallengesPage = lazy(() => import("./pages/WeeklyChallenges").then((m) => ({ default: m.WeeklyChallengesPage })));
 const MilestonesPage = lazy(() => import("./pages/Milestones").then((m) => ({ default: m.MilestonesPage })));
+const AgmRegisterPage = lazy(() => import("./pages/AgmRegister").then((m) => ({ default: m.AgmRegisterPage })));
 const AllReportsPage = lazy(() => import("./pages/AllReports").then((m) => ({ default: m.AllReportsPage })));
 const TreasuryPage = lazy(() => import("./pages/Treasury").then((m) => ({ default: m.TreasuryPage })));
 const TreasuryPolicySettingsPage = lazy(() => import("./pages/TreasuryPolicySettings").then((m) => ({ default: m.TreasuryPolicySettingsPage })));
@@ -271,6 +272,7 @@ export default function App() {
                             <Route path="/leagues" element={<LeaguesPage />} />
                             <Route path="/weekly-challenges" element={<WeeklyChallengesPage />} />
                             <Route path="/milestones" element={<MilestonesPage />} />
+                            <Route path="/agm" element={<AgmRegisterPage />} />
                         </Route>
                         <Route
                             element={

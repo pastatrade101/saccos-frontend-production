@@ -130,6 +130,7 @@ import memberContentStyles from "../components/member-portal/MemberContent.modul
 import { SavingsTrendChart } from "../components/member-overview/SavingsTrendChart";
 import { MemberLoanWorkspaceCard } from "../components/member-portal/MemberLoanWorkspaceCard";
 import { LoanTermsCard } from "../components/member-portal/LoanTermsCard";
+import { AgmAttendanceCard } from "../components/member-portal/AgmAttendanceCard";
 import { LoanSchedulePreview } from "../components/member-portal/LoanSchedulePreview";
 import { HeirsSection } from "../components/member-portal/HeirsSection";
 import { PaymentReceiptDialog } from "../components/member-portal/PaymentReceiptDialog";
@@ -6803,6 +6804,12 @@ export function MemberPortalPage() {
     };
 
     const renderOverviewView = () => (
+        <Stack spacing={2}>
+        {/* Above everything else while a meeting is open. A member who signs in
+            to check a balance is the member the SACCOS most needs an answer
+            from, and the card removes itself once no meeting is taking
+            responses. */}
+        {profile?.tenant_id ? <AgmAttendanceCard tenantId={profile.tenant_id} tr={tr} /> : null}
         <OverviewSection
             nextStep={overviewNextStep}
             hero={{
@@ -7012,6 +7019,7 @@ export function MemberPortalPage() {
                 }
                 : null}
         />
+        </Stack>
     );
 
     const renderWeeklyChallengeView = () => (

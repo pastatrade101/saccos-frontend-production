@@ -30,6 +30,7 @@ import TrackChangesRoundedIcon from "@mui/icons-material/TrackChangesRounded";
 import EmojiEventsRoundedIcon from "@mui/icons-material/EmojiEventsRounded";
 import WhatshotRoundedIcon from "@mui/icons-material/WhatshotRounded";
 import FlagRoundedIcon from "@mui/icons-material/FlagRounded";
+import EventAvailableRoundedIcon from "@mui/icons-material/EventAvailableRounded";
 import {
     Autocomplete,
     AppBar,
@@ -103,6 +104,7 @@ const navItems: NavItem[] = [
     { to: "/leagues", label: "Savings Leagues", roles: ["super_admin", "branch_manager"], section: "workspace", icon: EmojiEventsRoundedIcon },
     { to: "/weekly-challenges", label: "Weekly Challenge", roles: ["super_admin", "branch_manager", "treasury_officer"], section: "workspace", icon: WhatshotRoundedIcon },
     { to: "/milestones", label: "SACCO Milestones", roles: ["super_admin", "branch_manager"], section: "workspace", icon: FlagRoundedIcon },
+    { to: "/agm", label: "AGM Attendance", roles: ["super_admin", "branch_manager"], section: "workspace", icon: EventAvailableRoundedIcon },
     { to: "/settings/sacco-year", label: "SACCO Settings", roles: ["super_admin", "branch_manager"], section: "workspace", icon: SettingsRoundedIcon },
     { to: "/auditor/workbench", label: "Workbench", roles: ["auditor"], section: "workspace", icon: HubRoundedIcon },
     { to: "/auditor/exceptions", label: "Exceptions", roles: ["auditor"], section: "workspace", icon: WarningAmberRoundedIcon },
@@ -145,7 +147,7 @@ const navGroups: NavGroup[] = [
     // and by search, but never shows up in the menu.
     { key: "finance", label: "Finance", itemTos: ["/savings", "/loans", "/payments", "/revenue", "/dividends", "/finance/share-capital-transfer", "/cash-control", "/cash", "/cash/transactions", "/treasury", "/treasury/policy-settings"] },
     { key: "operations", label: "Operations", itemTos: ["/approvals"] },
-    { key: "analytics", label: "Analytics", itemTos: ["/performance-targets", "/leagues", "/weekly-challenges", "/milestones", "/reports", "/auditor/reports", "/auditor/workbench", "/auditor/exceptions", "/auditor/journals", "/auditor/audit-logs", "/auditor/login-history"] },
+    { key: "analytics", label: "Analytics", itemTos: ["/performance-targets", "/leagues", "/weekly-challenges", "/milestones", "/agm", "/reports", "/auditor/reports", "/auditor/workbench", "/auditor/exceptions", "/auditor/journals", "/auditor/audit-logs", "/auditor/login-history"] },
     { key: "setup", label: "Setup", itemTos: ["/setup/super-admin", "/settings/sacco-year"] }
 ];
 
