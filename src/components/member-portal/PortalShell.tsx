@@ -17,6 +17,8 @@ export interface PortalNavItem {
 }
 
 export interface PortalPayAccount {
+    /** Stable key. The account number serves when a caller has no id. */
+    id?: string;
     accountNumber: string;
     accountName?: string | null;
     bankName?: string | null;
@@ -36,7 +38,8 @@ interface PortalShellProps {
     /** League tier name, e.g. "Spinel". Hidden when the league is off. */
     leagueLabel?: string | null;
     statusLabel: string;
-    payAccount?: PortalPayAccount | null;
+    /** Every account the SACCOS collects through, in display order. */
+    payAccounts?: PortalPayAccount[];
     branchLine?: string | null;
     lastSyncedLabel?: string | null;
     theme: "light" | "dark";
@@ -66,7 +69,7 @@ export function PortalShell({
     avatarUrl,
     leagueLabel,
     statusLabel,
-    payAccount,
+    payAccounts = [],
     branchLine,
     lastSyncedLabel,
     theme,
@@ -80,7 +83,10 @@ export function PortalShell({
 }: PortalShellProps) {
     const { lang, setLang, t } = useLanguage();
     const [drawerOpen, setDrawerOpen] = useState(false);
-    const [copied, setCopied] = useState(false);
+    // WHICH number was copied, not merely that one was. With more than one
+    // account on screen, "Copied" under the wrong card is worse than no
+    // feedback at all — the member pays the wrong bank believing they checked.
+    const [copiedNumber, setCopiedNumber] = useState<string | null>(null);
     // Alternating class names restart the fade on every section change; a single
     // class would not re-trigger because the element is never remounted.
     const [fadeToggle, setFadeToggle] = useState(false);
@@ -91,20 +97,20 @@ export function PortalShell({
     }, [activeSection]);
 
     useEffect(() => {
-        if (!copied) {
+        if (!copiedNumber) {
             return;
         }
-        const id = window.setTimeout(() => setCopied(false), 1600);
+        const id = window.setTimeout(() => setCopiedNumber(null), 1600);
         return () => window.clearTimeout(id);
-    }, [copied]);
+    }, [copiedNumber]);
 
-    const copyAccountNumber = async () => {
-        if (!payAccount?.accountNumber) {
+    const copyAccountNumber = async (accountNumber: string) => {
+        if (!accountNumber) {
             return;
         }
         try {
-            await navigator.clipboard.writeText(payAccount.accountNumber);
-            setCopied(true);
+            await navigator.clipboard.writeText(accountNumber);
+            setCopiedNumber(accountNumber);
         } catch {
             // Clipboard blocked (insecure context or denied permission): the
             // number is on screen, so the member can still copy it by hand.
@@ -161,21 +167,35 @@ export function PortalShell({
                 </nav>
             </div>
 
-            {payAccount?.accountNumber ? (
+            {payAccounts.length ? (
                 <div className={styles.payCard}>
                     <span className={styles.payLabel}>{t("How to pay", "Jinsi ya kulipa")}</span>
-                    <span className={styles.payNumber}>{payAccount.accountNumber}</span>
-                    {/* Kept to two lines so the rail never needs to scroll — the
-                        full instructions live once, on the Overview pay panel. */}
-                    {payAccount.bankName ? (
-                        <span className={styles.payLine}>
-                            {payAccount.bankName}
-                            {payAccount.bankBranch ? ` · ${payAccount.bankBranch}` : ""}
-                        </span>
-                    ) : null}
-                    <button className={styles.payCopy} type="button" onClick={() => void copyAccountNumber()}>
-                        {copied ? t("Copied", "Imenakiliwa") : t("Copy number", "Nakili namba")}
-                    </button>
+                    {/* One block per account. Still two lines each — number and
+                        bank — so the rail stays short; the full instructions
+                        live once, on the Overview pay panel. Past two accounts
+                        the card scrolls rather than pushing the nav off screen. */}
+                    <div className={styles.payAccounts}>
+                        {payAccounts.map((account) => (
+                            <div key={account.id || account.accountNumber} className={styles.payAccount}>
+                                <span className={styles.payNumber}>{account.accountNumber}</span>
+                                {account.bankName ? (
+                                    <span className={styles.payLine}>
+                                        {account.bankName}
+                                        {account.bankBranch ? ` · ${account.bankBranch}` : ""}
+                                    </span>
+                                ) : null}
+                                <button
+                                    className={styles.payCopy}
+                                    type="button"
+                                    onClick={() => void copyAccountNumber(account.accountNumber)}
+                                >
+                                    {copiedNumber === account.accountNumber
+                                        ? t("Copied", "Imenakiliwa")
+                                        : t("Copy number", "Nakili namba")}
+                                </button>
+                            </div>
+                        ))}
+                    </div>
                 </div>
             ) : null}
 

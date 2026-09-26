@@ -686,3 +686,24 @@ input.searchInput::placeholder {
     animation: none;
   }
 }
+
+/* One block per bank account. Two accounts still fit the rail; past that the
+   card scrolls rather than pushing the navigation off the screen. */
+.payAccounts {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 216px;
+  overflow-y: auto;
+}
+
+.payAccount {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.payAccounts .payAccount + .payAccount {
+  padding-top: 12px;
+  border-top: 1px solid var(--m-line);
+}

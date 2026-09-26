@@ -4323,19 +4323,43 @@ export function MemberPortalPage() {
         [loans]
     );
     // SACCO collection account, shown to every member for deposits.
-    const saccoBankAccount = useMemo(
-        () => (memberPortalPaymentControls.bank_account_number
-            ? {
-                accountName: memberPortalPaymentControls.bank_account_name,
-                bankName: memberPortalPaymentControls.bank_name,
-                bankBranch: memberPortalPaymentControls.bank_branch,
+    /**
+     * Every account the SACCOS collects through.
+     *
+     * ILBORU banks at NMB and at Mwanga Hakika, and a member paying in has to
+     * be able to see both and copy either. The server sends the list; the old
+     * singular bank_* fields are the fallback, so a browser holding a cached
+     * build from before the list existed still shows the primary account
+     * rather than none.
+     */
+    const saccoBankAccounts = useMemo(() => {
+        const listed = memberPortalPaymentControls.bank_accounts || [];
+        if (listed.length) {
+            return listed.map((row) => ({
+                id: row.id,
+                accountName: row.account_name,
+                bankName: row.bank_name,
+                bankBranch: row.branch,
+                accountNumber: row.account_number,
+                swiftCode: row.swift_code,
+                instructions: row.instructions
+            }));
+        }
+        return memberPortalPaymentControls.bank_account_number
+            ? [{
+                id: "primary",
+                accountName: memberPortalPaymentControls.bank_account_name ?? null,
+                bankName: memberPortalPaymentControls.bank_name ?? null,
+                bankBranch: memberPortalPaymentControls.bank_branch ?? null,
                 accountNumber: memberPortalPaymentControls.bank_account_number,
-                swiftCode: memberPortalPaymentControls.bank_swift_code,
-                instructions: memberPortalPaymentControls.bank_instructions
-            }
-            : null),
-        [memberPortalPaymentControls]
-    );
+                swiftCode: memberPortalPaymentControls.bank_swift_code ?? null,
+                instructions: memberPortalPaymentControls.bank_instructions ?? null
+            }]
+            : [];
+    }, [memberPortalPaymentControls]);
+
+    // The first one, for the panels that still speak of a single account.
+    const saccoBankAccount = saccoBankAccounts[0] || null;
     // Savings × the product multiplier, already net of savings pledged as
     // guarantees for other members.
     const dashboardSavingsBasedLimit = useMemo(
@@ -4426,17 +4450,19 @@ export function MemberPortalPage() {
     );
     const leagueEnabled = Boolean(leaguePosition?.league_enabled && leaguePosition.tier);
     const { lang: portalLang } = useLanguage();
-    const [payAccountCopied, setPayAccountCopied] = useState(false);
+    const [payAccountCopied, setPayAccountCopied] = useState<string | null>(null);
 
-    const copyPayAccountNumber = useCallback(async () => {
-        const accountNumber = saccoBankAccount?.accountNumber;
-        if (!accountNumber) {
+    // Which account was copied, not merely that one was: with two on screen,
+    // "Copied" against the wrong one is worse than no feedback at all.
+    const copyPayAccountNumber = useCallback(async (accountNumber?: string | null) => {
+        const value = accountNumber ?? saccoBankAccount?.accountNumber;
+        if (!value) {
             return;
         }
         try {
-            await navigator.clipboard.writeText(accountNumber);
-            setPayAccountCopied(true);
-            window.setTimeout(() => setPayAccountCopied(false), 1600);
+            await navigator.clipboard.writeText(value);
+            setPayAccountCopied(value);
+            window.setTimeout(() => setPayAccountCopied(null), 1600);
         } catch {
             // Clipboard unavailable: the number is on screen to copy by hand.
         }
@@ -6966,8 +6992,8 @@ export function MemberPortalPage() {
                     accountName: saccoBankAccount.accountName,
                     bankLine: [saccoBankAccount.bankName, saccoBankAccount.bankBranch].filter(Boolean).join(" \u00b7 ") || null,
                     instructions: saccoBankAccount.instructions,
-                    onCopy: () => void copyPayAccountNumber(),
-                    copied: payAccountCopied
+                    onCopy: () => void copyPayAccountNumber(saccoBankAccount.accountNumber),
+                    copied: payAccountCopied === saccoBankAccount.accountNumber
                 }
                 : null}
         />
@@ -8659,15 +8685,15 @@ export function MemberPortalPage() {
             avatarUrl={profile?.avatar_url}
             leagueLabel={leagueEnabled ? leaguePosition?.tier?.name : null}
             statusLabel={hasNoVisibleFinancialData ? "Awaiting activity" : "Active"}
-            payAccount={saccoBankAccount?.accountNumber
-                ? {
-                    accountNumber: saccoBankAccount.accountNumber,
-                    accountName: saccoBankAccount.accountName,
-                    bankName: saccoBankAccount.bankName,
-                    bankBranch: saccoBankAccount.bankBranch,
-                    instructions: saccoBankAccount.instructions
-                }
-                : null}
+            payAccounts={saccoBankAccounts.map((account) => ({
+                id: account.id,
+                accountNumber: account.accountNumber,
+                accountName: account.accountName,
+                bankName: account.bankName,
+                bankBranch: account.bankBranch,
+                instructions: account.instructions
+            }))}
+
             branchLine={selectedBranchName}
             theme={themeMode}
             onToggleTheme={toggleTheme}

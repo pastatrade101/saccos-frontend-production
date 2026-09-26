@@ -779,6 +779,18 @@ export interface MemberPortalPaymentControls {
     bank_name?: string | null;
     bank_branch?: string | null;
     bank_account_number?: string | null;
+    /** Every account the SACCOS collects through, in display order. Falls back
+     *  to the singular bank_* fields when a deployment predates the list. */
+    bank_accounts?: Array<{
+        id: string;
+        account_name: string | null;
+        bank_name: string | null;
+        branch: string | null;
+        account_number: string;
+        swift_code: string | null;
+        instructions: string | null;
+        sort_order: number;
+    }>;
     bank_swift_code?: string | null;
     bank_instructions?: string | null;
     updated_at?: string | null;
