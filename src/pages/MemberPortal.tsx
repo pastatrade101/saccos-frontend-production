@@ -5509,37 +5509,73 @@ export function MemberPortalPage() {
         {
             key: "actions",
             header: "Actions",
-            render: (row) =>
-                row.consent_status === "pending" ? (
-                    <Stack direction="row" spacing={1}>
-                        <Button
-                            size="small"
-                            variant="contained"
-                            onClick={() => {
-                                if (row.guaranteed_amount > 0) {
-                                    setGuarantorAcceptTarget(row);
-                                    setGuarantorAcceptAmount(String(row.guaranteed_amount));
-                                } else {
-                                    void respondGuarantorRequest(row, "accepted");
-                                }
-                            }}
-                            disabled={processingGuarantorRequestId === row.id}
-                        >
-                            Accept
-                        </Button>
-                        <Button
-                            size="small"
-                            variant="outlined"
-                            color="error"
-                            onClick={() => void respondGuarantorRequest(row, "rejected")}
-                            disabled={processingGuarantorRequestId === row.id}
-                        >
-                            Reject
-                        </Button>
+            render: (row) => {
+                // An answer already given does not end it. Somebody who
+                // declined may be asked for a smaller amount and want to say
+                // yes; somebody who accepted may want out, or to stand for
+                // less, while the loan is still unpaid. The server decides
+                // when the window is open and says so in can_respond — this
+                // used to hide the buttons on anything but "pending", which
+                // left a guarantor staring at a decision they could not
+                // change.
+                const open = row.can_respond !== false;
+                const answered = row.consent_status !== "pending";
+
+                if (!open) {
+                    return <Chip size="small" label={row.consent_status.toUpperCase()} />;
+                }
+
+                return (
+                    <Stack spacing={0.5} alignItems="flex-start">
+                        {answered ? (
+                            <Chip
+                                size="small"
+                                variant="outlined"
+                                color={row.consent_status === "accepted" ? "success" : "error"}
+                                label={row.consent_status === "accepted"
+                                    ? tr("You accepted", "Umekubali")
+                                    : tr("You declined", "Umekataa")}
+                            />
+                        ) : null}
+                        <Stack direction="row" spacing={1}>
+                            <Button
+                                size="small"
+                                variant={row.consent_status === "accepted" ? "outlined" : "contained"}
+                                onClick={() => {
+                                    if (row.guaranteed_amount > 0) {
+                                        setGuarantorAcceptTarget(row);
+                                        setGuarantorAcceptAmount(String(
+                                            row.accepted_amount ?? row.guaranteed_amount
+                                        ));
+                                    } else {
+                                        void respondGuarantorRequest(row, "accepted");
+                                    }
+                                }}
+                                disabled={processingGuarantorRequestId === row.id}
+                            >
+                                {row.consent_status === "accepted"
+                                    ? tr("Change amount", "Badilisha kiasi")
+                                    : answered
+                                        ? tr("Accept instead", "Kubali badala yake")
+                                        : tr("Accept", "Kubali")}
+                            </Button>
+                            {row.consent_status === "rejected" ? null : (
+                                <Button
+                                    size="small"
+                                    variant="outlined"
+                                    color="error"
+                                    onClick={() => void respondGuarantorRequest(row, "rejected")}
+                                    disabled={processingGuarantorRequestId === row.id}
+                                >
+                                    {answered
+                                        ? tr("Withdraw", "Jiondoe")
+                                        : tr("Reject", "Kataa")}
+                                </Button>
+                            )}
+                        </Stack>
                     </Stack>
-                ) : (
-                    <Chip size="small" label={row.consent_status.toUpperCase()} />
-                )
+                );
+            }
         }
     ];
 
