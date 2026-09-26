@@ -6362,6 +6362,12 @@ export function MemberPortalPage() {
         [guarantorRequests]
     );
 
+    // Nothing left to pledge. The server refuses the acceptance outright, so
+    // offering an amount box, a "cover all of it" and an enabled Accept is
+    // walking the member into a refusal it already knew about.
+    const cannotPledgeNow = guarantorAcceptTarget?.your_available_amount !== undefined
+        && Number(guarantorAcceptTarget.your_available_amount) <= 0;
+
     // The three figures the accept dialog turns on.
     //
     // The ceiling is the larger of what they were asked for and what the loan
@@ -7439,7 +7445,11 @@ export function MemberPortalPage() {
                 maxWidth="xs"
                 fullWidth
             >
-                <DialogTitle>Accept Guarantee Request</DialogTitle>
+                <DialogTitle>
+                    {cannotPledgeNow
+                        ? tr("Guarantee Request", "Ombi la Kudhamini")
+                        : "Accept Guarantee Request"}
+                </DialogTitle>
                 <DialogContent dividers>
                     <Stack spacing={2} sx={{ pt: 0.5 }}>
                         <Typography variant="body2">
@@ -7557,7 +7567,7 @@ export function MemberPortalPage() {
                             no longer borrow — which is exactly the trap of saying
                             yes to everyone and finding the door shut when your own
                             turn comes. */}
-                        {guaranteeBorrowCost > 0 ? (
+                        {guaranteeBorrowCost > 0 && !cannotPledgeNow ? (
                             <Alert severity="warning" variant="outlined" sx={{ py: 0.5 }}>
                                 {tr(
                                     `Standing for ${formatCurrency(Number(guarantorAcceptAmount) || 0)} lowers what you yourself can borrow by about ${formatCurrency(guaranteeBorrowCost)}.`,
@@ -7570,7 +7580,7 @@ export function MemberPortalPage() {
                             guarantor covers their slice, the borrower is still
                             short and goes looking for another name — when the
                             person reading this could have finished it. */}
-                        {guaranteeStillNeeded > 0 ? (
+                        {guaranteeStillNeeded > 0 && !cannotPledgeNow ? (
                             <Stack spacing={0.5}>
                                 <Typography variant="body2" color="text.secondary">
                                     {tr(
@@ -7591,6 +7601,7 @@ export function MemberPortalPage() {
                             </Stack>
                         ) : null}
 
+                        {cannotPledgeNow ? null : (
                         <TextField
                             fullWidth
                             type="number"
@@ -7604,26 +7615,49 @@ export function MemberPortalPage() {
                             error={Boolean(guarantorAcceptTarget?.your_available_amount !== undefined
                                 && Number(guarantorAcceptAmount) > Number(guarantorAcceptTarget.your_available_amount))}
                         />
+                        )}
                     </Stack>
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setGuarantorAcceptTarget(null)}>Cancel</Button>
-                    <Button
-                        variant="contained"
-                        disabled={
-                            !guarantorAcceptTarget
-                            || processingGuarantorRequestId === guarantorAcceptTarget.id
-                            || !(Number(guarantorAcceptAmount) > 0)
-                            || Number(guarantorAcceptAmount) > guaranteeAcceptCeiling + 1
-                        }
-                        onClick={() => {
-                            if (guarantorAcceptTarget) {
-                                void respondGuarantorRequest(guarantorAcceptTarget, "accepted", Number(guarantorAcceptAmount));
+                    {/* With nothing free to pledge there is no acceptance to
+                        offer — the server refuses it — so the one action left
+                        is the one the member can actually take. Presenting
+                        Accept anyway would be inviting them to press a button
+                        we already know answers with an error. */}
+                    {cannotPledgeNow ? (
+                        <Button
+                            variant="contained"
+                            color="error"
+                            disabled={!guarantorAcceptTarget || processingGuarantorRequestId === guarantorAcceptTarget.id}
+                            onClick={() => {
+                                if (guarantorAcceptTarget) {
+                                    const target = guarantorAcceptTarget;
+                                    setGuarantorAcceptTarget(null);
+                                    void respondGuarantorRequest(target, "rejected");
+                                }
+                            }}
+                        >
+                            {tr("Decline the request", "Kataa ombi")}
+                        </Button>
+                    ) : (
+                        <Button
+                            variant="contained"
+                            disabled={
+                                !guarantorAcceptTarget
+                                || processingGuarantorRequestId === guarantorAcceptTarget.id
+                                || !(Number(guarantorAcceptAmount) > 0)
+                                || Number(guarantorAcceptAmount) > guaranteeAcceptCeiling + 1
                             }
-                        }}
-                    >
-                        Accept Guarantee
-                    </Button>
+                            onClick={() => {
+                                if (guarantorAcceptTarget) {
+                                    void respondGuarantorRequest(guarantorAcceptTarget, "accepted", Number(guarantorAcceptAmount));
+                                }
+                            }}
+                        >
+                            Accept Guarantee
+                        </Button>
+                    )}
                 </DialogActions>
             </Dialog>
 
