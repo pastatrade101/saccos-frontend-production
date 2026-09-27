@@ -26,8 +26,8 @@ export interface AgmBoard {
         not_attending: number;
         no_response: number;
     } | null;
-    attending: Array<{ member_id: string; full_name: string; member_no: string | null; recorded_on_behalf: boolean }>;
-    not_attending: Array<{ member_id: string; full_name: string; member_no: string | null; recorded_on_behalf: boolean }>;
+    attending: Array<{ member_id: string; full_name: string; recorded_on_behalf: boolean }>;
+    not_attending: Array<{ member_id: string; full_name: string; recorded_on_behalf: boolean }>;
 }
 
 /**
@@ -72,7 +72,10 @@ export function AgmAttendanceCard({
     }, [load]);
 
     const respond = async (status: "attending" | "not_attending") => {
-        if (!board?.event) return;
+        // Already said, already saved. The server ignores a repeat, but the
+        // button should not have invited one — a slow connection made "I will
+        // attend" look unpressed and members pressed it again.
+        if (!board?.event || saving || board.my_response?.status === status) return;
         setSaving(true);
         try {
             const { data } = await api.post<{ data: AgmBoard }>(
@@ -214,11 +217,15 @@ export function AgmAttendanceCard({
                                     </Button>
                                     {showNames ? (
                                         <Stack spacing={0.25} sx={{ maxHeight: 260, overflowY: "auto", pr: 0.5 }}>
+                                            {/* Names only. A name beside a member
+                                                number is a lookup table, and this
+                                                is the most widely read list the
+                                                SACCOS publishes — board decision,
+                                                27 Sep 2026. */}
                                             {board.attending.map((row) => (
-                                                <Stack key={row.member_id} direction="row" spacing={1} justifyContent="space-between">
-                                                    <Typography variant="body2">{row.full_name}</Typography>
-                                                    <Typography variant="caption" color="text.secondary">{row.member_no}</Typography>
-                                                </Stack>
+                                                <Typography key={row.member_id} variant="body2">
+                                                    {row.full_name}
+                                                </Typography>
                                             ))}
                                         </Stack>
                                     ) : null}
