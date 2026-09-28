@@ -101,6 +101,12 @@ function WorkspaceRedirect() {
         return <Navigate to="/treasury" replace />;
     }
 
+    // The help desk has one page. Sending it to /dashboard would land on
+    // access-denied, which is a poor way to greet somebody every morning.
+    if (profile.role === "help_desk") {
+        return <Navigate to="/members" replace />;
+    }
+
     return <Navigate to="/dashboard" replace />;
 }
 
@@ -232,7 +238,7 @@ export default function App() {
                         <Route
                             element={
                                 <ProtectedRoute
-                                    allowedRoles={["platform_admin", "platform_owner", "super_admin", "branch_manager", "treasury_officer", "loan_officer", "teller", "auditor"]}
+                                    allowedRoles={["platform_admin", "platform_owner", "super_admin", "branch_manager", "treasury_officer", "loan_officer", "teller", "auditor", "help_desk"]}
                                 />
                             }
                         >
@@ -298,7 +304,7 @@ export default function App() {
                         <Route
                             element={
                                 <ProtectedRoute
-                                    allowedRoles={["super_admin", "branch_manager", "teller"]}
+                                    allowedRoles={["super_admin", "branch_manager", "teller", "help_desk"]}
                                     allowInternalOps={false}
                                 />
                             }

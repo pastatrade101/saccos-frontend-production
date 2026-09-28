@@ -513,6 +513,14 @@ export function MembersPage() {
     );
     const canLoadProductBootstrap = canCreateMembers;
     const isTeller = profile?.role === "teller";
+    /// The help desk answers members; it does not see what they hold.
+    ///
+    /// The server refuses /members/accounts for this role, so asking would only
+    /// produce a wall of 403s and a "could not be read" banner. The columns and
+    /// panels that would have shown balances are removed instead — an empty
+    /// balance column still tells the reader a balance exists and invites the
+    /// question of why it is blank.
+    const isHelpDesk = profile?.role === "help_desk";
     const canOpenCashDesk = profile?.role === "teller";
     const canOpenLoans = profile?.role === "loan_officer";
     const memberWorkspaceRoute = Boolean(profile?.role === "branch_manager" && routeMemberId);
@@ -622,7 +630,7 @@ export function MembersPage() {
 
         const scopedMembers = options?.members || members;
         const scopedMemberIds = scopedMembers.map((member) => member.id);
-        if (!scopedMemberIds.length) {
+        if (!scopedMemberIds.length || isHelpDesk) {
             setAccountsLoaded(true);
             return;
         }
@@ -1776,11 +1784,11 @@ export function MembersPage() {
                 />
             )
         },
-        {
+        ...(isHelpDesk ? [] : [{
             key: "balance",
             header: "Available Balance",
-            render: (row) => formatCurrency(row.account?.available_balance)
-        },
+            render: (row: MemberWithAccount) => formatCurrency(row.account?.available_balance)
+        }]),
         {
             key: "action",
             header: "Action",

@@ -7,6 +7,8 @@ export type Role =
     | "loan_officer"
     | "teller"
     | "auditor"
+    /** Answers members: sees and edits their details, never their money. */
+    | "help_desk"
     | "member";
 
 export type MemberStatus = "active" | "suspended" | "exited" | "approved_pending_payment";
