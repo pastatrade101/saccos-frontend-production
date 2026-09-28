@@ -502,14 +502,18 @@ export function MembersPage() {
         profile && ["super_admin", "branch_manager"].includes(profile.role)
     );
     const canViewMemberCredentials = canCreateMemberLogins || canResetMemberPasswords;
+    /// The help desk exists to correct the register: a member rings in with a
+    /// changed phone, a new ward, a heir to add. It edits the profile and the
+    /// heirs; money stays out of reach (see `isHelpDesk`), and the server
+    /// refuses the financial fields even if a crafted request reached it.
     const canUpdateMembers = Boolean(
-        profile && ["branch_manager"].includes(profile.role)
+        profile && ["branch_manager", "help_desk"].includes(profile.role)
     );
     const canDeleteMembers = Boolean(
         profile && ["super_admin", "branch_manager"].includes(profile.role)
     );
     const canManageHeirs = Boolean(
-        profile && ["super_admin", "branch_manager"].includes(profile.role)
+        profile && ["super_admin", "branch_manager", "help_desk"].includes(profile.role)
     );
     const canLoadProductBootstrap = canCreateMembers;
     const isTeller = profile?.role === "teller";
@@ -740,7 +744,11 @@ export function MembersPage() {
     };
 
     const loadSelectedMemberAccounts = async (memberId: string) => {
-        if (!selectedTenantId) {
+        // The help desk is not allowed the balances, so opening a member must
+        // not fire this read either — the list loader is already skipped, and a
+        // 403 here was still raising "Unable to load member accounts" on every
+        // profile they opened.
+        if (!selectedTenantId || isHelpDesk) {
             setSelectedMemberAccounts([]);
             setSelectedMemberAccountsLoading(false);
             return;
@@ -1497,12 +1505,6 @@ export function MembersPage() {
                 branch_id: values.branch_id,
                 status: values.status,
                 membership_started_on: values.membership_started_on ? values.membership_started_on : null,
-                performance_target_amount: values.performance_target_amount === "" || values.performance_target_amount === undefined
-                    ? null
-                    : Number(values.performance_target_amount),
-                monthly_savings_commitment: values.monthly_savings_commitment === "" || values.monthly_savings_commitment === undefined
-                    ? null
-                    : Number(values.monthly_savings_commitment),
                 school_completion_level: values.school_completion_level ? values.school_completion_level : null,
                 school_completion_year: values.school_completion_year === "" || values.school_completion_year === undefined
                     ? null
@@ -1518,6 +1520,21 @@ export function MembersPage() {
                 legitimate_income_declared: Boolean(values.legitimate_income_declared),
                 no_conflicting_business_declared: Boolean(values.no_conflicting_business_declared)
             };
+
+            // The help desk never receives these two figures on read, so its form
+            // holds "" for both. Sending them would post `null` and erase a
+            // commitment the operator could not see — the server rejects the
+            // fields outright, but the payload must not carry them at all.
+            if (!isHelpDesk) {
+                payload.performance_target_amount =
+                    values.performance_target_amount === "" || values.performance_target_amount === undefined
+                        ? null
+                        : Number(values.performance_target_amount);
+                payload.monthly_savings_commitment =
+                    values.monthly_savings_commitment === "" || values.monthly_savings_commitment === undefined
+                        ? null
+                        : Number(values.monthly_savings_commitment);
+            }
 
             const { data } = await api.patch<UpdateMemberResponse>(
                 endpoints.members.update(selectedMember.id),
@@ -2974,32 +2991,36 @@ export function MembersPage() {
                                                                 helperText="Founding members: 01/10/2024. Others: the date they actually joined."
                                                             />
                                                         </Grid>
-                                                        <Grid size={{ xs: 12, md: 6 }}>
-                                                            <TextField
-                                                                type="number"
-                                                                label="Annual savings target (TZS)"
-                                                                fullWidth
-                                                                {...updateForm.register("performance_target_amount")}
-                                                                error={Boolean(updateForm.formState.errors.performance_target_amount)}
-                                                                helperText={
-                                                                    (updateForm.formState.errors.performance_target_amount?.message as string)
-                                                                    || "Drives the Performance Targets report and the member's portal target card. Empty = tenant default."
-                                                                }
-                                                            />
-                                                        </Grid>
-                                                        <Grid size={{ xs: 12, md: 6 }}>
-                                                            <TextField
-                                                                type="number"
-                                                                label="Monthly savings commitment (TZS)"
-                                                                fullWidth
-                                                                {...updateForm.register("monthly_savings_commitment")}
-                                                                error={Boolean(updateForm.formState.errors.monthly_savings_commitment)}
-                                                                helperText={
-                                                                    (updateForm.formState.errors.monthly_savings_commitment?.message as string)
-                                                                    || "Used by the Monthly Commitments report and the loan-eligibility monthly check."
-                                                                }
-                                                            />
-                                                        </Grid>
+                                                        {isHelpDesk ? null : (
+                                                            <>
+                                                                <Grid size={{ xs: 12, md: 6 }}>
+                                                                    <TextField
+                                                                        type="number"
+                                                                        label="Annual savings target (TZS)"
+                                                                        fullWidth
+                                                                        {...updateForm.register("performance_target_amount")}
+                                                                        error={Boolean(updateForm.formState.errors.performance_target_amount)}
+                                                                        helperText={
+                                                                            (updateForm.formState.errors.performance_target_amount?.message as string)
+                                                                            || "Drives the Performance Targets report and the member's portal target card. Empty = tenant default."
+                                                                        }
+                                                                    />
+                                                                </Grid>
+                                                                <Grid size={{ xs: 12, md: 6 }}>
+                                                                    <TextField
+                                                                        type="number"
+                                                                        label="Monthly savings commitment (TZS)"
+                                                                        fullWidth
+                                                                        {...updateForm.register("monthly_savings_commitment")}
+                                                                        error={Boolean(updateForm.formState.errors.monthly_savings_commitment)}
+                                                                        helperText={
+                                                                            (updateForm.formState.errors.monthly_savings_commitment?.message as string)
+                                                                            || "Used by the Monthly Commitments report and the loan-eligibility monthly check."
+                                                                        }
+                                                                    />
+                                                                </Grid>
+                                                            </>
+                                                        )}
                                                     </Grid>
 
                                                     <Divider textAlign="left">
