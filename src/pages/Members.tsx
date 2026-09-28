@@ -877,10 +877,16 @@ export function MembersPage() {
             setMembers(nextMembers);
             setServerTotalMembers(totalMembers);
             // Tenant/branch-wide totals for the header cards (not just the visible page).
-            void api
-                .get<MembersSummaryResponse>(endpoints.members.summary())
-                .then(({ data }) => setServerSummary(data.data))
-                .catch(() => undefined);
+            // Not for the help desk: /members/summary carries total_savings, and
+            // the server refuses it for that role. Asking anyway would work —
+            // the catch swallows it — but it would be a request made only to be
+            // denied, and the cards it feeds are hidden for that role anyway.
+            if (!isHelpDesk) {
+                void api
+                    .get<MembersSummaryResponse>(endpoints.members.summary())
+                    .then(({ data }) => setServerSummary(data.data))
+                    .catch(() => undefined);
+            }
             setSelectedMember((current) => {
                 if (!current) {
                     return null;
@@ -2183,7 +2189,7 @@ export function MembersPage() {
                             />
                         </Grid>
                     </>
-                ) : (
+                ) : isHelpDesk ? null : (
                     <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
                         <MetricCard
                             title="Linked Logins"
