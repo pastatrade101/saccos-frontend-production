@@ -34,7 +34,12 @@ export function MotionCard({
             initial={shouldAnimate ? "hidden" : false}
             animate={!inView && shouldAnimate ? "visible" : undefined}
             whileInView={inView && shouldAnimate ? "visible" : undefined}
-            viewport={inView && shouldAnimate ? { once, amount: 0.2 } : undefined}
+                /* `amount: "some"` — any sliver, not a percentage. A
+                   percentage threshold is unreachable for an element taller
+                   than the viewport: 20% of a 9,000px table is 1,800px, more
+                   than most screens can show at once, so it never becomes
+                   visible and never can. */
+            viewport={inView && shouldAnimate ? { once, amount: "some" } : undefined}
             whileHover={interactive && shouldAnimate && !reducedMotion ? "hover" : undefined}
             whileTap={interactive && shouldAnimate && !reducedMotion ? "tap" : undefined}
             layout={false}
@@ -96,7 +101,7 @@ export function MotionListItem({
             initial={shouldAnimate ? "hidden" : false}
             animate={!inView && shouldAnimate ? "visible" : undefined}
             whileInView={inView && shouldAnimate ? "visible" : undefined}
-            viewport={inView && shouldAnimate ? { once, amount: 0.18 } : undefined}
+            viewport={inView && shouldAnimate ? { once, amount: "some" } : undefined}
             whileHover={interactive && shouldAnimate && !reducedMotion ? "hover" : undefined}
             whileTap={interactive && shouldAnimate && !reducedMotion ? "tap" : undefined}
             layout={false}

@@ -98,8 +98,14 @@ export function DataTable<T>({
         );
     }
 
+    // No `inView` here. This table IS the page — gating it on a scroll
+    // observer means it starts at opacity 0 and waits to be scrolled to, and a
+    // table taller than the viewport can never satisfy the threshold, so it
+    // waits for ever. The AGM register renders all 170 members in one table:
+    // it flashed on and vanished, and no amount of scrolling brought it back.
+    // Content that is meant to be read on arrival animates in on arrival.
     return (
-        <MotionCard variant="outlined" inView sx={{ overflow: "hidden" }}>
+        <MotionCard variant="outlined" sx={{ overflow: "hidden" }}>
             <TableContainer
                 component="div"
                 sx={{

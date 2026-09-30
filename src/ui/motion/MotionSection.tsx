@@ -27,7 +27,12 @@ export function MotionSection({
             initial={canAnimate ? "hidden" : false}
             animate={!inView && canAnimate ? "visible" : undefined}
             whileInView={inView && canAnimate ? "visible" : undefined}
-            viewport={inView && canAnimate ? { once, amount: 0.16 } : undefined}
+                /* `amount: "some"` — any sliver, not a percentage. A
+                   percentage threshold is unreachable for an element taller
+                   than the viewport: 20% of a 9,000px table is 1,800px, more
+                   than most screens can show at once, so it never becomes
+                   visible and never can. */
+            viewport={inView && canAnimate ? { once, amount: "some" } : undefined}
             style={{ width: "100%", minWidth: 0, boxSizing: "border-box" }}
         >
             <Box {...props}>{children}</Box>
