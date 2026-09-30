@@ -435,6 +435,109 @@ function WorkflowStepCard({
     );
 }
 
+const GENDER_LABELS: Record<string, string> = { male: "Male", female: "Female", other: "Other" };
+const MARITAL_LABELS: Record<string, string> = {
+    single: "Single", married: "Married", divorced: "Divorced", widowed: "Widowed"
+};
+const SCHOOL_LEVEL_LABELS: Record<string, string> = { form_4: "Form 4", form_6: "Form 6" };
+
+/**
+ * Everything on a member's record that is not money, grouped the way a clerk
+ * reads it out over the phone.
+ *
+ * The workspace used to show six chips and then jump straight to panels the
+ * help desk cannot open, so a role whose whole job is answering questions
+ * about members could not see a member's phone number, ward or next of kin
+ * without opening the edit form. Read-only, and safe for every role: no
+ * balances, no commitments, no share capital.
+ */
+function MemberProfileFacts({ member, branchName }: { member: Member; branchName: string }) {
+    const joined = (...parts: Array<string | null | undefined>) =>
+        parts.map((part) => (part || "").trim()).filter(Boolean).join(", ");
+
+    const groups: Array<{ title: string; rows: Array<[string, string]> }> = [
+        {
+            title: "Identity",
+            rows: [
+                ["Full name", member.full_name],
+                ["Member number", member.member_no || "—"],
+                ["National ID", member.national_id || member.nida_no || "—"],
+                ["TIN", member.tin_no || "—"],
+                ["Date of birth", member.dob ? formatDate(member.dob) : "—"],
+                ["Gender", member.gender ? GENDER_LABELS[member.gender] || member.gender : "—"],
+                ["Marital status", member.marital_status ? MARITAL_LABELS[member.marital_status] || member.marital_status : "—"]
+            ]
+        },
+        {
+            title: "Contact",
+            rows: [
+                ["Phone", member.phone || "—"],
+                ["Email", member.email || "—"],
+                ["Region", member.region || "—"],
+                ["District", member.district || "—"],
+                ["Ward", member.ward || "—"],
+                ["Street / village", member.street_or_village || "—"],
+                ["Address", joined(member.residential_address, member.address_line1, member.address_line2, member.city) || "—"]
+            ]
+        },
+        {
+            title: "Membership",
+            rows: [
+                ["Branch", branchName],
+                ["Status", member.status],
+                ["Member since", member.membership_started_on ? formatDate(member.membership_started_on) : "Not set"],
+                ["Membership type", member.membership_type || "—"],
+                ["Occupation", member.occupation || "—"],
+                ["Employer", member.employer || "—"]
+            ]
+        },
+        {
+            title: "Next of kin",
+            rows: [
+                ["Name", member.next_of_kin_name || "—"],
+                ["Phone", member.next_of_kin_phone || "—"],
+                ["Relationship", member.next_of_kin_relationship || "—"],
+                ["Address", joined(member.next_of_kin_street, member.next_of_kin_address) || "—"]
+            ]
+        },
+        {
+            title: "School completion",
+            rows: [
+                ["Level", member.school_completion_level
+                    ? SCHOOL_LEVEL_LABELS[member.school_completion_level] || member.school_completion_level
+                    : "—"],
+                ["Year", member.school_completion_year ? String(member.school_completion_year) : "—"],
+                ["Examination number", member.school_examination_number || "—"],
+                ["Left Ilboru", member.ilboru_completion_year ? String(member.ilboru_completion_year) : "—"]
+            ]
+        }
+    ];
+
+    return (
+        <Stack spacing={2}>
+            {groups.map((group) => (
+                <Box key={group.title}>
+                    <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: 0.4 }}>
+                        {group.title.toUpperCase()}
+                    </Typography>
+                    <Grid container spacing={1} sx={{ mt: 0.25 }}>
+                        {group.rows.map(([label, value]) => (
+                            <Grid key={label} size={{ xs: 12, sm: 6, md: 4 }}>
+                                <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                                    {label}
+                                </Typography>
+                                <Typography variant="body2" sx={{ wordBreak: "break-word" }}>
+                                    {value}
+                                </Typography>
+                            </Grid>
+                        ))}
+                    </Grid>
+                </Box>
+            ))}
+        </Stack>
+    );
+}
+
 export function MembersPage() {
     const theme = useTheme();
     const isDarkMode = theme.palette.mode === "dark";
@@ -2546,9 +2649,16 @@ export function MembersPage() {
                                                 ["School completion", selectedMember.school_completion_year
                                                     ? `${selectedMember.school_completion_level === "form_6" ? "Form 6" : selectedMember.school_completion_level === "form_4" ? "Form 4" : "—"} · ${selectedMember.school_completion_year}${selectedMember.school_examination_number ? ` · ${selectedMember.school_examination_number}` : ""}`
                                                     : "Not set"],
-                                                ["Account", selectedMember.account?.account_number || "Pending"],
                                                 ["Login", selectedMember.user_id ? "Linked" : "Not linked"],
-                                                ["Balance", formatCurrency(selectedMember.account?.available_balance)]
+                                                // The account number and its balance are money, and the help
+                                                // desk is not given either. Rendering them anyway printed a
+                                                // confident "TSh 0" for members holding millions.
+                                                ...(isHelpDesk
+                                                    ? []
+                                                    : [
+                                                        ["Account", selectedMember.account?.account_number || "Pending"],
+                                                        ["Balance", formatCurrency(selectedMember.account?.available_balance)]
+                                                    ] as Array<[string, string]>)
                                             ].map(([label, value]) => (
                                                 <Grid key={label} size={{ xs: 12, sm: 6 }}>
                                                     <Box
@@ -2570,7 +2680,21 @@ export function MembersPage() {
                                             ))}
                                         </Grid>
 
-                                        {!isTeller ? (
+                                        <Box
+                                            sx={{
+                                                p: 2,
+                                                border: `1px solid ${theme.palette.divider}`,
+                                                borderRadius: 2.5,
+                                                bgcolor: alpha(theme.palette.background.default, 0.4)
+                                            }}
+                                        >
+                                            <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.5 }}>
+                                                Member Profile
+                                            </Typography>
+                                            <MemberProfileFacts member={selectedMember} branchName={selectedBranchName} />
+                                        </Box>
+
+                                        {!isTeller && !isHelpDesk ? (
                                             <Stack spacing={1.5}>
                                                 <Stack
                                                     direction={{ xs: "column", md: "row" }}
@@ -2689,7 +2813,10 @@ export function MembersPage() {
                                             </Stack>
                                         ) : null}
 
-                                        {!isTeller ? (
+                                        {/* Postings are money. The help desk is refused this read, and the
+                                            panel rendered the raw 403 under a heading promising every
+                                            transaction — which reads as a fault, not a boundary. */}
+                                        {!isTeller && !isHelpDesk ? (
                                             <Stack spacing={1.5}>
                                                 <Box>
                                                     <Typography variant="subtitle1" fontWeight={700}>Deposits & Transactions</Typography>
