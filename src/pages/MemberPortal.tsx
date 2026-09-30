@@ -1534,7 +1534,12 @@ function ApplicationWaitingOn({ application }: { application: LoanApplication })
                         {`Everyone answered, but the cover is ${formatCurrency(acceptedShortfall)} short`}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                        {`They accepted ${formatCurrency(acceptedTotal)} of the ${formatCurrency(required)} required — one or more agreed to less than they were asked for. Ask one of them to raise their amount, or add another guarantor.`}
+                        {/* Four routes, because the obvious one is often shut:
+                            somebody who accepted less than they were asked for
+                            is usually already at their own capacity ceiling and
+                            cannot raise it. Paying in and asking for less are
+                            the two the member can do alone. */}
+                        {`They accepted ${formatCurrency(acceptedTotal)} of the ${formatCurrency(required)} required — one or more agreed to less than they were asked for. Close the ${formatCurrency(acceptedShortfall)} gap by adding another guarantor, asking one of them to raise their amount, paying ${formatCurrency(acceptedShortfall)} into your savings or off an existing loan, or lowering your request by ${formatCurrency(acceptedShortfall)}.`}
                     </Typography>
                     {declined.map((row) => (
                         <Typography key={row.member_id} variant="caption" color="error.main">
