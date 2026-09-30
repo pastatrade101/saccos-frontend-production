@@ -1473,6 +1473,20 @@ function ApplicationWaitingOn({ application }: { application: LoanApplication })
         && required - allocated > 1 + guarantors.length
         ? Math.ceil(required - allocated)
         : 0;
+    // What was ASKED for and what was AGREED to are two different totals, and
+    // a guarantor may accept less than the amount they were asked to stand
+    // for. So a plan can be allocated in full — no shortfall above — and
+    // still not cover the loan once the answers are in.
+    //
+    // The tolerance mirrors the server's `acceptanceTolerance`: one shilling
+    // plus one per accepting guarantor, because every row is rounded.
+    const acceptedTotal = Number(readiness?.accepted_amount ?? 0);
+    const acceptedCount = guarantors.filter((row) => row.consent_status === "accepted").length;
+    const acceptedShortfall = required > 0
+        && required - acceptedTotal > 1 + acceptedCount
+        ? Math.ceil(required - acceptedTotal)
+        : 0;
+    const everyoneAnswered = guarantors.length > 0 && pending.length === 0;
 
     if (application.status === "rejected") {
         return null;
@@ -1508,6 +1522,28 @@ function ApplicationWaitingOn({ application }: { application: LoanApplication })
                 </Stack>
             );
         }
+        // Everyone has answered, the full amount was asked for, and it still
+        // does not add up — because somebody accepted less than they were
+        // asked to stand for. Without this the row fell through to the line
+        // below and read "Waiting for 0 guarantors to accept", which names
+        // the wrong problem and gives the member nothing to act on.
+        if (everyoneAnswered && acceptedShortfall > 0) {
+            return (
+                <Stack spacing={0.25}>
+                    <Typography variant="caption" sx={{ fontWeight: 700, color: "error.main" }}>
+                        {`Everyone answered, but the cover is ${formatCurrency(acceptedShortfall)} short`}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                        {`They accepted ${formatCurrency(acceptedTotal)} of the ${formatCurrency(required)} required — one or more agreed to less than they were asked for. Ask one of them to raise their amount, or add another guarantor.`}
+                    </Typography>
+                    {declined.map((row) => (
+                        <Typography key={row.member_id} variant="caption" color="error.main">
+                            {row.members?.member_no || "Member"} — amekataa
+                        </Typography>
+                    ))}
+                </Stack>
+            );
+        }
         if (readiness?.complete) {
             return (
                 <Typography variant="caption" sx={{ fontWeight: 700, color: "success.main" }}>
@@ -1518,7 +1554,11 @@ function ApplicationWaitingOn({ application }: { application: LoanApplication })
         return (
             <Stack spacing={0.25}>
                 <Typography variant="caption" sx={{ fontWeight: 700, color: "warning.main" }}>
-                    {`Waiting for ${pending.length} guarantor${pending.length === 1 ? "" : "s"} to accept`}
+                    {/* Never "waiting for 0": if nobody is pending, the hold-up
+                        is the plan, not a person. */}
+                    {pending.length
+                        ? `Waiting for ${pending.length} guarantor${pending.length === 1 ? "" : "s"} to accept`
+                        : "This plan does not yet cover the loan"}
                 </Typography>
                 {pending.map((row) => (
                     <Typography key={row.member_id} variant="caption" color="text.secondary">
@@ -1540,9 +1580,15 @@ function ApplicationWaitingOn({ application }: { application: LoanApplication })
         return (
             <Stack spacing={0.25}>
                 <Typography variant="caption" sx={{ fontWeight: 700, color: "warning.main" }}>
+                    {/* Same trap as the draft row: this branch is also reached
+                        with nobody pending but somebody declined, and
+                        "Waiting for 0 guarantors" sends the member chasing
+                        people who have already answered. */}
                     {guarantors.length === 0
                         ? "Waiting for you to add guarantors"
-                        : `Waiting for ${pending.length} guarantor${pending.length === 1 ? "" : "s"}`}
+                        : pending.length
+                            ? `Waiting for ${pending.length} guarantor${pending.length === 1 ? "" : "s"}`
+                            : "A guarantor declined — replace them to continue"}
                 </Typography>
                 {pending.map((row) => (
                     <Typography key={row.member_id} variant="caption" color="text.secondary">
@@ -7781,7 +7827,9 @@ export function MemberPortalPage() {
                                 />
                                 <Typography variant="caption" color={activeRemainingGuarantee > 0 ? "warning.main" : "success.main"}>
                                     {formatCurrency(allocatedGuaranteeAmount)} / {formatCurrency(activeRequiredGuarantee)} allocated
-                                    {activeRemainingGuarantee > 0 ? ` — ${formatCurrency(activeRemainingGuarantee)} remaining` : " — fully covered"}
+                                    {activeRemainingGuarantee > 0
+                                        ? ` — ${formatCurrency(activeRemainingGuarantee)} remaining`
+                                        : " — fully allocated. Each one must still accept, and may accept less than you asked."}
                                 </Typography>
                             </Stack>
                         ) : null}
@@ -10674,7 +10722,7 @@ export function MemberPortalPage() {
                                                                                 setGuarantorDrafts((prev) => prev.map((item, itemIndex) =>
                                                                                     itemIndex === index ? { ...item, guaranteed_amount: nextValue } : item));
                                                                             }}
-                                                                            helperText="They will confirm whether they can cover it"
+                                                                            helperText="They confirm this in their own portal — their savings may only let them accept less"
                                                                             sx={{ width: 160 }}
                                                                         />
                                                                     ) : (
@@ -10700,7 +10748,9 @@ export function MemberPortalPage() {
                                                             />
                                                             <Typography variant="caption" color={remainingGuaranteeAmount > 0 ? "warning.main" : "success.main"}>
                                                                 {formatCurrency(allocatedGuaranteeAmount)} / {formatCurrency(requiredGuaranteeAmount)} allocated
-                                                                {remainingGuaranteeAmount > 0 ? ` — ${formatCurrency(remainingGuaranteeAmount)} remaining` : " — fully covered"}
+                                                                {remainingGuaranteeAmount > 0
+                                                                    ? ` — ${formatCurrency(remainingGuaranteeAmount)} remaining`
+                                                                    : " — fully allocated. Each one must still accept, and may accept less than you asked."}
                                                             </Typography>
                                                         </Stack>
                                                     ) : null}
