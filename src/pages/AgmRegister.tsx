@@ -20,6 +20,8 @@ interface RegisterRow {
     recorded_on_behalf: boolean;
 }
 
+type StatusFilter = "attending" | "not_attending" | "unanswered" | null;
+
 interface AgmEvent {
     id: string;
     title: string;
@@ -48,10 +50,21 @@ export function AgmRegisterPage() {
     const [search, setSearch] = useState("");
     const [loading, setLoading] = useState(true);
     const [savingMemberId, setSavingMemberId] = useState<string | null>(null);
+    // Which of the three figures the branch manager clicked, if any.
+    const [statusFilter, setStatusFilter] = useState<StatusFilter>(null);
 
     const canRecord = profile?.role === "branch_manager" || profile?.role === "super_admin";
 
-    const load = useCallback(async (term: string) => {
+    // The whole register, loaded once. The server sends up to 500 rows and the
+    // SACCOS has fewer than 200, so searching and filtering happen here.
+    //
+    // Searching used to refetch, and refetching started by refetching the
+    // BOARD — so every keystroke's worth of Search re-asked which meeting was
+    // open, and a null answer (a slow call, a blink of the rsvp window) ran
+    // `setRows([])`. The register appeared and vanished while nobody had
+    // changed anything. Nothing about the meeting can change between one
+    // search and the next, so nothing needs re-asking.
+    const load = useCallback(async () => {
         if (!selectedTenantId) return;
         setLoading(true);
         try {
@@ -67,7 +80,7 @@ export function AgmRegisterPage() {
             }
             const { data } = await api.get<{ data: { data: RegisterRow[] } }>(
                 endpoints.agm.register(openEvent.id),
-                { params: { tenant_id: selectedTenantId, search: term || undefined } }
+                { params: { tenant_id: selectedTenantId } }
             );
             setRows(data.data.data || []);
         } catch (error) {
@@ -78,14 +91,31 @@ export function AgmRegisterPage() {
     }, [selectedTenantId, pushToast]);
 
     useEffect(() => {
-        void load("");
+        void load();
     }, [load]);
 
+    // Always the whole register, never the filtered view. Counted off the
+    // visible rows, the totals fell to "1 / 0 / 0" the moment somebody
+    // searched for one member — the three figures the branch reports to the
+    // board, quietly rewritten by a search box.
     const counts = useMemo(() => ({
         attending: rows.filter((row) => row.status === "attending").length,
         notAttending: rows.filter((row) => row.status === "not_attending").length,
         unanswered: rows.filter((row) => !row.status).length
     }), [rows]);
+
+    const visibleRows = useMemo(() => {
+        const term = search.trim().toLowerCase();
+        return rows.filter((row) => {
+            if (statusFilter === "attending" && row.status !== "attending") return false;
+            if (statusFilter === "not_attending" && row.status !== "not_attending") return false;
+            if (statusFilter === "unanswered" && row.status) return false;
+            if (!term) return true;
+            return row.full_name.toLowerCase().includes(term)
+                || (row.member_no || "").toLowerCase().includes(term)
+                || (row.phone || "").includes(term);
+        });
+    }, [rows, search, statusFilter]);
 
     const record = async (row: RegisterRow, status: "attending" | "not_attending") => {
         if (!event || !selectedTenantId) return;
@@ -200,42 +230,77 @@ export function AgmRegisterPage() {
                                 {event?.venue ? ` · ${event.venue}` : ""}
                             </Typography>
                         </Box>
-                        <Stack direction="row" spacing={3} useFlexGap flexWrap="wrap">
-                            {[
-                                ["Attending", counts.attending, "success.main"],
-                                ["Not attending", counts.notAttending, "text.primary"],
-                                ["No answer yet", counts.unanswered, "warning.main"]
-                            ].map(([label, value, color]) => (
-                                <Box key={String(label)}>
-                                    <Typography variant="h5" sx={{ fontVariantNumeric: "tabular-nums" }} color={color as string}>
-                                        {String(value)}
-                                    </Typography>
-                                    <Typography variant="caption" color="text.secondary">{label}</Typography>
-                                </Box>
-                            ))}
+                        {/* The three figures are the question the branch asks
+                            first — "who are the 28?" — so they are the control
+                            that answers it. Clicking one filters the register
+                            to those members; clicking it again clears it. */}
+                        <Stack direction="row" spacing={1.5} useFlexGap flexWrap="wrap">
+                            {([
+                                ["Attending", counts.attending, "success.main", "attending"],
+                                ["Not attending", counts.notAttending, "text.primary", "not_attending"],
+                                ["No answer yet", counts.unanswered, "warning.main", "unanswered"]
+                            ] as Array<[string, number, string, Exclude<StatusFilter, null>]>).map(
+                                ([label, value, color, filter]) => {
+                                    const active = statusFilter === filter;
+                                    return (
+                                        <Box
+                                            key={label}
+                                            component="button"
+                                            type="button"
+                                            aria-pressed={active}
+                                            onClick={() => setStatusFilter(active ? null : filter)}
+                                            sx={{
+                                                px: 2,
+                                                py: 1,
+                                                textAlign: "left",
+                                                cursor: "pointer",
+                                                borderRadius: 2,
+                                                bgcolor: active ? "action.selected" : "transparent",
+                                                border: (muiTheme) => `1px solid ${active ? muiTheme.palette.text.primary : muiTheme.palette.divider}`,
+                                                "&:hover": { bgcolor: "action.hover" }
+                                            }}
+                                        >
+                                            <Typography variant="h5" sx={{ fontVariantNumeric: "tabular-nums" }} color={color}>
+                                                {value}
+                                            </Typography>
+                                            <Typography variant="caption" color="text.secondary">{label}</Typography>
+                                        </Box>
+                                    );
+                                }
+                            )}
                         </Stack>
+                        {statusFilter ? (
+                            <Stack direction="row" spacing={1} alignItems="center">
+                                <Typography variant="body2" color="text.secondary">
+                                    {`Showing ${visibleRows.length} ${statusFilter === "attending"
+                                        ? "attending"
+                                        : statusFilter === "not_attending"
+                                            ? "not attending"
+                                            : "with no answer yet"}`}
+                                </Typography>
+                                <Button size="small" onClick={() => setStatusFilter(null)}>Show everyone</Button>
+                            </Stack>
+                        ) : null}
                         <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+                            {/* Filters the rows already in hand, so it answers
+                                as it is typed and cannot empty the register. */}
                             <TextField
                                 size="small"
                                 fullWidth
-                                label="Find a member by name or number"
+                                label="Find a member by name, number or phone"
                                 value={search}
                                 onChange={(changeEvent) => setSearch(changeEvent.target.value)}
-                                onKeyDown={(keyEvent) => {
-                                    if (keyEvent.key === "Enter") {
-                                        keyEvent.preventDefault();
-                                        void load(search);
-                                    }
-                                }}
                             />
-                            <Button variant="outlined" onClick={() => void load(search)}>Search</Button>
+                            <Button variant="outlined" onClick={() => void load()} disabled={loading}>
+                                {loading ? "Refreshing…" : "Refresh"}
+                            </Button>
                         </Stack>
                     </Stack>
                 </CardContent>
             </Card>
 
             <DataTable
-                rows={rows}
+                rows={visibleRows}
                 columns={columns}
                 emptyMessage={loading ? "Loading the register..." : "No members match that search."}
             />
