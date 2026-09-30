@@ -4139,6 +4139,36 @@ export function MemberPortalPage() {
         },
         [requestedLoanAmount, totalSavings, loanCapacity, topUpSettlement, isTopUpApplication]
     );
+    // What the New-loan / Top-up choice actually costs, side by side.
+    //
+    // A member carrying an open loan cannot see why the same requested figure
+    // demands wildly different guarantees under the two options, so they pick
+    // one blind. Alban asked for 150,000,000 as `new`, needed 60,998,001 in
+    // guarantees, and only found out after four people had already answered.
+    //
+    // The arithmetic nobody states out loud: guarantee tracks NEW CASH, not
+    // the headline. As `new` it is R - (base - S); as a top-up of the same
+    // headline it is R - base. Those differ by S, but so does the cash — ask
+    // for R + S as a top-up and the guarantee is identical. So this must show
+    // BOTH columns: quoting the smaller guarantee alone would read as a
+    // discount, when it is simply a smaller loan.
+    const loanTypeComparison = useMemo(() => {
+        if (!hasOpenLoan || topUpSettlement <= 0) {
+            return null;
+        }
+        const requested = Number(requestedLoanAmount) || 0;
+        if (requested <= 0) {
+            return null;
+        }
+        const base = Number(loanCapacity?.guarantee_base_amount ?? totalSavings);
+        return {
+            settlement: topUpSettlement,
+            newCash: requested,
+            newGuarantee: Math.max(0, Math.ceil(requested - Math.max(0, base - topUpSettlement))),
+            topUpCash: Math.max(0, requested - topUpSettlement),
+            topUpGuarantee: Math.max(0, Math.ceil(requested - base))
+        };
+    }, [hasOpenLoan, topUpSettlement, requestedLoanAmount, loanCapacity, totalSavings]);
     const allocatedGuaranteeAmount = useMemo(
         () => Math.round(guarantorDrafts.reduce((sum, row) => sum + (Number(row.guaranteed_amount) || 0), 0) * 100) / 100,
         [guarantorDrafts]
@@ -10580,6 +10610,56 @@ export function MemberPortalPage() {
                                                         </TextField>
                                                     </Grid>
                                                 ) : null}
+                                                {loanTypeComparison ? (
+                                                    <Grid size={{ xs: 12 }}>
+                                                        <Alert severity="info" variant="outlined" icon={false}>
+                                                            <Typography variant="caption" sx={{ fontWeight: 700, display: "block", mb: 0.75 }}>
+                                                                {`You already owe ${formatCurrency(loanTypeComparison.settlement)} on an open loan — here is what each choice means`}
+                                                            </Typography>
+                                                            <Stack spacing={0.75}>
+                                                                <Stack
+                                                                    direction={{ xs: "column", sm: "row" }}
+                                                                    spacing={{ xs: 0.25, sm: 2 }}
+                                                                    justifyContent="space-between"
+                                                                >
+                                                                    <Typography variant="caption" sx={{ fontWeight: 700, minWidth: 96 }}>
+                                                                        New loan
+                                                                    </Typography>
+                                                                    <Typography variant="caption">
+                                                                        {`You receive ${formatCurrency(loanTypeComparison.newCash)}`}
+                                                                    </Typography>
+                                                                    <Typography variant="caption" sx={{ fontWeight: 700 }}>
+                                                                        {`Guarantors cover ${formatCurrency(loanTypeComparison.newGuarantee)}`}
+                                                                    </Typography>
+                                                                </Stack>
+                                                                <Stack
+                                                                    direction={{ xs: "column", sm: "row" }}
+                                                                    spacing={{ xs: 0.25, sm: 2 }}
+                                                                    justifyContent="space-between"
+                                                                >
+                                                                    <Typography variant="caption" sx={{ fontWeight: 700, minWidth: 96 }}>
+                                                                        Top-up
+                                                                    </Typography>
+                                                                    <Typography variant="caption">
+                                                                        {`You receive ${formatCurrency(loanTypeComparison.topUpCash)} (the rest clears the old loan)`}
+                                                                    </Typography>
+                                                                    <Typography variant="caption" sx={{ fontWeight: 700 }}>
+                                                                        {`Guarantors cover ${formatCurrency(loanTypeComparison.topUpGuarantee)}`}
+                                                                    </Typography>
+                                                                </Stack>
+                                                            </Stack>
+                                                            {/* Said plainly, because the smaller number above otherwise
+                                                                reads as a discount that is not on offer. */}
+                                                            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.75 }}>
+                                                                A top-up does not lower the security you need — it lowers the cash you take
+                                                                home, because your old loan is settled out of it. For the same money in hand,
+                                                                both routes need the same guarantees. Choosing `New loan` keeps the old loan
+                                                                running, so what you still owe is held back from your savings and your
+                                                                guarantors must make up the difference.
+                                                            </Typography>
+                                                        </Alert>
+                                                    </Grid>
+                                                ) : null}
                                                 <Grid size={{ xs: 12, sm: 6 }}>
                                                     <TextField
                                                         fullWidth
@@ -10663,7 +10743,28 @@ export function MemberPortalPage() {
                                             </Typography>
                                             {requiredGuaranteeAmount > 0 ? (
                                                 <Alert severity="info" variant="outlined">
-                                                    Your savings ({formatCurrency(totalSavings)}) cover part of this loan. Guarantors must cover the remaining {formatCurrency(requiredGuaranteeAmount)}. Each guarantor will approve their amount in their own portal before the loan is processed.
+                                                    {/* Show the subtraction, not just its answer. Quoting the
+                                                        savings balance and the guarantee side by side invites the
+                                                        member to subtract them — and get a smaller figure than the
+                                                        one on screen, because what is still owed on an open loan is
+                                                        held back. Same component the "How is this worked out?" link
+                                                        opens, so the two can never disagree. */}
+                                                    <Typography variant="caption" sx={{ fontWeight: 700 }}>
+                                                        {`Guarantors must cover ${formatCurrency(requiredGuaranteeAmount)}`}
+                                                    </Typography>
+                                                    <GuaranteeBreakdown
+                                                        requested={Number(requestedLoanAmount) || 0}
+                                                        savings={totalSavings}
+                                                        committedToOpenLoans={topUpSettlement}
+                                                        required={requiredGuaranteeAmount}
+                                                        allocated={allocatedGuaranteeAmount}
+                                                        isTopUp={isTopUpApplication}
+                                                    />
+                                                    <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.75 }}>
+                                                        Each guarantor approves their own amount in their portal. They may
+                                                        accept less than you ask for — their own savings set their limit — so
+                                                        this is not settled until their answers add up to the figure above.
+                                                    </Typography>
                                                 </Alert>
                                             ) : (
                                                 <Alert severity="success" variant="outlined">
