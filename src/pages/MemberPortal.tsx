@@ -6094,14 +6094,23 @@ export function MemberPortalPage() {
                 });
                 return;
             }
+            // Short is a real problem — the loan is not secured and the server
+            // will refuse it. OVER is not: the server trims an over-sized plan
+            // down onto the requirement and keeps every consent, which is what
+            // a loan officer would do by hand.
+            //
+            // Refusing it here blocked the one thing the SACCOS most wants.
+            // Alban Robert Kimario paid 10,000,000 off his open loan, which
+            // freed that much of his savings and dropped the requirement from
+            // 60,998,001 to 50,998,001 — and the portal then refused to send
+            // the plan he already had, for being 10,000,000 too big. He was
+            // told "Guarantee amounts too high" for reducing his own debt.
             if (requiredGuaranteeAmount > 0
-                && Math.abs(allocatedGuaranteeAmount - requiredGuaranteeAmount) > guaranteeTolerance) {
+                && requiredGuaranteeAmount - allocatedGuaranteeAmount > guaranteeTolerance) {
                 pushToast({
                     type: "error",
-                    title: allocatedGuaranteeAmount < requiredGuaranteeAmount ? "Guarantee not fully covered" : "Guarantee amounts too high",
-                    message: allocatedGuaranteeAmount < requiredGuaranteeAmount
-                        ? `Your guarantors must cover ${formatCurrency(requiredGuaranteeAmount)} in total — ${formatCurrency(remainingGuaranteeAmount)} is still missing.`
-                        : `Guarantee requests must not exceed ${formatCurrency(requiredGuaranteeAmount)} in total.`
+                    title: "Guarantee not fully covered",
+                    message: `Your guarantors must cover ${formatCurrency(requiredGuaranteeAmount)} in total — ${formatCurrency(remainingGuaranteeAmount)} is still missing.`
                 });
                 return;
             }
@@ -6494,13 +6503,29 @@ export function MemberPortalPage() {
         if (!profile || !manageGuarantorsTarget) {
             return;
         }
-        if (activeRequiredGuarantee > 0 && Math.abs(allocatedGuaranteeAmount - activeRequiredGuarantee) > 0.01) {
+        // Same rule as the submit guard: refuse a plan that is short, accept
+        // one that is over and let the server trim it. The 0.01 slack here was
+        // tighter than the server's own, so a plan the server would have taken
+        // could be refused on a rounding difference alone.
+        const savePlanTolerance = 1 + guarantorDrafts.length;
+        if (activeRequiredGuarantee > 0
+            && activeRequiredGuarantee - allocatedGuaranteeAmount > savePlanTolerance) {
             pushToast({
                 type: "error",
-                title: allocatedGuaranteeAmount < activeRequiredGuarantee ? "Guarantee not fully covered" : "Guarantee amounts too high",
-                message: `Your guarantors must cover exactly ${formatCurrency(activeRequiredGuarantee)} in total.`
+                title: "Guarantee not fully covered",
+                message: `Your guarantors must cover ${formatCurrency(activeRequiredGuarantee)} in total — ${formatCurrency(Math.max(0, activeRequiredGuarantee - allocatedGuaranteeAmount))} is still missing.`
             });
             return;
+        }
+        // Not an error, but not a surprise either: say what the server is about
+        // to do before it does it.
+        if (activeRequiredGuarantee > 0
+            && allocatedGuaranteeAmount - activeRequiredGuarantee > savePlanTolerance) {
+            pushToast({
+                type: "info",
+                title: "More than this loan needs",
+                message: `Only ${formatCurrency(activeRequiredGuarantee)} needs guaranteeing, so the amounts will be reduced to fit. Nobody has to answer again — a lowered guarantee keeps the consent already given.`
+            });
         }
         if (!guarantorDrafts.length) {
             pushToast({ type: "error", title: "Guarantor required", message: "Keep at least one guarantor on the application." });
