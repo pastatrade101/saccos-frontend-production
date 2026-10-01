@@ -23,6 +23,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext";
+import { FeesSettingsCard } from "../components/sacco-settings/FeesSettingsCard";
 import { AppLoader } from "../components/AppLoader";
 import { useToast } from "../components/Toast";
 import { api, getApiErrorMessage } from "../lib/api";
@@ -635,6 +636,11 @@ export function SaccoSettingsPage() {
             </MotionCard>
 
             {error ? <Alert severity="error" variant="outlined">{error}</Alert> : null}
+
+            <FeesSettingsCard
+                tenantId={selectedTenantId ?? null}
+                canEdit={profile?.role === "super_admin" || profile?.role === "branch_manager"}
+            />
 
             <Grid container spacing={2}>
                 <Grid size={{ xs: 12, lg: 7 }}>

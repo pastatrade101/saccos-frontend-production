@@ -35,6 +35,7 @@ import { endpoints, type ReconcilePaymentOrderResponse } from "../lib/endpoints"
 import type { ApiEnvelope, PaginatedResult, PaymentOrder, PaymentOrderStatus, TellerPaymentTransaction } from "../types/api";
 import { brandColors } from "../theme/colors";
 import { MotionCard } from "../ui/motion";
+import { UcgCollectionsCard } from "../components/member-overview/UcgCollectionsCard";
 import { formatCurrency, formatDate } from "../utils/format";
 
 const PAGE_LOAD_LIMIT = 100;
@@ -398,7 +399,11 @@ export function PaymentsPage() {
     const filteredRows = useMemo(
         () =>
             allRows.filter((row) => {
-                if (statusFilter !== "all" && row.status !== statusFilter) {
+                if (statusFilter === "in_progress") {
+                    if (!["created", "pending", "paid"].includes(row.status)) {
+                        return false;
+                    }
+                } else if (statusFilter !== "all" && row.status !== statusFilter) {
                     return false;
                 }
 
@@ -661,6 +666,8 @@ export function PaymentsPage() {
                 </CardContent>
             </MotionCard>
 
+            <UcgCollectionsCard />
+
             {error ? (
                 <Alert
                     severity="error"
@@ -731,6 +738,7 @@ export function PaymentsPage() {
                                 </TextField>
                                 <TextField select label="Status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} sx={{ minWidth: 160 }}>
                                     <MenuItem value="all">All statuses</MenuItem>
+                                    <MenuItem value="in_progress">Pending (unposted)</MenuItem>
                                     <MenuItem value="posted">Posted</MenuItem>
                                     <MenuItem value="created">Created</MenuItem>
                                     <MenuItem value="pending">Pending</MenuItem>
