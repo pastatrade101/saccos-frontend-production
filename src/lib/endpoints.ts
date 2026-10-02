@@ -261,7 +261,20 @@ const routeMap = {
         initiateLoanRepayment: "/member-payments/loan-repayments/initiate",
         listOrders: "/member-payments/orders",
         orderStatus: (orderId: string) => `/member-payments/orders/${orderId}/status`,
-        reconcile: (orderId: string) => `/member-payments/orders/${orderId}/reconcile`
+        reconcile: (orderId: string) => `/member-payments/orders/${orderId}/reconcile`,
+        ucgReference: "/member-payments/ucg/reference",
+        ucgSharesReference: "/member-payments/ucg/shares/reference",
+        ucgSharesRefresh: "/member-payments/ucg/shares/refresh",
+        ucgOperationCostReference: "/member-payments/ucg/operation-cost/reference",
+        ucgOperationCostRefresh: "/member-payments/ucg/operation-cost/refresh",
+        ucgLoanReference: (loanId: string) =>
+            `/member-payments/ucg/loans/${encodeURIComponent(loanId)}/reference`,
+        ucgLoanRefresh: (loanId: string) =>
+            `/member-payments/ucg/loans/${encodeURIComponent(loanId)}/refresh`,
+        ucgReferenceRefreshMine: "/member-payments/ucg/reference/refresh",
+        ucgReferenceRefresh: (reference: string) =>
+            `/member-payments/ucg/reference/${encodeURIComponent(reference)}/refresh`,
+        ucgStatistics: "/member-payments/ucg/statistics"
     },
     dividends: {
         options: "/dividends/options",
@@ -343,6 +356,7 @@ const routeMap = {
     saccoSettings: {
         financialYear: "/sacco-settings/financial-year",
         performanceTarget: "/sacco-settings/performance-target",
+        fees: "/sacco-settings/fees",
         manualImports: "/sacco-settings/manual-imports",
         leagues: "/sacco-settings/leagues",
         guarantorPolicy: "/sacco-settings/guarantor-policy",
@@ -617,7 +631,18 @@ export const endpoints = {
         initiateLoanRepayment: () => routeMap.memberPayments.initiateLoanRepayment,
         listOrders: () => routeMap.memberPayments.listOrders,
         orderStatus: (orderId: string) => routeMap.memberPayments.orderStatus(orderId),
-        reconcile: (orderId: string) => routeMap.memberPayments.reconcile(orderId)
+        reconcile: (orderId: string) => routeMap.memberPayments.reconcile(orderId),
+        ucgReference: () => routeMap.memberPayments.ucgReference,
+        ucgSharesReference: () => routeMap.memberPayments.ucgSharesReference,
+        ucgSharesRefresh: () => routeMap.memberPayments.ucgSharesRefresh,
+        ucgOperationCostReference: () => routeMap.memberPayments.ucgOperationCostReference,
+        ucgOperationCostRefresh: () => routeMap.memberPayments.ucgOperationCostRefresh,
+        ucgLoanReference: (loanId: string) => routeMap.memberPayments.ucgLoanReference(loanId),
+        ucgLoanRefresh: (loanId: string) => routeMap.memberPayments.ucgLoanRefresh(loanId),
+        ucgReferenceRefreshMine: () => routeMap.memberPayments.ucgReferenceRefreshMine,
+        ucgReferenceRefresh: (reference: string) =>
+            routeMap.memberPayments.ucgReferenceRefresh(reference),
+        ucgStatistics: () => routeMap.memberPayments.ucgStatistics
     },
     dividends: {
         options: () => routeMap.dividends.options,
@@ -699,6 +724,7 @@ export const endpoints = {
     saccoSettings: {
         financialYear: () => routeMap.saccoSettings.financialYear,
         performanceTarget: () => routeMap.saccoSettings.performanceTarget,
+        fees: () => routeMap.saccoSettings.fees,
         manualImports: () => routeMap.saccoSettings.manualImports,
         leagues: () => routeMap.saccoSettings.leagues,
         guarantorPolicy: () => routeMap.saccoSettings.guarantorPolicy,

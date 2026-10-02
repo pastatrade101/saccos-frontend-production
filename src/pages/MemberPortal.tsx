@@ -136,6 +136,9 @@ import { HeirsSection } from "../components/member-portal/HeirsSection";
 import { PaymentReceiptDialog } from "../components/member-portal/PaymentReceiptDialog";
 import { LoanEligibilitySummary } from "../components/loan-capacity/LoanEligibilitySummary";
 import { SaccoBankAccountCard } from "../components/member-overview/SaccoBankAccountCard";
+import { UcgReferenceCard } from "../components/member-overview/UcgReferenceCard";
+import { UcgMyDepositsCard } from "../components/member-overview/UcgMyDepositsCard";
+import { UcgLoanReferenceCard } from "../components/member-overview/UcgLoanReferenceCard";
 import { SearchableSelect } from "../components/SearchableSelect";
 import { useToast } from "../components/Toast";
 import { ProfileAvatarUploader } from "../components/ProfileAvatarUploader";
@@ -1715,6 +1718,10 @@ export function MemberPortalPage() {
     const [phoneCancellationRequested, setPhoneCancellationRequested] = useState(false);
     const [paymentFlowPurpose, setPaymentFlowPurpose] = useState<MemberPaymentPurpose>("savings_deposit");
     const [paymentOrder, setPaymentOrder] = useState<PaymentOrder | null>(null);
+    // Configured loan application fee. Only shown (and only charged) when the SACCO
+    // has switched it on with an amount above zero — a 0 means "no fee", so the
+    // whole prompt disappears.
+    const [loanApplicationFee, setLoanApplicationFee] = useState<{ enabled: boolean; amount: number }>({ enabled: false, amount: 0 });
     const [paymentOrders, setPaymentOrders] = useState<PaymentOrder[]>([]);
     const [lastPaymentToastStatus, setLastPaymentToastStatus] = useState<PaymentOrder["status"] | null>(null);
     const [activeContributionOrderId, setActiveContributionOrderId] = useState<string | null>(null);
@@ -1830,6 +1837,37 @@ export function MemberPortalPage() {
     }, [activeSection, myReports]);
 
     // League standing. Loaded up front rather than on section entry, because the
+    // Read the configured fees so the application form can quote the loan
+    // application fee — and hide the whole prompt when it is zero / switched off.
+    useEffect(() => {
+        const tenantId = profile?.tenant_id;
+        if (!tenantId) {
+            return;
+        }
+        let active = true;
+        api
+            .get<{ data: { fees?: { loan_application_fee?: { enabled?: boolean; amount?: number } } } }>(
+                endpoints.saccoSettings.fees(),
+                { params: { tenant_id: tenantId } }
+            )
+            .then((res) => {
+                if (!active) {
+                    return;
+                }
+                const fee = res.data?.data?.fees?.loan_application_fee;
+                const amount = Number(fee?.amount) || 0;
+                setLoanApplicationFee({ enabled: Boolean(fee?.enabled) && amount > 0, amount });
+            })
+            .catch(() => {
+                if (active) {
+                    setLoanApplicationFee({ enabled: false, amount: 0 });
+                }
+            });
+        return () => {
+            active = false;
+        };
+    }, [profile?.tenant_id]);
+
     // sidebar shows the member's tier and the nav entry itself is gated on the
     // tenant's league flag. A failure leaves the section hidden, not broken.
     useEffect(() => {
@@ -7352,12 +7390,10 @@ export function MemberPortalPage() {
                     tr("Savings minimum balance: TSh 50,000", "Salio la chini la akiba: TSh 50,000"),
                     tr("Withdrawal limit: branch teller-review threshold", "Kikomo cha kutoa: kiwango kinachohitaji ukaguzi wa tawi"),
                     tr("Dormant: no qualifying movement in the period", "Imelala: hakuna muamala uliokidhi katika kipindi hicho"),
-                    canUsePortalDeposits
-                        ? tr("Self-service deposits are switched on for members", "Wanachama wanaruhusiwa kuweka fedha wenyewe")
-                        : tr(
-                            "Self-service deposits are switched off — pay into the SACCOS bank account",
-                            "Kuweka fedha wewe mwenyewe kumezimwa — lipa kwenye akaunti ya benki ya SACCOS"
-                        )
+                    tr(
+                        "Deposit any time by paying your payment reference above — it posts to your savings automatically once paid",
+                        "Weka fedha wakati wowote kwa kulipia namba yako ya malipo hapo juu — itaingia kwenye akiba yako kiotomatiki ikishalipwa"
+                    )
                 ]}
                 health={[
                     { id: "active", label: tr("Active", "Hai"), value: String(filteredAccounts.length - accountDormancyCount) },
@@ -7375,7 +7411,15 @@ export function MemberPortalPage() {
                     runningBalance: formatCurrency(row.running_balance)
                 }))}
                 dividendTotalCount={filteredDividendMapping.length}
-                depositSlot={canUsePortalDeposits ? (
+                depositSlot={(
+                    <>
+                        <div style={{ marginBottom: 16 }}>
+                            <UcgReferenceCard />
+                        </div>
+                        <div style={{ marginBottom: 16 }}>
+                            <UcgMyDepositsCard tenantId={profile?.tenant_id ?? null} />
+                        </div>
+                        {canUsePortalDeposits ? (
                     <section className={memberContentStyles.section}>
                         <div className={memberContentStyles.sectionHead}>
                             <div style={{ minWidth: 0 }}>
@@ -7401,7 +7445,9 @@ export function MemberPortalPage() {
                             </p>
                         ) : null}
                     </section>
-                ) : null}
+                        ) : null}
+                    </>
+                )}
             />
         );
     };
@@ -7425,6 +7471,15 @@ export function MemberPortalPage() {
                     { id: "pledged", label: tr("Pledged as guarantor", "Uliyodhamini"), value: formatCurrencyCompact(dashboardGuarantorExposure) }
                 ]}
             />
+
+            {portalRepaymentLoans.map((loan) => (
+                <UcgLoanReferenceCard
+                    key={loan.id}
+                    loanId={loan.id}
+                    loanNumber={loan.loan_number}
+                    tenantId={profile?.tenant_id ?? null}
+                />
+            ))}
 
             {activeLoanProducts.length ? (
                 <MotionCard variant="outlined" sx={contentCardSx}>
@@ -8169,6 +8224,8 @@ export function MemberPortalPage() {
         return (
             <Stack spacing={3}>
                 {saccoBankAccount ? <SaccoBankAccountCard {...saccoBankAccount} /> : null}
+                <UcgReferenceCard kind="shares" />
+                <UcgReferenceCard kind="operation_cost" />
                 <MotionCard
                     variant="outlined"
                     sx={{
@@ -10703,17 +10760,19 @@ export function MemberPortalPage() {
                                                     />
                                                 </Grid>
                                             </Grid>
-                                            <FormControlLabel
-                                                control={
-                                                    <Checkbox
-                                                        checked={loanApplicationForm.watch("application_fee_paid")}
-                                                        onChange={(event) =>
-                                                            loanApplicationForm.setValue("application_fee_paid", event.target.checked, { shouldDirty: true })
-                                                        }
-                                                    />
-                                                }
-                                                label="I have paid the loan application fee (attach the receipt under Supporting documents)."
-                                            />
+                                            {loanApplicationFee.enabled ? (
+                                                <FormControlLabel
+                                                    control={
+                                                        <Checkbox
+                                                            checked={loanApplicationForm.watch("application_fee_paid")}
+                                                            onChange={(event) =>
+                                                                loanApplicationForm.setValue("application_fee_paid", event.target.checked, { shouldDirty: true })
+                                                            }
+                                                        />
+                                                    }
+                                                    label={`I have paid the loan application fee of ${formatCurrency(loanApplicationFee.amount)} (attach the receipt under Supporting documents).`}
+                                                />
+                                            ) : null}
                                         </Stack>
                                     </Paper>
                                     <Paper variant="outlined" sx={{ p: 1.75, borderRadius: 1.1 }}>
