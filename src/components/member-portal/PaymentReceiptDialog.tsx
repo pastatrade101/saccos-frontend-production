@@ -51,7 +51,7 @@ export function PaymentReceiptDialog({
                                     {formatCurrency(receipt.amount)}
                                 </Typography>
                                 <Typography variant="body2" color="text.secondary">
-                                    {receipt.provider.toUpperCase()} · {receipt.currency}
+                                    {(receipt.provider ?? "UCG").toUpperCase()} · {receipt.currency}
                                 </Typography>
                                 <Divider />
                                 <Typography variant="body2">

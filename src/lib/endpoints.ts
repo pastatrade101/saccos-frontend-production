@@ -274,7 +274,8 @@ const routeMap = {
         ucgReferenceRefreshMine: "/member-payments/ucg/reference/refresh",
         ucgReferenceRefresh: (reference: string) =>
             `/member-payments/ucg/reference/${encodeURIComponent(reference)}/refresh`,
-        ucgStatistics: "/member-payments/ucg/statistics"
+        ucgStatistics: "/member-payments/ucg/statistics",
+        ucgReferences: "/member-payments/ucg/references"
     },
     dividends: {
         options: "/dividends/options",
@@ -642,7 +643,8 @@ export const endpoints = {
         ucgReferenceRefreshMine: () => routeMap.memberPayments.ucgReferenceRefreshMine,
         ucgReferenceRefresh: (reference: string) =>
             routeMap.memberPayments.ucgReferenceRefresh(reference),
-        ucgStatistics: () => routeMap.memberPayments.ucgStatistics
+        ucgStatistics: () => routeMap.memberPayments.ucgStatistics,
+        ucgReferences: () => routeMap.memberPayments.ucgReferences
     },
     dividends: {
         options: () => routeMap.dividends.options,

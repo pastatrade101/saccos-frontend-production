@@ -36,6 +36,7 @@ import type { ApiEnvelope, PaginatedResult, PaymentOrder, PaymentOrderStatus, Te
 import { brandColors } from "../theme/colors";
 import { MotionCard } from "../ui/motion";
 import { UcgCollectionsCard } from "../components/member-overview/UcgCollectionsCard";
+import { UcgReferencesTable } from "../components/member-overview/UcgReferencesTable";
 import { formatCurrency, formatDate } from "../utils/format";
 
 const PAGE_LOAD_LIMIT = 100;
@@ -667,6 +668,7 @@ export function PaymentsPage() {
             </MotionCard>
 
             <UcgCollectionsCard />
+            <UcgReferencesTable />
 
             {error ? (
                 <Alert

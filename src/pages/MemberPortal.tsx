@@ -5384,7 +5384,7 @@ export function MemberPortalPage() {
         {
             key: "provider",
             header: "Channel",
-            render: (row) => row.provider.toUpperCase()
+            render: (row) => (row.provider ?? "UCG").toUpperCase()
         },
         {
             key: "status",
@@ -7440,7 +7440,7 @@ export function MemberPortalPage() {
                         {latestAccountsDepositPaymentOrder ? (
                             <p className={memberContentStyles.secondary} style={{ margin: 0 }}>
                                 Latest request: {formatCurrency(latestAccountsDepositPaymentOrder.amount)} via{" "}
-                                {latestAccountsDepositPaymentOrder.provider.toUpperCase()} ·{" "}
+                                {(latestAccountsDepositPaymentOrder.provider ?? "UCG").toUpperCase()} ·{" "}
                                 {latestAccountsDepositPaymentOrder.status.replace(/_/g, " ")}
                             </p>
                         ) : null}
@@ -8395,7 +8395,7 @@ export function MemberPortalPage() {
                                                             : `Order ${latestSharePaymentOrder.status.replace(/_/g, " ")}`}
                                     </Typography>
                                     <Typography variant="body2">
-                                        {formatCurrency(latestSharePaymentOrder.amount)} via {latestSharePaymentOrder.provider.toUpperCase()} · Ref {latestSharePaymentOrder.provider_ref || latestSharePaymentOrder.external_id}
+                                        {formatCurrency(latestSharePaymentOrder.amount)} via {(latestSharePaymentOrder.provider ?? "UCG").toUpperCase()} · Ref {latestSharePaymentOrder.provider_ref || latestSharePaymentOrder.external_id}
                                     </Typography>
                                     {latestSharePaymentOrder.journal_id ? (
                                         <Typography variant="body2">Journal posted: {latestSharePaymentOrder.journal_id}</Typography>
@@ -9434,7 +9434,7 @@ export function MemberPortalPage() {
                                         {trackedContributionOrder ? (
                                             <Stack spacing={0.6}>
                                                 <Typography variant="body2" color="text.secondary">
-                                                    Amount: {formatCurrency(trackedContributionOrder.amount)} via {trackedContributionOrder.provider.toUpperCase()}
+                                                    Amount: {formatCurrency(trackedContributionOrder.amount)} via {(trackedContributionOrder.provider ?? "UCG").toUpperCase()}
                                                 </Typography>
                                                 <Typography variant="body2" color="text.secondary">
                                                     Reference: {trackedContributionOrder.provider_ref || trackedContributionOrder.external_id}

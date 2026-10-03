@@ -751,7 +751,7 @@ export function MemberLoanWorkspaceCard({
                                                     : `Order ${latestLoanRepaymentPaymentOrder.status.replace(/_/g, " ")}`}
                             </Typography>
                             <Typography variant="body2">
-                                {formatCurrency(latestLoanRepaymentPaymentOrder.amount)} via {latestLoanRepaymentPaymentOrder.provider.toUpperCase()} · Ref {latestLoanRepaymentPaymentOrder.provider_ref || latestLoanRepaymentPaymentOrder.external_id}
+                                {formatCurrency(latestLoanRepaymentPaymentOrder.amount)} via {(latestLoanRepaymentPaymentOrder.provider ?? "UCG").toUpperCase()} · Ref {latestLoanRepaymentPaymentOrder.provider_ref || latestLoanRepaymentPaymentOrder.external_id}
                             </Typography>
                             <Typography variant="body2">
                                 Loan: {latestLoanRepaymentPaymentOrder.loan_number || latestLoanRepaymentPaymentOrder.loan_id || "Unknown loan"}
