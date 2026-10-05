@@ -307,6 +307,13 @@ interface DistributionPreview {
     total_basis: number;
     pool: number;
     allocated_total: number;
+    /** The board's appropriation to Operations, taken off the top. 0 when the
+     *  tenant has not set one, in which case the fund takes a proportional
+     *  share on its own balance instead. */
+    operations_share_percent?: number;
+    operations_share_amount?: number;
+    /** What is left for the members once Operations has taken its share. */
+    member_pool?: number;
     rows: {
         member_id: string;
         member_no: string;
@@ -1632,12 +1639,54 @@ export function DividendsPage() {
 
                         {distPreview ? (
                             <>
+                                {/* Shown before the tiles, because it changes what
+                                    every figure below it means: the members are
+                                    sharing the remainder, not the pool. */}
+                                {distPreview.operations_share_percent ? (
+                                    <Alert severity="info" variant="outlined">
+                                        <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 0.75 }}>
+                                            Operations takes {distPreview.operations_share_percent}% first
+                                        </Typography>
+                                        <Stack spacing={0.25}>
+                                            {[
+                                                ["Pool", formatCurrency(distPreview.pool)],
+                                                [`${distPreview.operations_share_percent}% to the Operations Fund`,
+                                                    `− ${formatCurrency(distPreview.operations_share_amount || 0)}`],
+                                                ["Shared between members", formatCurrency(distPreview.member_pool ?? distPreview.pool)]
+                                            ].map(([label, value], index) => (
+                                                <Stack
+                                                    key={label}
+                                                    direction="row"
+                                                    justifyContent="space-between"
+                                                    spacing={2}
+                                                    sx={{ fontWeight: index === 2 ? 800 : 400 }}
+                                                >
+                                                    <Typography variant="body2" sx={{ fontWeight: "inherit" }}>{label}</Typography>
+                                                    <Typography
+                                                        variant="body2"
+                                                        sx={{ fontWeight: "inherit", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}
+                                                    >
+                                                        {value}
+                                                    </Typography>
+                                                </Stack>
+                                            ))}
+                                        </Stack>
+                                        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.75 }}>
+                                            The fund's share posts as its own journal entry under this same batch reference, so
+                                            the Operations Fund report picks it up without anybody keying it in again.
+                                        </Typography>
+                                    </Alert>
+                                ) : null}
+
                                 <Grid container spacing={1.5}>
                                     {[
                                         ["Members", String(distPreview.member_count)],
                                         ["Total position", formatCurrency(distPreview.total_basis)],
                                         ["Pool", formatCurrency(distPreview.pool)],
-                                        ["Allocated", formatCurrency(distPreview.allocated_total)]
+                                        [distPreview.operations_share_percent ? "To members" : "Allocated",
+                                            formatCurrency(distPreview.operations_share_percent
+                                                ? (distPreview.member_pool ?? distPreview.allocated_total)
+                                                : distPreview.allocated_total)]
                                     ].map(([label, value]) => (
                                         <Grid key={label} size={{ xs: 6, md: 3 }}>
                                             <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
