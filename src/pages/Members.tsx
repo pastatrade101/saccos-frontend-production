@@ -101,7 +101,14 @@ const schema = z.object({
         .string()
         .trim()
         .min(1, "Phone is required.")
-        .regex(/^(?:\+?255|0)\d{9}$/, "Enter a valid phone (e.g. 0712345678 or +255712345678)."),
+        // Tanzanian local or 255 form, or any international number with its
+        // country code. The register is not a Tanzanian-only list — alumni
+        // live abroad, and a staff member creating one of them could not get
+        // past this field.
+        .regex(
+            /^(?:(?:\+?255|0)\d{9}|\+?[1-9]\d{9,14})$/,
+            "Enter a Tanzanian number (0712345678 or 255712345678), or an international one with its country code (e.g. +447740189591)."
+        ),
     email: z.string().email("Enter a valid email.").optional().or(z.literal("")),
     national_id: z.string().min(5, "National ID is required."),
     member_no: z.string().trim().max(50, "Member number is too long.").optional().or(z.literal("")),

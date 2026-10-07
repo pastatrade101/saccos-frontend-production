@@ -473,7 +473,11 @@ type DateRangePreset = "month" | "quarter" | "year" | "custom";
 // Tanzania mobile (2556/2557 normalized) OR an international E.164 number with a
 // leading + — the SACCO has diaspora members (+254, +61, +44, +1, ...) whose real
 // numbers must not block profile completion.
-const memberProfileCompletionPhonePattern = /^(?:255[67]\d{8}|\+[1-9]\d{6,14})$/;
+// Tanzanian in 2557XXXXXXXX form, or any international number. The + is
+// optional: somebody typing 447740189591 has given an unambiguous number — it
+// cannot be Tanzanian, which is 255 or a nine-digit 6/7 — and refusing it over
+// a missing character teaches them nothing.
+const memberProfileCompletionPhonePattern = /^(?:255[67]\d{8}|\+?[1-9]\d{6,14})$/;
 // Coerce stored phone formats (07XXXXXXXX, +2557XXXXXXXX, 7XXXXXXXX) into the
 // 2557XXXXXXXX shape the form expects; non-Tanzanian numbers keep their + prefix.
 function normalizePortalPhone(value?: string | null) {
@@ -484,12 +488,25 @@ function normalizePortalPhone(value?: string | null) {
     if (digits.startsWith("255")) {
         return digits.slice(0, 12);
     }
-    if (digits.startsWith("0") && /^0[67]/.test(digits)) {
-        return `255${digits.slice(1)}`.slice(0, 12);
+    // Exactly ten digits, or it is not a Tanzanian local number. A UK mobile
+    // is also written 07…, and the old test matched it: 07740189591 became
+    // 255774018959 — a plausible Tanzanian number belonging to nobody, saved
+    // without a word. Length is what separates them.
+    if (/^0[67]\d{8}$/.test(digits)) {
+        return `255${digits.slice(1)}`;
     }
     if (digits.length === 9 && /^[67]/.test(digits)) {
         return `255${digits}`;
     }
+    // A leading zero that is not a Tanzanian local number is a national format
+    // from somewhere else — a UK 07…, say. There is no way to tell which
+    // country, so it is left exactly as typed and the validator asks for the
+    // country code. Prefixing + would produce "+07740189591", which is not a
+    // number anywhere.
+    if (digits.startsWith("0")) {
+        return digits;
+    }
+
     // Diaspora / international number — keep it in + format.
     return `+${digits}`;
 }
@@ -518,7 +535,7 @@ const memberProfileCompletionSchema = z.object({
         .refine((value) => !value || isAdultPortalDate(value), "Member must be at least 18 years old."),
     phone: z.string().trim().optional().or(z.literal("")).refine(
         (value) => !value || memberProfileCompletionPhonePattern.test(value),
-        "Use 2557XXXXXXXX / 2556XXXXXXXX, or an international number starting with + (e.g. +2547...)."
+        "Use 07XXXXXXXX or 2557XXXXXXXX for a Tanzanian number, or include the country code for an international one (e.g. +447740189591)."
     ),
     email: z.string().trim().optional().or(z.literal("")).refine(
         (value) => !value || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value),
