@@ -601,8 +601,11 @@ export function MembersPage() {
     const canCreateMemberLogins = Boolean(
         profile && ["branch_manager"].includes(profile.role)
     );
+    // The help desk answers the member who cannot log in, and for most members
+    // the emailed recovery link cannot reach them — their login address is a
+    // synthetic @ias.co.tz that receives no mail. Resetting is the only route.
     const canResetMemberPasswords = Boolean(
-        profile && ["super_admin", "branch_manager"].includes(profile.role)
+        profile && ["super_admin", "branch_manager", "help_desk"].includes(profile.role)
     );
     const canViewMemberCredentials = canCreateMemberLogins || canResetMemberPasswords;
     /// The help desk exists to correct the register: a member rings in with a
