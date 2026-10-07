@@ -7,6 +7,7 @@ import { alpha, useTheme } from "@mui/material/styles";
 
 import { api } from "../../lib/api";
 import { endpoints } from "../../lib/endpoints";
+import { HowToPayHelp } from "../member-portal/HowToPayHelp";
 import { brandColors } from "../../theme/colors";
 import { MotionCard } from "../../ui/motion";
 import { formatCurrency } from "../../utils/format";
@@ -175,6 +176,9 @@ export function UcgReferenceCard({ kind = "savings" }: { kind?: "savings" | "sha
                                 {copied ? <CheckRoundedIcon /> : <ContentCopyRoundedIcon />}
                             </IconButton>
                         </Tooltip>
+                        {/* Beside the number, because that is where the member
+                            is looking when they ask what to do with it. */}
+                        <HowToPayHelp size="medium" />
                     </Stack>
 
                     <Stack spacing={0.5}>
