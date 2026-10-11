@@ -1358,6 +1358,9 @@ export type LoanCapacityDashboardResponse = ApiEnvelope<LoanCapacityDashboard>;
 export type LoanSchedulesResponse = ApiEnvelope<LoanSchedule[]>;
 export type LoanTransactionsResponse = ApiEnvelope<LoanTransaction[]>;
 export type LoanTransactionsWithContextResponse = ApiEnvelope<LoanTransactionWithContext[]>;
+// The loan ledger endpoint single-wraps -- { data: [...], pagination: {...} } --
+// unlike the double-wrapped ApiEnvelope<PaginatedResult<T>> endpoints.
+export type LoanTransactionsWithContextPage = PaginatedResult<LoanTransactionWithContext>;
 export type GuarantorRequestsResponse = ApiEnvelope<GuarantorRequestItem[]>;
 export type TellerSessionsResponse = ApiEnvelope<TellerSession[]>;
 export type TellerSessionResponse = ApiEnvelope<TellerSession | null>;

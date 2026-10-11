@@ -22,6 +22,7 @@ import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
 import StoreRoundedIcon from "@mui/icons-material/StoreRounded";
 import CreditScoreRoundedIcon from "@mui/icons-material/CreditScoreRounded";
+import ReceiptLongRoundedIcon from "@mui/icons-material/ReceiptLongRounded";
 import SummarizeRoundedIcon from "@mui/icons-material/SummarizeRounded";
 import PendingActionsRoundedIcon from "@mui/icons-material/PendingActionsRounded";
 import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
@@ -119,6 +120,7 @@ const navItems: NavItem[] = [
     { to: "/approvals", label: "Approvals", roles: ["super_admin", "branch_manager", "treasury_officer", "loan_officer", "teller"], section: "finance", icon: PendingActionsRoundedIcon },
     { to: "/cash", label: "Cash Desk", roles: ["teller"], section: "finance", icon: PaidRoundedIcon },
     { to: "/cash/transactions", label: "Transactions Report", roles: ["teller", "branch_manager", "super_admin"], section: "finance", icon: SummarizeRoundedIcon },
+    { to: "/cash/loan-transactions", label: "Loan Transactions", roles: ["teller", "branch_manager", "super_admin", "auditor", "loan_officer"], section: "finance", icon: ReceiptLongRoundedIcon },
     { to: "/cash-control", label: "Cash Control", roles: ["branch_manager"], section: "finance", icon: PaidRoundedIcon },
     { to: "/loans", label: "Loans", roles: ["branch_manager", "loan_officer", "teller"], section: "finance", icon: SummarizeRoundedIcon },
     { to: "/treasury", label: "Treasury", roles: ["super_admin", "branch_manager", "treasury_officer", "auditor"], section: "finance", icon: AccountBalanceRoundedIcon },
@@ -145,7 +147,7 @@ const navGroups: NavGroup[] = [
     // A path must appear here as well as in navItems — the sidebar renders the
     // intersection. Anything listed in only one of the two is reachable by URL
     // and by search, but never shows up in the menu.
-    { key: "finance", label: "Finance", itemTos: ["/savings", "/loans", "/payments", "/revenue", "/dividends", "/finance/share-capital-transfer", "/cash-control", "/cash", "/cash/transactions", "/treasury", "/treasury/policy-settings"] },
+    { key: "finance", label: "Finance", itemTos: ["/savings", "/loans", "/payments", "/revenue", "/dividends", "/finance/share-capital-transfer", "/cash-control", "/cash", "/cash/transactions", "/cash/loan-transactions", "/treasury", "/treasury/policy-settings"] },
     { key: "operations", label: "Operations", itemTos: ["/approvals"] },
     { key: "analytics", label: "Analytics", itemTos: ["/performance-targets", "/leagues", "/weekly-challenges", "/milestones", "/agm", "/reports", "/auditor/reports", "/auditor/workbench", "/auditor/exceptions", "/auditor/journals", "/auditor/audit-logs", "/auditor/login-history"] },
     { key: "setup", label: "Setup", itemTos: ["/setup/super-admin", "/settings/sacco-year"] }
