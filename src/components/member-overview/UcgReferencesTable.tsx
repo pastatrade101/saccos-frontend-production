@@ -377,15 +377,17 @@ export function UcgReferencesTable() {
                                                     <Chip size="small" label={chip.label} color={chip.color} />
                                                 </TableCell>
                                                 <TableCell align="right">
-                                                    <Button
-                                                        size="small"
-                                                        variant={shortfall > 0 ? "contained" : "text"}
-                                                        color={shortfall > 0 ? "error" : "inherit"}
-                                                        disabled={busy !== null}
-                                                        onClick={() => void pullIn(row.referenceNumber)}
-                                                    >
-                                                        {busy === row.referenceNumber ? "Inavuta…" : "Ingiza"}
-                                                    </Button>
+                                                    {shortfall > 0 ? (
+                                                        <Button
+                                                            size="small"
+                                                            variant="contained"
+                                                            color="error"
+                                                            disabled={busy !== null}
+                                                            onClick={() => void pullIn(row.referenceNumber)}
+                                                        >
+                                                            {busy === row.referenceNumber ? "Inavuta…" : "Ingiza"}
+                                                        </Button>
+                                                    ) : null}
                                                 </TableCell>
                                             </TableRow>
                                         );
