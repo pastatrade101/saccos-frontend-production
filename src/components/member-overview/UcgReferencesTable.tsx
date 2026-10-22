@@ -21,6 +21,7 @@ import {
     TableHead,
     TableRow,
     TextField,
+    Tooltip,
     Typography
 } from "@mui/material";
 
@@ -316,8 +317,8 @@ export function UcgReferencesTable() {
                     {gatewayError ? (
                         <Alert severity="warning" variant="outlined">
                             Gateway haijibu: <b>{GATEWAY_ERRORS[gatewayError] || gatewayError}</b>. Safu ya{" "}
-                            <b>Kimelipwa (gateway)</b> haipatikani, kwa hiyo hakuna ulinganisho unaoweza kufanyika
-                            na malipo mapya hayawezi kuingia. Rekodi zetu wenyewe zinaonekana hapa chini.
+                            <b>Kimelipwa (gateway)</b> haipatikani, kwa hiyo hakuna ulinganisho unaoweza kufanyika,
+                            malipo mapya hayawezi kuingia, na kitufe cha <b>Ingiza</b> kimezimwa. Rekodi zetu wenyewe zinaonekana hapa chini.
                         </Alert>
                     ) : null}
 
@@ -395,15 +396,23 @@ export function UcgReferencesTable() {
                                                     <Chip size="small" label={chip.label} color={chip.color} />
                                                 </TableCell>
                                                 <TableCell align="right">
-                                                    <Button
-                                                        size="small"
-                                                        variant={shortfall > 0 ? "contained" : "text"}
-                                                        color={shortfall > 0 ? "error" : "inherit"}
-                                                        disabled={busy !== null}
-                                                        onClick={() => void pullIn(row.referenceNumber)}
+                                                    <Tooltip
+                                                        title={gatewayError
+                                                            ? "Haiwezekani sasa — kuvuta malipo kunahitaji gateway, nayo haijibu."
+                                                            : ""}
                                                     >
-                                                        {busy === row.referenceNumber ? "Inavuta…" : "Ingiza"}
-                                                    </Button>
+                                                        <span>
+                                                            <Button
+                                                                size="small"
+                                                                variant={shortfall > 0 ? "contained" : "text"}
+                                                                color={shortfall > 0 ? "error" : "inherit"}
+                                                                disabled={busy !== null || Boolean(gatewayError)}
+                                                                onClick={() => void pullIn(row.referenceNumber)}
+                                                            >
+                                                                {busy === row.referenceNumber ? "Inavuta…" : "Ingiza"}
+                                                            </Button>
+                                                        </span>
+                                                    </Tooltip>
                                                 </TableCell>
                                             </TableRow>
                                         );
@@ -478,7 +487,7 @@ export function UcgReferencesTable() {
                                                     size="small"
                                                     variant="contained"
                                                     color="error"
-                                                    disabled={busy !== null}
+                                                    disabled={busy !== null || Boolean(gatewayError)}
                                                     onClick={() => void pullIn(row.referenceNumber)}
                                                 >
                                                     {busy === row.referenceNumber ? "Inavuta…" : "Ingiza"}
