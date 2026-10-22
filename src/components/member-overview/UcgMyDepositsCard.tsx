@@ -4,7 +4,7 @@ import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
 import { Box, Button, CardContent, Chip, Stack, Typography } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 
-import { api } from "../../lib/api";
+import { api, getApiErrorMessage } from "../../lib/api";
 import { endpoints } from "../../lib/endpoints";
 import { brandColors } from "../../theme/colors";
 import { MotionCard } from "../../ui/motion";
@@ -69,8 +69,10 @@ export function UcgMyDepositsCard({ tenantId }: { tenantId: string | null }) {
             const posted = data?.data?.results?.length || 0;
             setNote(posted > 0 ? "Malipo yako yamehakikiwa na kuingizwa." : "Hakuna malipo mapya kwa sasa.");
             await loadOrders();
-        } catch {
-            setNote("Imeshindikana kukagua kwa sasa. Jaribu tena baadaye.");
+        } catch (error) {
+            // Say what actually failed. A bare "try again later" hid the real
+            // cause while a payment the bank had taken never reached us.
+            setNote(`Imeshindikana kukagua: ${getApiErrorMessage(error)}`);
         } finally {
             setRefreshing(false);
         }

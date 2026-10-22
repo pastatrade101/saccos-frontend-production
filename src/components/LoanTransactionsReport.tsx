@@ -299,8 +299,14 @@ export function LoanTransactionsReport({ tenantId }: { tenantId: string | null }
         ]);
 
         if (format === "csv") {
+            // A cell opening with = + - @ (or a tab/CR) is read as a formula by
+            // Excel, so a member name or payment reference carrying one would
+            // run when the file is opened. Prefix those with an apostrophe.
+            // Numbers are left alone — a negative amount starts with "-".
             const escape = (value: string | number) => {
-                const text = String(value ?? "");
+                const text = typeof value === "string" && /^[=+\-@\t\r]/.test(value)
+                    ? `'${value}`
+                    : String(value ?? "");
                 return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
             };
             const csv = [headers.map(escape).join(","), ...body.map((row) => row.map(escape).join(","))].join("\n");
