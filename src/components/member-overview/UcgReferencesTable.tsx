@@ -11,6 +11,7 @@ import {
     DialogActions,
     DialogContent,
     DialogTitle,
+    LinearProgress,
     Menu,
     MenuItem,
     Stack,
@@ -106,6 +107,7 @@ export function UcgReferencesTable() {
     const [listOpen, setListOpen] = useState(false);
     const [exportAnchor, setExportAnchor] = useState<null | HTMLElement>(null);
     const [range, setRange] = useState(recentRange);
+    const [refreshing, setRefreshing] = useState(false);
 
     const load = useCallback(async () => {
         const { data } = await api.get<UcgReferencesResponse>(endpoints.memberPayments.ucgReferences(), {
@@ -117,6 +119,10 @@ export function UcgReferencesTable() {
 
     useEffect(() => {
         let active = true;
+        // Changing the period refetches, and the first render is not the only
+        // time that takes a moment -- without this the table sat there looking
+        // finished while a request was still in flight.
+        setRefreshing(true);
         void load()
             .then((loaded) => {
                 if (active) {
@@ -128,6 +134,11 @@ export function UcgReferencesTable() {
                 if (active) {
                     setRows([]);
                     setLoadError(getApiErrorMessage(error));
+                }
+            })
+            .finally(() => {
+                if (active) {
+                    setRefreshing(false);
                 }
             });
         return () => {
@@ -275,6 +286,8 @@ export function UcgReferencesTable() {
                         </Button>
                         </Stack>
                     </Stack>
+
+                    {refreshing ? <LinearProgress sx={{ borderRadius: 1 }} /> : null}
 
                     {loadError ? (
                         <Alert severity="error" variant="outlined">
