@@ -20,6 +20,7 @@ import {
     TableCell,
     TableHead,
     TableRow,
+    TextField,
     Typography
 } from "@mui/material";
 
@@ -65,14 +66,13 @@ const PURPOSE_LABELS: Record<string, string> = {
 
 const purposeLabel = (purpose: string) => PURPOSE_LABELS[purpose] || purpose;
 
-// References accumulate daily, so the screen opens on the last week rather than
-// every reference ever minted. Widen the period to chase something older.
-function recentRange() {
-    const end = new Date();
-    const start = new Date();
-    start.setDate(start.getDate() - 6);
-    const day = (value: Date) => value.toISOString().slice(0, 10);
-    return { start: day(start), end: day(end) };
+// Deliberately unfiltered by default. A reference is a standing record, not an
+// event: one minted in October can still take a payment in December, so the
+// date it was created says nothing about whether it needs attention. Opening on
+// "the last 7 days" hid George Muro's 12 October reference -- the very row the
+// screen exists to surface. The picker is there to narrow, not to start narrow.
+function allTimeRange() {
+    return { start: "", end: "" };
 }
 
 // The server sends a stable code, not its internal error text.
@@ -106,8 +106,9 @@ export function UcgReferencesTable() {
     const [note, setNote] = useState<{ severity: "success" | "error"; text: string } | null>(null);
     const [listOpen, setListOpen] = useState(false);
     const [exportAnchor, setExportAnchor] = useState<null | HTMLElement>(null);
-    const [range, setRange] = useState(recentRange);
+    const [range, setRange] = useState(allTimeRange);
     const [refreshing, setRefreshing] = useState(false);
+    const [search, setSearch] = useState("");
 
     const load = useCallback(async () => {
         const { data } = await api.get<UcgReferencesResponse>(endpoints.memberPayments.ucgReferences(), {
@@ -175,6 +176,15 @@ export function UcgReferencesTable() {
             </MotionCard>
         );
     }
+
+    const needle = search.trim().toLowerCase();
+    const visible = needle
+        ? rows.filter((row) => [row.referenceNumber, row.memberName, row.memberNo, row.memberPhone]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase()
+            .includes(needle))
+        : rows;
 
     const unreconciled = rows
         .filter((row) => shortfallOf(row) > 0)
@@ -266,6 +276,14 @@ export function UcgReferencesTable() {
                             </Typography>
                         </Box>
                         <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems="center">
+                        <TextField
+                            size="small"
+                            label="Tafuta"
+                            placeholder="Reference, jina, namba, simu"
+                            value={search}
+                            onChange={(event) => setSearch(event.target.value)}
+                            sx={{ minWidth: 230 }}
+                        />
                         <FlatDateRangePicker
                             label="Period"
                             start={range.start}
@@ -316,9 +334,9 @@ export function UcgReferencesTable() {
                         </Alert>
                     ) : null}
 
-                    {!rows.length && !loadError ? (
+                    {!visible.length && !loadError ? (
                         <Typography variant="body2" color="text.secondary">
-                            Hakuna reference iliyotengenezwa bado.
+                            {rows.length ? "Hakuna reference inayolingana na utafutaji." : "Hakuna reference iliyotengenezwa bado."}
                         </Typography>
                     ) : (
                         <Box sx={{ overflowX: "auto" }}>
@@ -336,7 +354,7 @@ export function UcgReferencesTable() {
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
-                                    {rows.map((row) => {
+                                    {visible.map((row) => {
                                         const paid = row.totalPaid ?? 0;
                                         const posted = row.postedAmount ?? 0;
                                         const shortfall = shortfallOf(row);
