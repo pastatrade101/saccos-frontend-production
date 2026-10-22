@@ -320,6 +320,8 @@ export function PaymentsPage() {
     const [sourceFilter, setSourceFilter] = useState<string>("all");
     const [search, setSearch] = useState("");
     const [range, setRange] = useState(currentMonthRange);
+    // Which figure in the register band was clicked open, if any.
+    const [figureDetail, setFigureDetail] = useState<"unposted" | "failed" | null>(null);
     const [page, setPage] = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(25);
     const [selectedReceipt, setSelectedReceipt] = useState<PaymentLogRow | null>(null);
@@ -458,6 +460,18 @@ export function PaymentsPage() {
             })),
         [filteredRows, page, rowsPerPage]
     );
+
+    // The rows behind a clicked figure, drawn from the same filtered set the
+    // figure was counted from so the two can never disagree.
+    const figureRows = useMemo(() => {
+        if (figureDetail === "unposted") {
+            return filteredRows.filter((row) => ["created", "pending", "paid"].includes(row.status));
+        }
+        if (figureDetail === "failed") {
+            return filteredRows.filter((row) => ["failed", "expired"].includes(row.status));
+        }
+        return [];
+    }, [figureDetail, filteredRows]);
 
     // Scoped to the period on screen. Figures that counted all history while the
     // table showed one month were two different answers on the same page.
@@ -683,26 +697,56 @@ export function PaymentsPage() {
                                 { label: "In", value: formatCurrency(metrics.inflow) },
                                 { label: "Out", value: formatCurrency(metrics.outflow) },
                                 { label: "Actions", value: String(metrics.total) },
-                                { label: "Unposted", value: String(metrics.inProgress) },
-                                { label: "Failed", value: String(metrics.failed), alert: metrics.failed > 0 }
-                            ].map((figure) => (
-                                <Box key={figure.label}>
-                                    <Typography
-                                        sx={{
-                                            fontWeight: 800,
-                                            fontVariantNumeric: "tabular-nums",
-                                            fontSize: "1.15rem",
-                                            lineHeight: 1.25,
-                                            color: figure.alert ? brandColors.warning : "#fff"
-                                        }}
+                                // The two figures worth chasing open the rows behind them.
+                                { label: "Unposted", value: String(metrics.inProgress), detail: "unposted" as const },
+                                { label: "Failed", value: String(metrics.failed), alert: metrics.failed > 0, detail: "failed" as const }
+                            ].map((figure) => {
+                                const clickable = Boolean(figure.detail) && Number(figure.value) > 0;
+                                return (
+                                    <Box
+                                        key={figure.label}
+                                        onClick={clickable ? () => setFigureDetail(figure.detail!) : undefined}
+                                        role={clickable ? "button" : undefined}
+                                        tabIndex={clickable ? 0 : undefined}
+                                        onKeyDown={clickable
+                                            ? (event) => {
+                                                if (event.key === "Enter" || event.key === " ") {
+                                                    event.preventDefault();
+                                                    setFigureDetail(figure.detail!);
+                                                }
+                                            }
+                                            : undefined}
+                                        sx={clickable
+                                            ? {
+                                                cursor: "pointer",
+                                                borderRadius: 1,
+                                                px: 0.75,
+                                                mx: -0.75,
+                                                "&:hover": { bgcolor: alpha("#fff", 0.1) },
+                                                "&:focus-visible": { outline: `2px solid ${alpha("#fff", 0.7)}`, outlineOffset: 2 }
+                                            }
+                                            : undefined}
                                     >
-                                        {figure.value}
-                                    </Typography>
-                                    <Typography variant="caption" sx={{ color: alpha("#fff", 0.66) }}>
-                                        {figure.label}
-                                    </Typography>
-                                </Box>
-                            ))}
+                                        <Typography
+                                            sx={{
+                                                fontWeight: 800,
+                                                fontVariantNumeric: "tabular-nums",
+                                                fontSize: "1.15rem",
+                                                lineHeight: 1.25,
+                                                color: figure.alert ? brandColors.warning : "#fff",
+                                                textDecoration: clickable ? "underline" : "none",
+                                                textUnderlineOffset: 4,
+                                                textDecorationColor: alpha("#fff", 0.35)
+                                            }}
+                                        >
+                                            {figure.value}
+                                        </Typography>
+                                        <Typography variant="caption" sx={{ color: alpha("#fff", 0.66) }}>
+                                            {figure.label}
+                                        </Typography>
+                                    </Box>
+                                );
+                            })}
                         </Stack>
                     </Stack>
                 </CardContent>
@@ -799,6 +843,30 @@ export function PaymentsPage() {
                     </Stack>
                 </CardContent>
             </MotionCard>
+
+            <Dialog open={figureDetail !== null} onClose={() => setFigureDetail(null)} maxWidth="lg" fullWidth>
+                <DialogTitle sx={{ fontWeight: 800 }}>
+                    {figureDetail === "failed" ? "Malipo yaliyoshindwa" : "Malipo ambayo hayajaingia"}
+                    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 400, mt: 0.5 }}>
+                        {figureDetail === "failed"
+                            ? "Haya yalishindwa au muda wake umeisha, kwa hiyo hakuna kilichoingia kwenye ledger."
+                            : "Haya yameanzishwa au yamelipwa lakini bado hayajaingia kwenye ledger."}
+                        {" "}Kipindi: {formatDate(range.start)} – {formatDate(range.end)}.
+                    </Typography>
+                </DialogTitle>
+                <DialogContent dividers>
+                    <DataTable
+                        rows={figureRows.map((row, index) => ({ ...row, row_number: index + 1 }))}
+                        columns={columns}
+                        emptyMessage="Hakuna safu kwenye kipindi hiki."
+                        maxHeight={560}
+                        stickyHeader
+                    />
+                </DialogContent>
+                <DialogActions>
+                    <Button variant="contained" onClick={() => setFigureDetail(null)}>Funga</Button>
+                </DialogActions>
+            </Dialog>
 
             <Dialog open={Boolean(selectedReceipt)} onClose={() => setSelectedReceipt(null)} fullWidth maxWidth="sm">
                 <DialogTitle>Payment Detail</DialogTitle>
