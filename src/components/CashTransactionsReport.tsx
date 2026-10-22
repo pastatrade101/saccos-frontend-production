@@ -31,6 +31,7 @@ import { api, getApiErrorMessage } from "../lib/api";
 import { endpoints, type StatementsResponse } from "../lib/endpoints";
 import type { StatementRow } from "../types/api";
 import { downloadFile } from "../utils/downloadFile";
+import { toCsv } from "../utils/csv";
 import { formatCurrency, formatDate } from "../utils/format";
 
 const PAGE_SIZE = 20;
@@ -322,11 +323,7 @@ export function CashTransactionsReport({ tenantId }: { tenantId: string | null }
         body.push(["", "TOTAL", "", "", "", "", "", totals.net, "", `${totals.count} transactions`]);
 
         if (format === "csv") {
-            const escape = (value: string | number) => {
-                const text = String(value ?? "");
-                return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-            };
-            const csv = [headers.map(escape).join(","), ...body.map((row) => row.map(escape).join(","))].join("\n");
+            const csv = toCsv(headers, body);
             downloadFile(new Blob([csv], { type: "text/csv;charset=utf-8" }), "cash-transactions.csv");
             return;
         }
