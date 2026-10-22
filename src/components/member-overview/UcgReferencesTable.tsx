@@ -1,3 +1,5 @@
+import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
+import ReportProblemRoundedIcon from "@mui/icons-material/ReportProblemRounded";
 import { useCallback, useEffect, useState } from "react";
 import {
     Alert,
@@ -5,6 +7,12 @@ import {
     Button,
     Chip,
     CardContent,
+    Dialog,
+    DialogActions,
+    DialogContent,
+    DialogTitle,
+    Menu,
+    MenuItem,
     Stack,
     Table,
     TableBody,
@@ -17,11 +25,15 @@ import {
 import { api, getApiErrorMessage } from "../../lib/api";
 import { endpoints } from "../../lib/endpoints";
 import { MotionCard } from "../../ui/motion";
-import { formatCurrency } from "../../utils/format";
+import { toCsv } from "../../utils/csv";
+import { downloadFile } from "../../utils/downloadFile";
+import { formatCurrency, formatDate } from "../../utils/format";
 
 interface UcgReferenceRow {
     referenceNumber: string;
     memberName: string | null;
+    memberNo?: string | null;
+    memberPhone?: string | null;
     purpose: string;
     status: string;
     amount: number | null;
@@ -37,6 +49,7 @@ interface UcgReferenceRow {
 
 interface UcgReferencesResponse {
     data?: UcgReferenceRow[];
+    meta?: { gatewayAvailable?: boolean; gatewayError?: string | null };
 }
 
 const PURPOSE_LABELS: Record<string, string> = {
@@ -47,39 +60,49 @@ const PURPOSE_LABELS: Record<string, string> = {
     operation_cost: "Gharama za uendeshaji"
 };
 
+const purposeLabel = (purpose: string) => PURPOSE_LABELS[purpose] || purpose;
+
 // The gateway taking a payment and the SACCO posting it are two separate events.
 // A missing webhook (or a sync that quietly failed) leaves money sitting at the
 // bank with nothing in our ledger, so the shortfall is what this table leads on.
 function shortfallOf(row: UcgReferenceRow) {
-    const paid = row.totalPaid ?? 0;
-    const posted = row.postedAmount ?? 0;
-    return Math.max(paid - posted, 0);
+    return Math.max((row.totalPaid ?? 0) - (row.postedAmount ?? 0), 0);
 }
 
 // Every UCG reference the SACCO has minted: what the gateway reports as paid,
 // what we posted, and a button to pull in anything the gateway never told us
-// about. Hidden on error so it ships safely while UCG is still off.
+// about. The unreconciled rows are also exportable, because chasing them is a
+// conversation with the bank and the bank needs the member's own identifiers.
 export function UcgReferencesTable() {
-    const [rows, setRows] = useState<UcgReferenceRow[]>([]);
+    const [rows, setRows] = useState<UcgReferenceRow[] | null>(null);
+    const [loadError, setLoadError] = useState<string | null>(null);
+    const [gatewayError, setGatewayError] = useState<string | null>(null);
     const [busy, setBusy] = useState<string | null>(null);
     const [note, setNote] = useState<{ severity: "success" | "error"; text: string } | null>(null);
+    const [listOpen, setListOpen] = useState(false);
+    const [exportAnchor, setExportAnchor] = useState<null | HTMLElement>(null);
 
     const load = useCallback(async () => {
-        try {
-            const { data } = await api.get<UcgReferencesResponse>(endpoints.memberPayments.ucgReferences());
-            return data?.data || [];
-        } catch {
-            return [];
-        }
+        const { data } = await api.get<UcgReferencesResponse>(endpoints.memberPayments.ucgReferences());
+        setGatewayError(data?.meta?.gatewayAvailable === false ? data?.meta?.gatewayError || "hawajibu" : null);
+        return data?.data || [];
     }, []);
 
     useEffect(() => {
         let active = true;
-        void load().then((loaded) => {
-            if (active) {
-                setRows(loaded);
-            }
-        });
+        void load()
+            .then((loaded) => {
+                if (active) {
+                    setRows(loaded);
+                    setLoadError(null);
+                }
+            })
+            .catch((error) => {
+                if (active) {
+                    setRows([]);
+                    setLoadError(getApiErrorMessage(error));
+                }
+            });
         return () => {
             active = false;
         };
@@ -102,26 +125,129 @@ export function UcgReferencesTable() {
         }
     };
 
-    if (!rows.length) {
+    if (rows === null) {
         return null;
     }
 
-    const unreconciled = rows.filter((row) => shortfallOf(row) > 0);
+    const unreconciled = rows
+        .filter((row) => shortfallOf(row) > 0)
+        .sort((left, right) => shortfallOf(right) - shortfallOf(left));
     const shortfallTotal = unreconciled.reduce((sum, row) => sum + shortfallOf(row), 0);
+
+    const EXPORT_HEADERS = [
+        "Reference", "Mwanachama", "Namba ya mwanachama", "Simu", "Aina",
+        "Kimelipwa benki (TSh)", "Kimeingia mfumo (TSh)", "Pungufu (TSh)",
+        "Malipo benki", "Reference iliundwa", "Sync ya mwisho"
+    ];
+    const exportBody = unreconciled.map((row) => [
+        row.referenceNumber,
+        row.memberName || "",
+        row.memberNo || "",
+        row.memberPhone || "",
+        purposeLabel(row.purpose),
+        Number(row.totalPaid ?? 0),
+        Number(row.postedAmount ?? 0),
+        shortfallOf(row),
+        Number(row.paymentCount ?? 0),
+        String(row.createdAt || "").slice(0, 10),
+        String(row.lastSyncedAt || "").slice(0, 10)
+    ] as (string | number)[]);
+
+    const exportList = async (format: "csv" | "excel" | "pdf") => {
+        setExportAnchor(null);
+        const stamp = new Date().toISOString().slice(0, 10);
+        const title = `Malipo yaliyokwama benki — ${stamp}`;
+        const body = [...exportBody, ["", "JUMLA", "", "", "", "", "", shortfallTotal, "", "", ""]];
+
+        if (format === "csv") {
+            downloadFile(
+                new Blob([toCsv(EXPORT_HEADERS, body)], { type: "text/csv;charset=utf-8" }),
+                `malipo-yaliyokwama-${stamp}.csv`
+            );
+            return;
+        }
+        if (format === "excel") {
+            const XLSX = await import("xlsx");
+            const sheet = XLSX.utils.aoa_to_sheet([[title], [], EXPORT_HEADERS, ...body]);
+            sheet["!cols"] = EXPORT_HEADERS.map((header) => ({ wch: Math.max(header.length + 2, 16) }));
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, sheet, "Yaliyokwama");
+            XLSX.writeFile(workbook, `malipo-yaliyokwama-${stamp}.xlsx`);
+            return;
+        }
+        const { jsPDF } = await import("jspdf");
+        const { default: autoTable } = await import("jspdf-autotable");
+        const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+        doc.setFontSize(14);
+        doc.setFont("helvetica", "bold");
+        doc.text(title, 40, 42);
+        doc.setFontSize(9);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(120);
+        doc.text(
+            `References ${unreconciled.length} · jumla ${formatCurrency(shortfallTotal)} — zimelipwa benki, hazijafika kwenye mfumo wa SACCOS.`,
+            40,
+            58
+        );
+        autoTable(doc, {
+            startY: 72,
+            head: [EXPORT_HEADERS],
+            body: body.map((row) => row.map((cell) => (typeof cell === "number" ? cell.toLocaleString("en-US") : cell))),
+            styles: { fontSize: 7.5, cellPadding: 3 },
+            headStyles: { fillColor: [183, 28, 28], fontStyle: "bold" },
+            alternateRowStyles: { fillColor: [252, 245, 245] }
+        });
+        doc.save(`malipo-yaliyokwama-${stamp}.pdf`);
+    };
 
     return (
         <MotionCard>
             <CardContent>
                 <Stack spacing={1.5}>
-                    <Typography variant="h6" sx={{ fontWeight: 800 }}>
-                        References za UCG
-                    </Typography>
+                    <Stack
+                        direction={{ xs: "column", md: "row" }}
+                        justifyContent="space-between"
+                        alignItems={{ xs: "flex-start", md: "center" }}
+                        spacing={1}
+                    >
+                        <Box>
+                            <Typography variant="h6" sx={{ fontWeight: 800 }}>
+                                References za UCG
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                                Kile benki imekusanya, kikilinganishwa na kile kilichoingia kwenye mfumo.
+                            </Typography>
+                        </Box>
+                        <Button
+                            variant={unreconciled.length ? "contained" : "outlined"}
+                            color={unreconciled.length ? "error" : "inherit"}
+                            startIcon={<ReportProblemRoundedIcon />}
+                            onClick={() => setListOpen(true)}
+                            disabled={!unreconciled.length}
+                        >
+                            {unreconciled.length
+                                ? `Hayajafika kwetu (${unreconciled.length})`
+                                : "Yote yamefika"}
+                        </Button>
+                    </Stack>
+
+                    {loadError ? (
+                        <Alert severity="error" variant="outlined">
+                            Imeshindikana kupakia references: {loadError}
+                        </Alert>
+                    ) : null}
+
+                    {gatewayError ? (
+                        <Alert severity="warning" variant="outlined">
+                            Gateway haijibu ({gatewayError}) — safu ya <b>Kimelipwa (gateway)</b> haipatikani kwa sasa,
+                            kwa hiyo ulinganisho hauwezi kufanyika. Rekodi zetu wenyewe zinaonekana hapa chini.
+                        </Alert>
+                    ) : null}
 
                     {unreconciled.length ? (
-                        <Alert severity="warning" variant="outlined">
-                            References <b>{unreconciled.length}</b> zina malipo ya{" "}
-                            <b>{formatCurrency(shortfallTotal)}</b> kwenye gateway ambayo hayajaingia kwenye mfumo.
-                            Bonyeza <b>Ingiza</b> kwenye safu husika ili kuyavuta.
+                        <Alert severity="error" variant="outlined">
+                            References <b>{unreconciled.length}</b> zina jumla ya{" "}
+                            <b>{formatCurrency(shortfallTotal)}</b> iliyolipwa benki ambayo haijafika kwenye mfumo.
                         </Alert>
                     ) : null}
 
@@ -131,55 +257,143 @@ export function UcgReferencesTable() {
                         </Alert>
                     ) : null}
 
-                    <Box sx={{ overflowX: "auto" }}>
-                        <Table size="small">
-                            <TableHead>
-                                <TableRow>
-                                    <TableCell>Reference</TableCell>
-                                    <TableCell>Mwanachama</TableCell>
-                                    <TableCell>Aina</TableCell>
-                                    <TableCell align="right">Kiasi</TableCell>
-                                    <TableCell align="right">Kimelipwa (gateway)</TableCell>
-                                    <TableCell align="right">Kimeingia (mfumo)</TableCell>
-                                    <TableCell>Hali</TableCell>
-                                    <TableCell align="right" />
-                                </TableRow>
-                            </TableHead>
-                            <TableBody>
-                                {rows.map((row) => {
-                                    const paid = row.totalPaid ?? 0;
-                                    const posted = row.postedAmount ?? 0;
-                                    const shortfall = shortfallOf(row);
-                                    const chip = shortfall > 0
-                                        ? { label: "Haijaingia", color: "error" as const }
-                                        : paid === 0
-                                            ? { label: "Haijalipwa", color: "default" as const }
-                                            : { label: "Imeingia", color: "success" as const };
-                                    return (
-                                        <TableRow
-                                            key={row.referenceNumber}
-                                            sx={shortfall > 0 ? { bgcolor: "error.light", opacity: 0.96 } : undefined}
-                                        >
+                    {!rows.length && !loadError ? (
+                        <Typography variant="body2" color="text.secondary">
+                            Hakuna reference iliyotengenezwa bado.
+                        </Typography>
+                    ) : (
+                        <Box sx={{ overflowX: "auto" }}>
+                            <Table size="small">
+                                <TableHead>
+                                    <TableRow>
+                                        <TableCell>Reference</TableCell>
+                                        <TableCell>Mwanachama</TableCell>
+                                        <TableCell>Aina</TableCell>
+                                        <TableCell align="right">Kiasi</TableCell>
+                                        <TableCell align="right">Kimelipwa (gateway)</TableCell>
+                                        <TableCell align="right">Kimeingia (mfumo)</TableCell>
+                                        <TableCell>Hali</TableCell>
+                                        <TableCell align="right" />
+                                    </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                    {rows.map((row) => {
+                                        const paid = row.totalPaid ?? 0;
+                                        const posted = row.postedAmount ?? 0;
+                                        const shortfall = shortfallOf(row);
+                                        const chip = shortfall > 0
+                                            ? { label: "Haijaingia", color: "error" as const }
+                                            : paid === 0
+                                                ? { label: "Haijalipwa", color: "default" as const }
+                                                : { label: "Imeingia", color: "success" as const };
+                                        return (
+                                            <TableRow key={row.referenceNumber} hover>
+                                                <TableCell sx={{ fontFamily: "monospace" }}>{row.referenceNumber}</TableCell>
+                                                <TableCell>
+                                                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                                        {row.memberName || "—"}
+                                                    </Typography>
+                                                    <Typography variant="caption" color="text.secondary">
+                                                        {row.memberNo || "—"}
+                                                    </Typography>
+                                                </TableCell>
+                                                <TableCell>{purposeLabel(row.purpose)}</TableCell>
+                                                <TableCell align="right">
+                                                    {row.amount != null ? formatCurrency(row.amount) : "—"}
+                                                </TableCell>
+                                                <TableCell align="right">
+                                                    {row.totalPaid != null ? formatCurrency(paid) : "—"}
+                                                </TableCell>
+                                                <TableCell align="right" sx={{ fontWeight: shortfall > 0 ? 800 : 400 }}>
+                                                    {formatCurrency(posted)}
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Chip size="small" label={chip.label} color={chip.color} />
+                                                </TableCell>
+                                                <TableCell align="right">
+                                                    <Button
+                                                        size="small"
+                                                        variant={shortfall > 0 ? "contained" : "text"}
+                                                        color={shortfall > 0 ? "error" : "inherit"}
+                                                        disabled={busy !== null}
+                                                        onClick={() => void pullIn(row.referenceNumber)}
+                                                    >
+                                                        {busy === row.referenceNumber ? "Inavuta…" : "Ingiza"}
+                                                    </Button>
+                                                </TableCell>
+                                            </TableRow>
+                                        );
+                                    })}
+                                </TableBody>
+                            </Table>
+                        </Box>
+                    )}
+                </Stack>
+            </CardContent>
+
+            <Dialog open={listOpen} onClose={() => setListOpen(false)} maxWidth="lg" fullWidth>
+                <DialogTitle sx={{ fontWeight: 800 }}>
+                    Malipo yaliyokwama benki
+                    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 400, mt: 0.5 }}>
+                        Haya yalilipwa na wanachama na benki inayo, lakini hayajafika kwenye mfumo wa SACCOS.
+                        Toa orodha hii na uwapelekee benki, au bonyeza <b>Ingiza</b> kuyavuta sasa.
+                    </Typography>
+                </DialogTitle>
+                <DialogContent dividers>
+                    <Stack spacing={1.5}>
+                        <Alert severity="error" variant="outlined">
+                            Jumla iliyokwama: <b>{formatCurrency(shortfallTotal)}</b> kwenye references{" "}
+                            <b>{unreconciled.length}</b>.
+                        </Alert>
+                        {note ? (
+                            <Alert severity={note.severity} variant="outlined" onClose={() => setNote(null)}>
+                                {note.text}
+                            </Alert>
+                        ) : null}
+                        <Box sx={{ overflowX: "auto" }}>
+                            <Table size="small">
+                                <TableHead>
+                                    <TableRow>
+                                        <TableCell>Reference</TableCell>
+                                        <TableCell>Mwanachama</TableCell>
+                                        <TableCell>Simu</TableCell>
+                                        <TableCell>Aina</TableCell>
+                                        <TableCell align="right">Kimelipwa benki</TableCell>
+                                        <TableCell align="right">Kimeingia mfumo</TableCell>
+                                        <TableCell align="right">Pungufu</TableCell>
+                                        <TableCell>Sync ya mwisho</TableCell>
+                                        <TableCell align="right" />
+                                    </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                    {unreconciled.map((row) => (
+                                        <TableRow key={row.referenceNumber} hover>
                                             <TableCell sx={{ fontFamily: "monospace" }}>{row.referenceNumber}</TableCell>
-                                            <TableCell>{row.memberName || "—"}</TableCell>
-                                            <TableCell>{PURPOSE_LABELS[row.purpose] || row.purpose}</TableCell>
-                                            <TableCell align="right">
-                                                {row.amount != null ? formatCurrency(row.amount) : "—"}
+                                            <TableCell>
+                                                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                                    {row.memberName || "—"}
+                                                </Typography>
+                                                <Typography variant="caption" color="text.secondary">
+                                                    {row.memberNo || "—"}
+                                                </Typography>
                                             </TableCell>
-                                            <TableCell align="right">
-                                                {row.totalPaid != null ? formatCurrency(paid) : "—"}
+                                            <TableCell sx={{ fontVariantNumeric: "tabular-nums" }}>
+                                                {row.memberPhone || "—"}
                                             </TableCell>
-                                            <TableCell align="right" sx={{ fontWeight: shortfall > 0 ? 800 : 400 }}>
-                                                {formatCurrency(posted)}
+                                            <TableCell>{purposeLabel(row.purpose)}</TableCell>
+                                            <TableCell align="right">{formatCurrency(row.totalPaid ?? 0)}</TableCell>
+                                            <TableCell align="right">{formatCurrency(row.postedAmount ?? 0)}</TableCell>
+                                            <TableCell align="right" sx={{ fontWeight: 800, color: "error.main" }}>
+                                                {formatCurrency(shortfallOf(row))}
                                             </TableCell>
                                             <TableCell>
-                                                <Chip size="small" label={chip.label} color={chip.color} />
+                                                {row.lastSyncedAt ? formatDate(row.lastSyncedAt) : "—"}
                                             </TableCell>
                                             <TableCell align="right">
                                                 <Button
                                                     size="small"
-                                                    variant={shortfall > 0 ? "contained" : "text"}
-                                                    color={shortfall > 0 ? "error" : "inherit"}
+                                                    variant="contained"
+                                                    color="error"
                                                     disabled={busy !== null}
                                                     onClick={() => void pullIn(row.referenceNumber)}
                                                 >
@@ -187,13 +401,28 @@ export function UcgReferencesTable() {
                                                 </Button>
                                             </TableCell>
                                         </TableRow>
-                                    );
-                                })}
-                            </TableBody>
-                        </Table>
-                    </Box>
-                </Stack>
-            </CardContent>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </Box>
+                    </Stack>
+                </DialogContent>
+                <DialogActions>
+                    <Button
+                        startIcon={<DownloadRoundedIcon />}
+                        onClick={(event) => setExportAnchor(event.currentTarget)}
+                        disabled={!unreconciled.length}
+                    >
+                        Toa orodha
+                    </Button>
+                    <Menu anchorEl={exportAnchor} open={Boolean(exportAnchor)} onClose={() => setExportAnchor(null)}>
+                        <MenuItem onClick={() => void exportList("excel")}>Excel (.xlsx)</MenuItem>
+                        <MenuItem onClick={() => void exportList("pdf")}>PDF</MenuItem>
+                        <MenuItem onClick={() => void exportList("csv")}>CSV</MenuItem>
+                    </Menu>
+                    <Button variant="contained" onClick={() => setListOpen(false)}>Funga</Button>
+                </DialogActions>
+            </Dialog>
         </MotionCard>
     );
 }

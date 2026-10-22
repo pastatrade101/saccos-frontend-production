@@ -1,9 +1,4 @@
-import ReceiptLongRoundedIcon from "@mui/icons-material/ReceiptLongRounded";
-import HourglassTopRoundedIcon from "@mui/icons-material/HourglassTopRounded";
-import HighlightOffRoundedIcon from "@mui/icons-material/HighlightOffRounded";
-import WalletRoundedIcon from "@mui/icons-material/WalletRounded";
 import PrintRoundedIcon from "@mui/icons-material/PrintRounded";
-import PointOfSaleRoundedIcon from "@mui/icons-material/PointOfSaleRounded";
 import {
     Alert,
     Box,
@@ -26,6 +21,34 @@ import {
 import { alpha, useTheme } from "@mui/material/styles";
 import { useEffect, useMemo, useState } from "react";
 
+// The register opens on the current month rather than the whole history: a
+// branch reconciles the month it is in, and 1,244 rows deep is not a starting
+// point. The range is a filter, so widening it needs no refetch.
+const pad2 = (value: number) => String(value).padStart(2, "0");
+
+function currentMonthRange() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const last = new Date(year, month + 1, 0);
+    return {
+        start: `${year}-${pad2(month + 1)}-01`,
+        end: `${year}-${pad2(month + 1)}-${pad2(last.getDate())}`
+    };
+}
+
+// Rows carry a UTC timestamp but the table renders it in local time, and East
+// Africa is UTC+3 -- a posting keyed at 01:00 on the 1st is still the previous
+// day in UTC. Filtering on the raw string would drop rows the operator can see
+// dated inside the period, so the window is compared against the local day.
+function localDay(value: string) {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+        return String(value || "").slice(0, 10);
+    }
+    return `${parsed.getFullYear()}-${pad2(parsed.getMonth() + 1)}-${pad2(parsed.getDate())}`;
+}
+
 import { useAuth } from "../auth/AuthContext";
 import { AppLoader } from "../components/AppLoader";
 import { DataTable, type Column } from "../components/DataTable";
@@ -36,6 +59,7 @@ import type { ApiEnvelope, PaginatedResult, PaymentOrder, PaymentOrderStatus, Te
 import { brandColors } from "../theme/colors";
 import { MotionCard } from "../ui/motion";
 import { UcgCollectionsCard } from "../components/member-overview/UcgCollectionsCard";
+import { FlatDateRangePicker } from "../components/FlatDateRangePicker";
 import { UcgReferencesTable } from "../components/member-overview/UcgReferencesTable";
 import { formatCurrency, formatDate } from "../utils/format";
 
@@ -272,57 +296,6 @@ async function loadNestedPages<T>(url: string, params: Record<string, string | n
     return rows;
 }
 
-interface MetricCardProps {
-    label: string;
-    value: string | number;
-    helper: string;
-    icon: typeof WalletRoundedIcon;
-    tone: "primary" | "success" | "warning" | "danger";
-}
-
-function MetricCard({ label, value, helper, icon: Icon, tone }: MetricCardProps) {
-    const theme = useTheme();
-    const isDarkMode = theme.palette.mode === "dark";
-    const toneColor = tone === "success"
-        ? brandColors.success
-        : tone === "warning"
-            ? brandColors.warning
-            : tone === "danger"
-                ? brandColors.danger
-                : theme.palette.primary.main;
-
-    return (
-        <MotionCard variant="outlined" sx={{ height: "100%" }}>
-            <CardContent>
-                <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mb: 1.2 }}>
-                    <Box
-                        sx={{
-                            width: 40,
-                            height: 40,
-                            borderRadius: 2,
-                            display: "grid",
-                            placeItems: "center",
-                            bgcolor: alpha(toneColor, isDarkMode ? 0.2 : 0.12),
-                            color: toneColor
-                        }}
-                    >
-                        <Icon fontSize="small" />
-                    </Box>
-                    <Typography variant="overline" color="text.secondary">
-                        {label}
-                    </Typography>
-                </Stack>
-                <Typography variant="h4" sx={{ fontWeight: 800, mb: 0.75 }}>
-                    {value}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                    {helper}
-                </Typography>
-            </CardContent>
-        </MotionCard>
-    );
-}
-
 export function PaymentsPage() {
     const theme = useTheme();
     const { pushToast } = useToast();
@@ -336,6 +309,7 @@ export function PaymentsPage() {
     const [channelFilter, setChannelFilter] = useState<string>("all");
     const [sourceFilter, setSourceFilter] = useState<string>("all");
     const [search, setSearch] = useState("");
+    const [range, setRange] = useState(currentMonthRange);
     const [page, setPage] = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(25);
     const [selectedReceipt, setSelectedReceipt] = useState<PaymentLogRow | null>(null);
@@ -420,6 +394,14 @@ export function PaymentsPage() {
                     return false;
                 }
 
+                const day = localDay(row.date);
+                if (range.start && day && day < range.start) {
+                    return false;
+                }
+                if (range.end && day && day > range.end) {
+                    return false;
+                }
+
                 if (search.trim()) {
                     const needle = search.trim().toLowerCase();
                     const haystack = [
@@ -446,7 +428,7 @@ export function PaymentsPage() {
 
                 return true;
             }),
-        [allRows, channelFilter, purposeFilter, search, sourceFilter, statusFilter]
+        [allRows, channelFilter, purposeFilter, range.start, range.end, search, sourceFilter, statusFilter]
     );
 
     const paginatedRows = useMemo(
@@ -459,28 +441,30 @@ export function PaymentsPage() {
         [filteredRows, page, rowsPerPage]
     );
 
+    // Scoped to the period on screen. Figures that counted all history while the
+    // table showed one month were two different answers on the same page.
     const metrics = useMemo(() => {
-        const posted = allRows.filter((row) => row.status === "posted").length;
-        const inProgress = allRows.filter((row) => ["created", "pending", "paid"].includes(row.status)).length;
-        const failed = allRows.filter((row) => ["failed", "expired"].includes(row.status)).length;
-        const inflow = allRows.filter((row) => row.direction === "in").reduce((sum, row) => sum + row.amount, 0);
-        const outflow = allRows.filter((row) => row.direction === "out").reduce((sum, row) => sum + row.amount, 0);
+        const posted = filteredRows.filter((row) => row.status === "posted").length;
+        const inProgress = filteredRows.filter((row) => ["created", "pending", "paid"].includes(row.status)).length;
+        const failed = filteredRows.filter((row) => ["failed", "expired"].includes(row.status)).length;
+        const inflow = filteredRows.filter((row) => row.direction === "in").reduce((sum, row) => sum + row.amount, 0);
+        const outflow = filteredRows.filter((row) => row.direction === "out").reduce((sum, row) => sum + row.amount, 0);
 
         return {
-            total: allRows.length,
-            teller: allRows.filter((row) => row.source === "teller").length,
-            gateway: allRows.filter((row) => row.source === "gateway").length,
+            total: filteredRows.length,
+            teller: filteredRows.filter((row) => row.source === "teller").length,
+            gateway: filteredRows.filter((row) => row.source === "gateway").length,
             posted,
             inProgress,
             failed,
             inflow,
             outflow
         };
-    }, [allRows]);
+    }, [filteredRows]);
 
     useEffect(() => {
         setPage(0);
-    }, [channelFilter, purposeFilter, rowsPerPage, search, sourceFilter, statusFilter]);
+    }, [channelFilter, purposeFilter, range.start, range.end, rowsPerPage, search, sourceFilter, statusFilter]);
 
     const handleReconcile = async (row: PaymentLogRow) => {
         const order = row.raw_order;
@@ -642,27 +626,66 @@ export function PaymentsPage() {
 
     return (
         <Stack spacing={3}>
+            {/* One band instead of a hero plus four tiles. The page exists to
+                answer "what moved, and what is stuck", so the figures carry it
+                and the prose is gone -- it repeated the app bar and the Action
+                Log description word for word. Flat navy, no gradient: this is a
+                register header, not a landing page. */}
             <MotionCard
                 variant="outlined"
                 sx={{
-                    background: theme.palette.mode === "dark"
-                        ? `linear-gradient(135deg, ${alpha("#0F1A2B", 0.96)}, ${alpha("#124E78", 0.88)})`
-                        : `linear-gradient(135deg, ${alpha(brandColors.primary[900], 0.96)}, ${alpha(brandColors.accent[700], 0.88)})`,
+                    bgcolor: theme.palette.mode === "dark" ? "#0F1A2B" : brandColors.primary[900],
                     color: "#fff",
                     borderColor: "transparent"
                 }}
             >
-                <CardContent>
-                    <Stack spacing={1.1}>
-                        <Typography variant="overline" sx={{ color: alpha("#fff", 0.72), letterSpacing: 1.3 }}>
-                            Branch payment operations
-                        </Typography>
-                        <Typography variant="h4" sx={{ fontWeight: 800, lineHeight: 1.08 }}>
-                            Track teller cash-desk postings and automated payment orders for {selectedBranchName || "the selected branch"}.
-                        </Typography>
-                        <Typography variant="body2" sx={{ color: alpha("#fff", 0.84), maxWidth: 920 }}>
-                            Manual teller activity is the current operating channel, while member-portal mobile money remains visible for future automation. Both feeds are shown with their posting channel, reference, journal, and status.
-                        </Typography>
+                <CardContent sx={{ py: 2.25, "&:last-child": { pb: 2.25 } }}>
+                    <Stack
+                        direction={{ xs: "column", lg: "row" }}
+                        justifyContent="space-between"
+                        alignItems={{ xs: "flex-start", lg: "center" }}
+                        spacing={2}
+                    >
+                        <Box>
+                            <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                                Payment register
+                            </Typography>
+                            <Typography variant="body2" sx={{ color: alpha("#fff", 0.72) }}>
+                                {selectedBranchName || "All branches"} · {formatDate(range.start)} – {formatDate(range.end)}
+                            </Typography>
+                        </Box>
+                        <Stack
+                            direction="row"
+                            spacing={{ xs: 2, md: 3 }}
+                            divider={<Divider orientation="vertical" flexItem sx={{ borderColor: alpha("#fff", 0.18) }} />}
+                            flexWrap="wrap"
+                            useFlexGap
+                        >
+                            {[
+                                { label: "In", value: formatCurrency(metrics.inflow) },
+                                { label: "Out", value: formatCurrency(metrics.outflow) },
+                                { label: "Actions", value: String(metrics.total) },
+                                { label: "Unposted", value: String(metrics.inProgress) },
+                                { label: "Failed", value: String(metrics.failed), alert: metrics.failed > 0 }
+                            ].map((figure) => (
+                                <Box key={figure.label}>
+                                    <Typography
+                                        sx={{
+                                            fontWeight: 800,
+                                            fontVariantNumeric: "tabular-nums",
+                                            fontSize: "1.15rem",
+                                            lineHeight: 1.25,
+                                            color: figure.alert ? brandColors.warning : "#fff"
+                                        }}
+                                    >
+                                        {figure.value}
+                                    </Typography>
+                                    <Typography variant="caption" sx={{ color: alpha("#fff", 0.66) }}>
+                                        {figure.label}
+                                    </Typography>
+                                </Box>
+                            ))}
+                        </Stack>
                     </Stack>
                 </CardContent>
             </MotionCard>
@@ -683,21 +706,6 @@ export function PaymentsPage() {
                 </Alert>
             ) : null}
 
-            <Grid container spacing={2}>
-                <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-                    <MetricCard icon={ReceiptLongRoundedIcon} label="Total Actions" value={metrics.total} helper={`Inflow ${formatCurrency(metrics.inflow)} · outflow ${formatCurrency(metrics.outflow)}.`} tone="primary" />
-                </Grid>
-                <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-                    <MetricCard icon={PointOfSaleRoundedIcon} label="Teller Posted" value={metrics.teller} helper="Cash-desk transactions posted by tellers." tone="success" />
-                </Grid>
-                <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-                    <MetricCard icon={HourglassTopRoundedIcon} label="Gateway Orders" value={metrics.gateway} helper={`${metrics.inProgress} pending or paid orders need follow-up.`} tone="warning" />
-                </Grid>
-                <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-                    <MetricCard icon={HighlightOffRoundedIcon} label="Exceptions" value={metrics.failed} helper={`${metrics.posted} actions are posted into ledger.`} tone="danger" />
-                </Grid>
-            </Grid>
-
             <MotionCard variant="outlined">
                 <CardContent>
                     <Stack spacing={2}>
@@ -711,6 +719,13 @@ export function PaymentsPage() {
                                 </Typography>
                             </Box>
                             <Stack direction={{ xs: "column", md: "row" }} spacing={1.25} flexWrap="wrap" useFlexGap>
+                                <FlatDateRangePicker
+                                    label="Period"
+                                    start={range.start}
+                                    end={range.end}
+                                    onChange={(start, end) => setRange({ start, end })}
+                                    minWidth={230}
+                                />
                                 <TextField
                                     label="Search"
                                     value={search}
