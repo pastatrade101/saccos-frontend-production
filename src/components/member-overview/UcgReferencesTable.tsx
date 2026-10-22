@@ -22,6 +22,8 @@ import {
     Typography
 } from "@mui/material";
 
+import { AppLoader } from "../AppLoader";
+import { FlatDateRangePicker } from "../FlatDateRangePicker";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { endpoints } from "../../lib/endpoints";
 import { MotionCard } from "../../ui/motion";
@@ -62,6 +64,16 @@ const PURPOSE_LABELS: Record<string, string> = {
 
 const purposeLabel = (purpose: string) => PURPOSE_LABELS[purpose] || purpose;
 
+// References accumulate daily, so the screen opens on the last week rather than
+// every reference ever minted. Widen the period to chase something older.
+function recentRange() {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - 6);
+    const day = (value: Date) => value.toISOString().slice(0, 10);
+    return { start: day(start), end: day(end) };
+}
+
 // The server sends a stable code, not its internal error text.
 const GATEWAY_ERRORS: Record<string, string> = {
     UCG_DISABLED: "gateway imezimwa kwenye server (UCG_ENABLED)",
@@ -93,12 +105,15 @@ export function UcgReferencesTable() {
     const [note, setNote] = useState<{ severity: "success" | "error"; text: string } | null>(null);
     const [listOpen, setListOpen] = useState(false);
     const [exportAnchor, setExportAnchor] = useState<null | HTMLElement>(null);
+    const [range, setRange] = useState(recentRange);
 
     const load = useCallback(async () => {
-        const { data } = await api.get<UcgReferencesResponse>(endpoints.memberPayments.ucgReferences());
+        const { data } = await api.get<UcgReferencesResponse>(endpoints.memberPayments.ucgReferences(), {
+            params: { from_date: range.start || undefined, to_date: range.end || undefined }
+        });
         setGatewayError(data?.meta?.gatewayAvailable === false ? data?.meta?.gatewayError || "hawajibu" : null);
         return data?.data || [];
-    }, []);
+    }, [range.start, range.end]);
 
     useEffect(() => {
         let active = true;
@@ -137,8 +152,17 @@ export function UcgReferencesTable() {
         }
     };
 
+    // Rendering nothing while the request is in flight meant a slow gateway
+    // showed a blank page for 30 seconds and then an error. Say what is
+    // happening instead.
     if (rows === null) {
-        return null;
+        return (
+            <MotionCard>
+                <CardContent>
+                    <AppLoader fullscreen={false} minHeight={200} message="Inapakia references..." />
+                </CardContent>
+            </MotionCard>
+        );
     }
 
     const unreconciled = rows
@@ -230,6 +254,14 @@ export function UcgReferencesTable() {
                                 Kile benki imekusanya, kikilinganishwa na kile kilichoingia kwenye mfumo.
                             </Typography>
                         </Box>
+                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems="center">
+                        <FlatDateRangePicker
+                            label="Period"
+                            start={range.start}
+                            end={range.end}
+                            onChange={(start, end) => setRange({ start, end })}
+                            minWidth={230}
+                        />
                         <Button
                             variant={unreconciled.length ? "contained" : "outlined"}
                             color={unreconciled.length ? "error" : "inherit"}
@@ -241,6 +273,7 @@ export function UcgReferencesTable() {
                                 ? `Hayajafika kwetu (${unreconciled.length})`
                                 : "Yote yamefika"}
                         </Button>
+                        </Stack>
                     </Stack>
 
                     {loadError ? (
