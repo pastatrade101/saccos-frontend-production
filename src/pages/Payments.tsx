@@ -41,6 +41,17 @@ function currentMonthRange() {
 // Africa is UTC+3 -- a posting keyed at 01:00 on the 1st is still the previous
 // day in UTC. Filtering on the raw string would drop rows the operator can see
 // dated inside the period, so the window is compared against the local day.
+// The server window is widened by a day on each side because it filters on a
+// UTC timestamp while the page thinks in local days.
+function shiftDay(day: string, deltaDays: number) {
+    if (!day) {
+        return undefined;
+    }
+    const parsed = new Date(`${day}T12:00:00Z`);
+    parsed.setUTCDate(parsed.getUTCDate() + deltaDays);
+    return parsed.toISOString().slice(0, 10);
+}
+
 function localDay(value: string) {
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) {
@@ -60,7 +71,6 @@ import { brandColors } from "../theme/colors";
 import { MotionCard } from "../ui/motion";
 import { UcgCollectionsCard } from "../components/member-overview/UcgCollectionsCard";
 import { FlatDateRangePicker } from "../components/FlatDateRangePicker";
-import { UcgReferencesTable } from "../components/member-overview/UcgReferencesTable";
 import { formatCurrency, formatDate } from "../utils/format";
 
 const PAGE_LOAD_LIMIT = 100;
@@ -332,8 +342,15 @@ export function PaymentsPage() {
                     tenant_id: selectedTenantId,
                     branch_id: selectedBranchId || undefined
                 }),
+                // Teller rows are the bulk of this page (1,185 of 1,244 at the
+                // time of writing), so the period goes to the server instead of
+                // pulling the whole register and throwing most of it away in the
+                // browser. A day either side absorbs the UTC/EAT offset, and the
+                // local-day filter below trims the edges exactly.
                 loadFlatPages<TellerPaymentTransaction>(endpoints.cashControl.transactions(), {
-                    branch_id: selectedBranchId || undefined
+                    branch_id: selectedBranchId || undefined,
+                    from_date: shiftDay(range.start, -1),
+                    to_date: shiftDay(range.end, 1)
                 })
             ]);
             setOrders(paymentOrders.map((order) => normalizePaymentOrder(order)));
@@ -349,7 +366,8 @@ export function PaymentsPage() {
 
     useEffect(() => {
         void loadPaymentOperations();
-    }, [selectedBranchId, selectedTenantId]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedBranchId, selectedTenantId, range.start, range.end]);
 
     const mergeOrder = (nextOrder: PaymentOrder) => {
         const normalized = normalizePaymentOrder(nextOrder);
@@ -691,7 +709,6 @@ export function PaymentsPage() {
             </MotionCard>
 
             <UcgCollectionsCard />
-            <UcgReferencesTable />
 
             {error ? (
                 <Alert

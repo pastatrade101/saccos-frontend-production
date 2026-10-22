@@ -62,11 +62,23 @@ const PURPOSE_LABELS: Record<string, string> = {
 
 const purposeLabel = (purpose: string) => PURPOSE_LABELS[purpose] || purpose;
 
+// The server sends a stable code, not its internal error text.
+const GATEWAY_ERRORS: Record<string, string> = {
+    UCG_DISABLED: "gateway imezimwa kwenye server (UCG_ENABLED)",
+    UCG_CONFIG_MISSING: "mipangilio ya gateway haijakamilika kwenye server",
+    UCG_UNAVAILABLE: "gateway haifikiki"
+};
+
 // The gateway taking a payment and the SACCO posting it are two separate events.
 // A missing webhook (or a sync that quietly failed) leaves money sitting at the
 // bank with nothing in our ledger, so the shortfall is what this table leads on.
 function shortfallOf(row: UcgReferenceRow) {
-    return Math.max((row.totalPaid ?? 0) - (row.postedAmount ?? 0), 0);
+    // No gateway figure means no comparison. Treating a missing totalPaid as 0
+    // would quietly report every reference as reconciled.
+    if (row.totalPaid == null) {
+        return 0;
+    }
+    return Math.max(row.totalPaid - (row.postedAmount ?? 0), 0);
 }
 
 // Every UCG reference the SACCO has minted: what the gateway reports as paid,
@@ -239,8 +251,9 @@ export function UcgReferencesTable() {
 
                     {gatewayError ? (
                         <Alert severity="warning" variant="outlined">
-                            Gateway haijibu ({gatewayError}) — safu ya <b>Kimelipwa (gateway)</b> haipatikani kwa sasa,
-                            kwa hiyo ulinganisho hauwezi kufanyika. Rekodi zetu wenyewe zinaonekana hapa chini.
+                            Gateway haijibu: <b>{GATEWAY_ERRORS[gatewayError] || gatewayError}</b>. Safu ya{" "}
+                            <b>Kimelipwa (gateway)</b> haipatikani, kwa hiyo hakuna ulinganisho unaoweza kufanyika
+                            na malipo mapya hayawezi kuingia. Rekodi zetu wenyewe zinaonekana hapa chini.
                         </Alert>
                     ) : null}
 
@@ -281,11 +294,18 @@ export function UcgReferencesTable() {
                                         const paid = row.totalPaid ?? 0;
                                         const posted = row.postedAmount ?? 0;
                                         const shortfall = shortfallOf(row);
+                                        // With the gateway silent we know what WE posted and
+                                        // nothing else, so the row must not claim "Haijalipwa" —
+                                        // Abraham Assenga's 100,000 was posted and still read as
+                                        // unpaid, which is the opposite of the truth.
+                                        const gatewayKnown = row.totalPaid != null;
                                         const chip = shortfall > 0
                                             ? { label: "Haijaingia", color: "error" as const }
-                                            : paid === 0
-                                                ? { label: "Haijalipwa", color: "default" as const }
-                                                : { label: "Imeingia", color: "success" as const };
+                                            : posted > 0
+                                                ? { label: "Imeingia", color: "success" as const }
+                                                : gatewayKnown
+                                                    ? { label: "Haijalipwa", color: "default" as const }
+                                                    : { label: "Haijulikani", color: "warning" as const };
                                         return (
                                             <TableRow key={row.referenceNumber} hover>
                                                 <TableCell sx={{ fontFamily: "monospace" }}>{row.referenceNumber}</TableCell>

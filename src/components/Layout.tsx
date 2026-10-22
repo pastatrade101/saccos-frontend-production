@@ -114,6 +114,7 @@ const navItems: NavItem[] = [
     { to: "/auditor/login-history", label: "Login History", roles: ["auditor"], section: "workspace", icon: HistoryRoundedIcon },
     { to: "/savings", label: "Savings", roles: ["branch_manager"], section: "finance", icon: SavingsRoundedIcon },
     { to: "/payments", label: "Payments", roles: ["super_admin", "branch_manager"], section: "finance", icon: PaidRoundedIcon },
+    { to: "/payments/reconciliation", label: "Payment Reconciliation", roles: ["super_admin", "branch_manager"], section: "finance", icon: RuleFolderRoundedIcon },
     { to: "/revenue", label: "Gross Revenue", roles: ["branch_manager"], section: "finance", icon: PaidRoundedIcon },
     { to: "/dividends", label: "Dividends", roles: ["super_admin", "branch_manager"], section: "finance", icon: EventRepeatRoundedIcon },
     { to: "/finance/share-capital-transfer", label: "Share Capital", roles: ["super_admin", "branch_manager", "auditor"], section: "finance", icon: PieChartRoundedIcon },
@@ -147,7 +148,7 @@ const navGroups: NavGroup[] = [
     // A path must appear here as well as in navItems — the sidebar renders the
     // intersection. Anything listed in only one of the two is reachable by URL
     // and by search, but never shows up in the menu.
-    { key: "finance", label: "Finance", itemTos: ["/savings", "/loans", "/payments", "/revenue", "/dividends", "/finance/share-capital-transfer", "/cash-control", "/cash", "/cash/transactions", "/cash/loan-transactions", "/treasury", "/treasury/policy-settings"] },
+    { key: "finance", label: "Finance", itemTos: ["/savings", "/loans", "/payments", "/payments/reconciliation", "/revenue", "/dividends", "/finance/share-capital-transfer", "/cash-control", "/cash", "/cash/transactions", "/cash/loan-transactions", "/treasury", "/treasury/policy-settings"] },
     { key: "operations", label: "Operations", itemTos: ["/approvals"] },
     { key: "analytics", label: "Analytics", itemTos: ["/performance-targets", "/leagues", "/weekly-challenges", "/milestones", "/agm", "/reports", "/auditor/reports", "/auditor/workbench", "/auditor/exceptions", "/auditor/journals", "/auditor/audit-logs", "/auditor/login-history"] },
     { key: "setup", label: "Setup", itemTos: ["/setup/super-admin", "/settings/sacco-year"] }

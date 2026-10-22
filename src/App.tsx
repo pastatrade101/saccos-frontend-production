@@ -34,6 +34,7 @@ const LoanTransactionsPage = lazy(() => import("./pages/LoanTransactions").then(
 const CashControlPage = lazy(() => import("./pages/CashControl").then((m) => ({ default: m.CashControlPage })));
 const ContributionsPage = lazy(() => import("./pages/Contributions").then((m) => ({ default: m.ContributionsPage })));
 const PaymentsPage = lazy(() => import("./pages/Payments").then((m) => ({ default: m.PaymentsPage })));
+const PaymentReconciliationPage = lazy(() => import("./pages/PaymentReconciliation").then((m) => ({ default: m.PaymentReconciliationPage })));
 const DividendsPage = lazy(() => import("./pages/Dividends").then((m) => ({ default: m.DividendsPage })));
 const SavingsPage = lazy(() => import("./pages/Savings").then((m) => ({ default: m.SavingsPage })));
 const ChargeRevenuePage = lazy(() => import("./pages/ChargeRevenue").then((m) => ({ default: m.ChargeRevenuePage })));
@@ -341,6 +342,7 @@ export default function App() {
                             <Route path="/contributions" element={<ContributionsPage />} />
                             <Route path="/savings" element={<SavingsPage />} />
                             <Route path="/payments" element={<PaymentsPage />} />
+                            <Route path="/payments/reconciliation" element={<PaymentReconciliationPage />} />
                             <Route path="/revenue" element={<ChargeRevenuePage />} />
                             <Route path="/charge-revenue" element={<ChargeRevenuePage />} />
                         </Route>
