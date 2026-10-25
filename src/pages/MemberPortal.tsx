@@ -131,6 +131,7 @@ import { SavingsTrendChart } from "../components/member-overview/SavingsTrendCha
 import { MemberLoanWorkspaceCard } from "../components/member-portal/MemberLoanWorkspaceCard";
 import { LoanTermsCard } from "../components/member-portal/LoanTermsCard";
 import { AgmAttendanceCard } from "../components/member-portal/AgmAttendanceCard";
+import { ComplaintsCard } from "../components/member-portal/ComplaintsCard";
 import { LoanSchedulePreview } from "../components/member-portal/LoanSchedulePreview";
 import { HeirsSection } from "../components/member-portal/HeirsSection";
 import { PaymentReceiptDialog } from "../components/member-portal/PaymentReceiptDialog";
@@ -7180,6 +7181,11 @@ export function MemberPortalPage() {
                 }
                 : null}
         />
+        {/* Last, deliberately. A member signing in to check a balance should
+            meet their money first; the complaint form is here for when they
+            came for something else, and it stays easy to find without
+            standing in front of what they did come for. */}
+        <ComplaintsCard tr={tr} />
         </Stack>
     );
 
