@@ -382,6 +382,11 @@ const routeMap = {
         register: (id: string) => `/weekly-challenges/${id}/register`,
         me: (id: string) => `/weekly-challenges/${id}/me`
     },
+    tcdcReturns: {
+        // Read-only regulatory returns. The slug matches the one in
+        // features/tcdc/forms.ts so a page resolves its own endpoint.
+        financialPosition: "/tcdc-returns/financial-position"
+    },
     milestones: {
         board: "/sacco-milestones",
         create: "/sacco-milestones",
@@ -754,6 +759,9 @@ export const endpoints = {
         active: () => routeMap.weeklyChallenges.active,
         register: (id: string) => routeMap.weeklyChallenges.register(id),
         me: (id: string) => routeMap.weeklyChallenges.me(id)
+    },
+    tcdcReturns: {
+        financialPosition: () => routeMap.tcdcReturns.financialPosition
     },
     milestones: {
         board: () => routeMap.milestones.board,
