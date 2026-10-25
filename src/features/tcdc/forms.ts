@@ -349,6 +349,18 @@ export const TCDC_FORMS: TcdcFormDef[] = [
             "Outstanding above 35 — Female",
             "Outstanding above 35 — Male"
         ],
+        valueFields: [
+            "branches", "employees",
+            "borrowers_u35_female", "borrowers_u35_male", "borrowers_o35_female", "borrowers_o35_male",
+            "loans_u35_female", "loans_u35_male", "loans_o35_female", "loans_o35_male",
+            "amount_u35_female", "amount_u35_male", "amount_o35_female", "amount_o35_male"
+        ],
+        columnFormats: [
+            "count", "count",
+            "count", "count", "count", "count",
+            "count", "count", "count", "count",
+            "currency", "currency", "currency", "currency"
+        ],
         validations: [
             "(M213+N213+O213+P213)=MSP3_03D20",
             "(E213+F213+G213+H213)=MSP3_03C20"

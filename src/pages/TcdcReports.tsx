@@ -33,6 +33,9 @@ import { formatCurrency } from "../utils/format";
 /// separates a zero that was posted from a zero the books cannot produce.
 interface TcdcLine {
     sno: string;
+    /// Geography rows name their own council — the rows are built from where
+    /// the members are, not from a sheet.
+    label?: string;
     amount: number;
     /// Present on returns the Commission wants two columns for.
     year_to_date?: number;
@@ -56,7 +59,8 @@ const ENDPOINT_BY_SLUG: Record<string, string> = {
     "capital-adequacy": endpoints.tcdcReturns.capitalAdequacy(),
     "loan-sectors": endpoints.tcdcReturns.sectorClassification(),
     "loan-interest-rates": endpoints.tcdcReturns.interestRateStructure(),
-    "loans-disbursed": endpoints.tcdcReturns.loansDisbursed()
+    "loans-disbursed": endpoints.tcdcReturns.loansDisbursed(),
+    "geography": endpoints.tcdcReturns.geography()
 };
 
 interface TcdcValidation {
@@ -94,6 +98,11 @@ interface TcdcReturn {
     validations?: TcdcValidation[];
     reconciliation?: TcdcReconciliation[];
     provisioning?: TcdcProvisioning;
+    /// What the return could not say, in its own words. These are data gaps
+    /// the filing carries, not formatting — a reader has to see them before
+    /// signing, so they render above the sheet rather than under it.
+    notes?: string[];
+    caveats?: string[];
     /// GL accounts that moved in the period but feed no row of the return.
     /// Always empty on a correct mapping — a non-empty list means income the
     /// SACCO earned would be missing from the filing.
@@ -226,6 +235,26 @@ export function TcdcReportsPage() {
             {data?.validations?.length ? <ValidationBanner validations={data.validations} /> : null}
 
             {data?.provisioning ? <ProvisioningBanner provisioning={data.provisioning} /> : null}
+
+            {data?.notes?.length ? (
+                <Alert severity="warning">
+                    <Stack spacing={0.25}>
+                        {data.notes.map((note) => (
+                            <Typography key={note} variant="body2">{note}</Typography>
+                        ))}
+                    </Stack>
+                </Alert>
+            ) : null}
+
+            {data?.caveats?.length ? (
+                <Alert severity="info">
+                    <Stack spacing={0.25}>
+                        {data.caveats.map((caveat) => (
+                            <Typography key={caveat} variant="body2">{caveat}</Typography>
+                        ))}
+                    </Stack>
+                </Alert>
+            ) : null}
 
             {data?.unassigned?.length ? (
                 <Alert severity="warning">
@@ -421,17 +450,71 @@ function FormSheet({
         [lines]
     );
 
-    if (definition.shape === "geography") {
+    if (definition.shape === "geography" && !lines?.length) {
         return (
             <Alert severity="info" sx={{ mb: 0 }}>
-                This return breaks every figure down by council. It is driven by the members' own
-                region and district, so it is built from that data rather than from a fixed sheet —
-                wiring it is part of implementing MSP3_07.
+                This return breaks every figure down by council, built from where the members actually
+                are rather than from a fixed sheet. {loading ? "Loading…" : "Nothing to show yet."}
             </Alert>
         );
     }
 
-    const labelHeading = definition.shape === "sector-matrix" ? "Sector" : "Particulars";
+    const labelHeading = definition.shape === "sector-matrix"
+        ? "Sector"
+        : definition.shape === "geography"
+            ? "Council"
+            : "Particulars";
+
+    if (definition.shape === "geography") {
+        return (
+            <TableContainer sx={{ overflowX: "auto" }}>
+                <Table size="small">
+                    <TableHead>
+                        <TableRow>
+                            <TableCell>{labelHeading}</TableCell>
+                            {valueColumns.map((column) => (
+                                <TableCell key={column} align="right">{column}</TableCell>
+                            ))}
+                        </TableRow>
+                    </TableHead>
+                    <TableBody>
+                        {(lines ?? []).map((row) => {
+                            const isTotal = row.sno === "total";
+                            return (
+                                <TableRow key={row.sno} hover={!isTotal}>
+                                    <TableCell sx={{ fontWeight: isTotal ? 700 : 400, bgcolor: isTotal ? "action.hover" : undefined }}>
+                                        {row.label}
+                                    </TableCell>
+                                    {valueColumns.map((column, columnIndex) => {
+                                        const field = definition.valueFields?.[columnIndex] ?? "amount";
+                                        const figure = row.cells?.[field] ?? 0;
+                                        const format = definition.columnFormats?.[columnIndex];
+                                        return (
+                                            <TableCell
+                                                key={column}
+                                                align="right"
+                                                sx={{
+                                                    fontWeight: isTotal ? 700 : 400,
+                                                    fontVariantNumeric: "tabular-nums",
+                                                    bgcolor: isTotal ? "action.hover" : undefined,
+                                                    // A zero in a grid this wide is noise; dimming it
+                                                    // lets the figures that matter carry the row.
+                                                    color: figure === 0 ? "text.disabled" : "text.primary"
+                                                }}
+                                            >
+                                                {format === "currency" ? formatCurrency(figure) : figure.toLocaleString()}
+                                            </TableCell>
+                                        );
+                                    })}
+                                </TableRow>
+                            );
+                        })}
+                    </TableBody>
+                </Table>
+            </TableContainer>
+        );
+    }
+
     const rows: { key: string; sno: string; label: string; kind: string }[] =
         definition.shape === "sector-matrix"
             ? [
