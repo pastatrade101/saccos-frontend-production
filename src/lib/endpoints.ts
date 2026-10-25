@@ -388,7 +388,9 @@ const routeMap = {
         financialPosition: "/tcdc-returns/financial-position",
         comprehensiveIncome: "/tcdc-returns/comprehensive-income",
         liquidAssets: "/tcdc-returns/liquid-assets",
-        capitalAdequacy: "/tcdc-returns/capital-adequacy"
+        capitalAdequacy: "/tcdc-returns/capital-adequacy",
+        loanSectorClassification: "/tcdc-returns/loan-sectors/classification",
+        setLoanSector: (loanId: string) => `/tcdc-returns/loan-sectors/${loanId}`
     },
     milestones: {
         board: "/sacco-milestones",
@@ -767,7 +769,9 @@ export const endpoints = {
         financialPosition: () => routeMap.tcdcReturns.financialPosition,
         comprehensiveIncome: () => routeMap.tcdcReturns.comprehensiveIncome,
         liquidAssets: () => routeMap.tcdcReturns.liquidAssets,
-        capitalAdequacy: () => routeMap.tcdcReturns.capitalAdequacy
+        capitalAdequacy: () => routeMap.tcdcReturns.capitalAdequacy,
+        loanSectorClassification: () => routeMap.tcdcReturns.loanSectorClassification,
+        setLoanSector: (loanId: string) => routeMap.tcdcReturns.setLoanSector(loanId)
     },
     milestones: {
         board: () => routeMap.milestones.board,

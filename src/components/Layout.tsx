@@ -144,6 +144,7 @@ const navItems: NavItem[] = [
     // The eleven TCDC Tier 3 returns. Labelled by form code first: that is how
     // the Commission refers to them and how a manager preparing a filing looks
     // for one. The full titles live on the pages, in features/tcdc/forms.ts.
+    { to: "/tcdc-returns/classify-sectors", label: "Classify loan sectors", roles: ["super_admin", "branch_manager"], section: "finance", icon: AssuredWorkloadRoundedIcon },
     { to: "/tcdc-returns/financial-position", label: "MSP3_01 Financial Position", roles: ["super_admin", "branch_manager"], section: "finance", icon: AssuredWorkloadRoundedIcon },
     { to: "/tcdc-returns/comprehensive-income", label: "MSP3_02 Comprehensive Income", roles: ["super_admin", "branch_manager"], section: "finance", icon: AssuredWorkloadRoundedIcon },
     { to: "/tcdc-returns/loan-sectors", label: "MSP3_03 Loan Sectors", roles: ["super_admin", "branch_manager"], section: "finance", icon: AssuredWorkloadRoundedIcon },
@@ -203,6 +204,7 @@ const searchKeywords: Partial<Record<NavItem["to"], string[]>> = {
     "/setup/super-admin": ["bootstrap", "admin profile"],
     // "tcdc" and "msp3" on every one: a manager preparing a filing usually
     // knows the form code or the regulator, not our label for the page.
+    "/tcdc-returns/classify-sectors": ["tcdc", "sector", "sekta", "classify", "classification", "ainisha", "loan sector"],
     "/tcdc-returns/financial-position": ["tcdc", "msp3", "msp3_01", "balance sheet", "statement of financial position", "regulator", "return", "filing"],
     "/tcdc-returns/comprehensive-income": ["tcdc", "msp3", "msp3_02", "income statement", "profit and loss", "comprehensive income", "return", "filing"],
     "/tcdc-returns/loan-sectors": ["tcdc", "msp3", "msp3_03", "sector", "sectoral", "classification", "provisioning", "npl", "past due", "return"],
@@ -453,6 +455,10 @@ export function AppLayout() {
                             key: "tcdc",
                             label: "TCDC Returns",
                             itemTos: [
+                                // Classifying the book comes before the returns that
+                                // depend on it, which is also the order someone
+                                // preparing a filing works in.
+                                "/tcdc-returns/classify-sectors",
                                 "/tcdc-returns/financial-position",
                                 "/tcdc-returns/comprehensive-income",
                                 "/tcdc-returns/loan-sectors",
