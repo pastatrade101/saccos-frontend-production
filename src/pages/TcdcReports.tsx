@@ -22,7 +22,10 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 
+import { BankExposureRegister, type BankExposureSection } from "../features/tcdc/BankExposureRegister";
 import { TCDC_SECTORS, TCDC_SUBMISSION_NOTE, tcdcFormBySlug, type TcdcFormDef } from "../features/tcdc/forms";
+import { useAuth } from "../auth/AuthContext";
+import { useToast } from "../components/Toast";
 import { api, getApiErrorMessage } from "../lib/api";
 import { endpoints } from "../lib/endpoints";
 import { MotionCard } from "../ui/motion";
@@ -60,7 +63,8 @@ const ENDPOINT_BY_SLUG: Record<string, string> = {
     "loan-sectors": endpoints.tcdcReturns.sectorClassification(),
     "loan-interest-rates": endpoints.tcdcReturns.interestRateStructure(),
     "loans-disbursed": endpoints.tcdcReturns.loansDisbursed(),
-    "geography": endpoints.tcdcReturns.geography()
+    "geography": endpoints.tcdcReturns.geography(),
+    "bank-exposures": endpoints.tcdcReturns.bankExposures()
 };
 
 interface TcdcValidation {
@@ -103,6 +107,10 @@ interface TcdcReturn {
     /// signing, so they render above the sheet rather than under it.
     notes?: string[];
     caveats?: string[];
+    /// MSP3_11 answers as a register grouped into the Commission's blocks
+    /// rather than as numbered rows.
+    sections?: BankExposureSection[];
+    net_exposures?: { net_loan_exposure: number; net_deposit_exposure: number };
     /// GL accounts that moved in the period but feed no row of the return.
     /// Always empty on a correct mapping — a non-empty list means income the
     /// SACCO earned would be missing from the filing.
@@ -118,7 +126,10 @@ interface TcdcReturn {
 /// the Commission's workbook.
 export function TcdcReportsPage() {
     const { form: slug } = useParams();
+    const { profile } = useAuth();
+    const { pushToast } = useToast();
     const definition = tcdcFormBySlug(slug);
+    const canRecord = profile?.role === "super_admin" || profile?.role === "branch_manager";
 
     // Today, not the month just ended. A manager opening this is usually
     // checking where the SACCO stands now; a filing date is a deliberate
@@ -128,6 +139,7 @@ export function TcdcReportsPage() {
     const [data, setData] = useState<TcdcReturn | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [recording, setRecording] = useState(false);
 
     // Monthly for Category B, quarterly for Category A. Only the income
     // statement is struck over a window; the rest are as-at dates.
@@ -162,6 +174,39 @@ export function TcdcReportsPage() {
     useEffect(() => {
         void load();
     }, [load]);
+
+    // Recording a figure changes what the Commission's cross-checks compare,
+    // so the whole return is reloaded rather than the one row patched: a
+    // register that saved but left the checks stale would be worse than one
+    // that took a moment longer.
+    const recordBalance = async (entry: {
+        section: string;
+        counterparty: string;
+        deposit_amount: number;
+        loan_amount: number;
+    }) => {
+        setRecording(true);
+        try {
+            await api.put(endpoints.tcdcReturns.bankExposures(), { ...entry, as_of: asOf });
+            await load();
+        } catch (saveError) {
+            pushToast({ type: "error", title: "Unable to record the balance", message: getApiErrorMessage(saveError) });
+        } finally {
+            setRecording(false);
+        }
+    };
+
+    const removeBalance = async (row: { id: string; counterparty: string }) => {
+        setRecording(true);
+        try {
+            await api.delete(endpoints.tcdcReturns.deleteBankBalance(row.id));
+            await load();
+        } catch (removeError) {
+            pushToast({ type: "error", title: "Unable to remove the line", message: getApiErrorMessage(removeError) });
+        } finally {
+            setRecording(false);
+        }
+    };
 
     if (!definition) {
         return (
@@ -267,7 +312,32 @@ export function TcdcReportsPage() {
 
             <MotionCard variant="outlined" inView>
                 <CardContent>
-                    <FormSheet definition={definition} lines={data?.lines} loading={loading} />
+                    {data?.sections ? (
+                        <>
+                            <BankExposureRegister
+                                sections={data.sections}
+                                asOf={data.as_of}
+                                canEdit={canRecord}
+                                busy={recording}
+                                onSave={recordBalance}
+                                onRemove={removeBalance}
+                            />
+                            {data.net_exposures ? (
+                                <Stack direction="row" spacing={3} flexWrap="wrap" useFlexGap sx={{ mt: 2.5 }}>
+                                    <Stack>
+                                        <Typography variant="caption" color="text.secondary">Total net deposit exposure</Typography>
+                                        <Typography variant="h6">{formatCurrency(data.net_exposures.net_deposit_exposure)}</Typography>
+                                    </Stack>
+                                    <Stack>
+                                        <Typography variant="caption" color="text.secondary">Total net loan exposure</Typography>
+                                        <Typography variant="h6">{formatCurrency(data.net_exposures.net_loan_exposure)}</Typography>
+                                    </Stack>
+                                </Stack>
+                            ) : null}
+                        </>
+                    ) : (
+                        <FormSheet definition={definition} lines={data?.lines} loading={loading} />
+                    )}
                 </CardContent>
             </MotionCard>
 

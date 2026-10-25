@@ -393,6 +393,8 @@ const routeMap = {
         interestRateStructure: "/tcdc-returns/loan-interest-rates",
         loansDisbursed: "/tcdc-returns/loans-disbursed",
         geography: "/tcdc-returns/geography",
+        bankExposures: "/tcdc-returns/bank-exposures",
+        deleteBankBalance: (id: string) => `/tcdc-returns/bank-exposures/${id}`,
         loanSectorClassification: "/tcdc-returns/loan-sectors/classification",
         setLoanSector: (loanId: string) => `/tcdc-returns/loan-sectors/${loanId}`
     },
@@ -778,6 +780,8 @@ export const endpoints = {
         interestRateStructure: () => routeMap.tcdcReturns.interestRateStructure,
         loansDisbursed: () => routeMap.tcdcReturns.loansDisbursed,
         geography: () => routeMap.tcdcReturns.geography,
+        bankExposures: () => routeMap.tcdcReturns.bankExposures,
+        deleteBankBalance: (id: string) => routeMap.tcdcReturns.deleteBankBalance(id),
         loanSectorClassification: () => routeMap.tcdcReturns.loanSectorClassification,
         setLoanSector: (loanId: string) => routeMap.tcdcReturns.setLoanSector(loanId)
     },
