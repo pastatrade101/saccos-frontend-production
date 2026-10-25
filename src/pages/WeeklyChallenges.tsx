@@ -101,6 +101,8 @@ export function WeeklyChallengesPage() {
     const [standings, setStandings] = useState<WeeklyChallengeStandings | null>(null);
     const [standingsLoading, setStandingsLoading] = useState(false);
 
+    const [visibilityBusy, setVisibilityBusy] = useState(false);
+
     const [bulkText, setBulkText] = useState("");
     const [bulkPreview, setBulkPreview] = useState<WeeklyChallengeBulkRegisterResult | null>(null);
     const [bulkBusy, setBulkBusy] = useState(false);
@@ -181,6 +183,36 @@ export function WeeklyChallengesPage() {
             if (selected?.id === challenge.id) openChallenge({ ...challenge, status: "registration_open" });
         } catch (openError) {
             pushToast({ type: "error", title: "Unable to open registration", message: getApiErrorMessage(openError) });
+        }
+    };
+
+    /// Flips what members read off the leaderboard, live — the backend reads
+    /// the flag on every standings request rather than baking it into a stored
+    /// result, so this takes effect on the next refresh even mid-challenge.
+    const setShowAmounts = async (next: boolean) => {
+        if (!selected) return;
+        const previous = selected;
+        setVisibilityBusy(true);
+        // Move the switch first. Nothing is computed from this flag, so a
+        // failed save costs only the revert below.
+        setSelected({ ...previous, show_amounts_to_members: next });
+        try {
+            await api.patch(endpoints.weeklyChallenges.update(previous.id), { show_amounts_to_members: next });
+            setChallenges((list) => list.map((item) => (
+                item.id === previous.id ? { ...item, show_amounts_to_members: next } : item
+            )));
+            pushToast({
+                type: "success",
+                title: next ? "Amounts are visible" : "Amounts are hidden",
+                message: next
+                    ? "Members can see each other's deposits again."
+                    : "Members see rank only now. Each member still sees their own figure."
+            });
+        } catch (saveError) {
+            setSelected(previous);
+            pushToast({ type: "error", title: "Unable to change visibility", message: getApiErrorMessage(saveError) });
+        } finally {
+            setVisibilityBusy(false);
         }
     };
 
@@ -300,7 +332,14 @@ export function WeeklyChallengesPage() {
                                             </Typography>
                                         </TableCell>
                                         <TableCell>
-                                            <Chip size="small" color={STATUS_COLOR[challenge.status]} label={challenge.status.replace(/_/g, " ")} />
+                                            <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+                                                <Chip size="small" color={STATUS_COLOR[challenge.status]} label={challenge.status.replace(/_/g, " ")} />
+                                                {/* Only flagged when off — a chip on every row would say nothing,
+                                                    since showing amounts is the default and the usual case. */}
+                                                {challenge.show_amounts_to_members === false && challenge.status !== "completed" ? (
+                                                    <Chip size="small" variant="outlined" label="amounts hidden" />
+                                                ) : null}
+                                            </Stack>
                                         </TableCell>
                                         <TableCell align="right">
                                             <Stack direction="row" spacing={1} justifyContent="flex-end">
@@ -349,6 +388,30 @@ export function WeeklyChallengesPage() {
                                 </Stack>
                                 <IconButton size="small" onClick={() => setSelected(null)}><CloseRoundedIcon /></IconButton>
                             </Stack>
+
+                            {canManage ? (
+                                <Box sx={{ p: 1.5, border: "1px solid", borderColor: "divider", borderRadius: 1.5 }}>
+                                    <FormControlLabel
+                                        control={
+                                            <Switch
+                                                checked={selected.show_amounts_to_members !== false}
+                                                disabled={visibilityBusy || ["completed", "cancelled"].includes(selected.status)}
+                                                onChange={(event) => setShowAmounts(event.target.checked)}
+                                            />
+                                        }
+                                        label="Show deposited amounts to members"
+                                    />
+                                    <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: -0.5 }}>
+                                        {selected.status === "completed"
+                                            ? "The challenge is over — every figure is visible to members whatever this is set to."
+                                            : selected.status === "cancelled"
+                                                ? "This challenge was cancelled."
+                                                : selected.show_amounts_to_members !== false
+                                                    ? "Members see each other's deposits and rank. You can turn this off while the challenge runs."
+                                                    : "Members see rank only — a member watching the board can't just deposit slightly more than the leader before the day closes. Each member still sees their own figure, and you still see every figure below."}
+                                    </Typography>
+                                </Box>
+                            ) : null}
 
                             {canManage && ["draft", "registration_open"].includes(selected.status) ? (
                                 <Box sx={{ p: 1.5, border: "1px solid", borderColor: "divider", borderRadius: 1.5 }}>
