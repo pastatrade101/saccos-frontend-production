@@ -30,6 +30,10 @@ export interface TcdcFormDef {
     /// Rows a matrix form carries below its sector list: the Commission's own
     /// totals and provisioning block, labelled as its workbook labels them.
     totalRows?: TcdcRow[];
+    /// How each column reads: a headcount, shillings, or a percentage. A
+    /// matrix row mixes all three — MSP3_04 puts borrowers, balances and
+    /// rates side by side — so the format belongs to the column, not the row.
+    columnFormats?: ("count" | "currency" | "percent")[];
     /// Which field of a returned line each column in `columns` reads. Defaults
     /// to a single "amount" column. MSP3_02 is the reason this exists: the
     /// Commission wants the period and the year to date side by side.
@@ -252,6 +256,7 @@ export const TCDC_FORMS: TcdcFormDef[] = [
             "Write-offs during the quarter"
         ],
         valueFields: ["borrowers", "total", "current", "esm", "substandard", "doubtful", "loss", "writeoffs"],
+        columnFormats: ["count", "currency", "currency", "currency", "currency", "currency", "currency", "currency"],
         totalRows: [
             { sno: "20", kind: "computed", label: "Total (a)" },
             { sno: "21", kind: "input", label: "Less Compulsory Savings and deposits" },
@@ -280,6 +285,9 @@ export const TCDC_FORMS: TcdcFormDef[] = [
             "Nominal Rate Lowest (% p.a.)",
             "Nominal Rate Highest (% p.a.)"
         ],
+        valueFields: ["borrowers", "outstanding", "weighted_rate", "lowest_rate", "highest_rate"],
+        columnFormats: ["count", "currency", "percent", "percent", "percent"],
+        totalRows: [{ sno: "20", kind: "computed", label: "Total" }],
         validations: ["C20=MSP3_03C20", "D20=MSP3_03D20"],
         notes: ["The weighted average is weighted by outstanding loan balance, on a reducing-balance basis."]
     },
@@ -296,7 +304,10 @@ export const TCDC_FORMS: TcdcFormDef[] = [
             "Male Amount (TZS)",
             "Total Number",
             "Total Amount (TZS)"
-        ]
+        ],
+        valueFields: ["female_number", "female_amount", "male_number", "male_amount", "total_number", "total_amount"],
+        columnFormats: ["count", "currency", "count", "currency", "count", "currency"],
+        totalRows: [{ sno: "20", kind: "computed", label: "Gross Loans Disbursed" }]
     },
     {
         code: "MSP3_06",

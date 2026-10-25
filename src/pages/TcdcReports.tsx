@@ -54,7 +54,9 @@ const ENDPOINT_BY_SLUG: Record<string, string> = {
     "comprehensive-income": endpoints.tcdcReturns.comprehensiveIncome(),
     "liquid-assets": endpoints.tcdcReturns.liquidAssets(),
     "capital-adequacy": endpoints.tcdcReturns.capitalAdequacy(),
-    "loan-sectors": endpoints.tcdcReturns.sectorClassification()
+    "loan-sectors": endpoints.tcdcReturns.sectorClassification(),
+    "loan-interest-rates": endpoints.tcdcReturns.interestRateStructure(),
+    "loans-disbursed": endpoints.tcdcReturns.loansDisbursed()
 };
 
 interface TcdcValidation {
@@ -124,7 +126,10 @@ export function TcdcReportsPage() {
 
     // Returns wired to the ledger so far. The rest render their sheet unfilled.
     const endpoint = ENDPOINT_BY_SLUG[definition?.slug ?? ""] ?? null;
-    const usesPeriod = definition?.slug === "comprehensive-income";
+    // Struck over a window rather than at a date: income earned in a period,
+    // and lending done in one.
+    const usesPeriod = definition?.slug === "comprehensive-income"
+        || definition?.slug === "loans-disbursed";
 
     const load = useCallback(async () => {
         if (!endpoint) {
@@ -536,26 +541,41 @@ function FormSheet({
                                             {isSection ? "" : value && figure !== undefined ? (
                                                 <Tooltip title={value.source} placement="left" arrow>
                                                     <span>
-                                                        {value.unit === "percent" ? (
+                                                        {/* A row that declares itself a percentage wins over the
+                                                            column: MSP3_03's provision-rate row sits in the middle
+                                                            of columns that are otherwise shillings. */}
+                                                        {value.unit === "percent"
+                                                            || definition.columnFormats?.[columnIndex] === "percent" ? (
                                                             // A ratio is only meaningful beside its floor, and
                                                             // whether it clears it is the whole point of the row.
                                                             <>
                                                                 <Box
                                                                     component="span"
                                                                     sx={{
-                                                                        fontWeight: 700,
-                                                                        color: value.meets_minimum ? "success.main" : "error.main"
+                                                                        // Green or red only where a floor is actually
+                                                                        // being tested. MSP3_04's interest rates are
+                                                                        // percentages with nothing to pass or fail,
+                                                                        // and painting them red would invent a
+                                                                        // compliance problem that is not there.
+                                                                        fontWeight: value.minimum !== undefined ? 700 : 400,
+                                                                        color: value.minimum === undefined
+                                                                            ? "text.primary"
+                                                                            : value.meets_minimum
+                                                                                ? "success.main"
+                                                                                : "error.main"
                                                                     }}
                                                                 >
                                                                     {figure.toFixed(2)}%
                                                                 </Box>
-                                                                {value.minimum !== undefined ? (
+                                                                {value.minimum !== undefined && value.unit === "percent" ? (
                                                                     <Typography component="span" variant="caption" color="text.secondary">
                                                                         {" "}/ {value.minimum}%
                                                                     </Typography>
                                                                 ) : null}
                                                             </>
-                                                        ) : formatCurrency(figure)}
+                                                        ) : definition.columnFormats?.[columnIndex] === "count"
+                                                            ? figure.toLocaleString()
+                                                            : formatCurrency(figure)}
                                                     </span>
                                                 </Tooltip>
                                             ) : loading ? "…" : PENDING}
