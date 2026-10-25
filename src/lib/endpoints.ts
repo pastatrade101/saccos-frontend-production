@@ -385,7 +385,8 @@ const routeMap = {
     tcdcReturns: {
         // Read-only regulatory returns. The slug matches the one in
         // features/tcdc/forms.ts so a page resolves its own endpoint.
-        financialPosition: "/tcdc-returns/financial-position"
+        financialPosition: "/tcdc-returns/financial-position",
+        comprehensiveIncome: "/tcdc-returns/comprehensive-income"
     },
     milestones: {
         board: "/sacco-milestones",
@@ -761,7 +762,8 @@ export const endpoints = {
         me: (id: string) => routeMap.weeklyChallenges.me(id)
     },
     tcdcReturns: {
-        financialPosition: () => routeMap.tcdcReturns.financialPosition
+        financialPosition: () => routeMap.tcdcReturns.financialPosition,
+        comprehensiveIncome: () => routeMap.tcdcReturns.comprehensiveIncome
     },
     milestones: {
         board: () => routeMap.milestones.board,

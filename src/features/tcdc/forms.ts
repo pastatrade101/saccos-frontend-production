@@ -27,6 +27,10 @@ export interface TcdcFormDef {
     code: string;
     slug: string;
     title: string;
+    /// Which field of a returned line each column in `columns` reads. Defaults
+    /// to a single "amount" column. MSP3_02 is the reason this exists: the
+    /// Commission wants the period and the year to date side by side.
+    valueFields?: string[];
     /// What the return is for, in our words — the title alone is the
     /// Commission's and says little to someone opening the page cold.
     blurb: string;
@@ -178,6 +182,8 @@ export const TCDC_FORMS: TcdcFormDef[] = [
         title: "Statement of Comprehensive Income",
         blurb: "Income and expenditure for the period and year to date. Its closing profit must equal the balance sheet's.",
         shape: "statement",
+        columns: ["Period (TZS)", "Year to date (TZS)"],
+        valueFields: ["amount", "year_to_date"],
         validations: ["D42=MSP3_01C81"],
         notes: ["The income statement itself must be attached to the filing."],
         rows: [

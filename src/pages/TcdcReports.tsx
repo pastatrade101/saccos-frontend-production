@@ -34,6 +34,8 @@ import { formatCurrency } from "../utils/format";
 interface TcdcLine {
     sno: string;
     amount: number;
+    /// Present on returns the Commission wants two columns for.
+    year_to_date?: number;
     source: string;
 }
 
@@ -62,10 +64,16 @@ interface TcdcProvisioning {
 interface TcdcReturn {
     code: string;
     as_of: string;
+    period_start?: string;
+    year_start?: string;
     lines: TcdcLine[];
     validations?: TcdcValidation[];
     reconciliation?: TcdcReconciliation[];
     provisioning?: TcdcProvisioning;
+    /// GL accounts that moved in the period but feed no row of the return.
+    /// Always empty on a correct mapping — a non-empty list means income the
+    /// SACCO earned would be missing from the filing.
+    unassigned?: { account_code: string; year_to_date: number }[];
 }
 
 /// Renders any of the eleven TCDC Tier 3 returns from its definition in
@@ -88,10 +96,17 @@ export function TcdcReportsPage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // Only MSP3_01 is wired so far; the rest render their sheet unfilled.
+    // Monthly for Category B, quarterly for Category A. Only the income
+    // statement is struck over a window; the rest are as-at dates.
+    const [periodBasis, setPeriodBasis] = useState<"month" | "quarter">("month");
+
+    // Returns wired to the ledger so far. The rest render their sheet unfilled.
     const endpoint = definition?.slug === "financial-position"
         ? endpoints.tcdcReturns.financialPosition()
-        : null;
+        : definition?.slug === "comprehensive-income"
+            ? endpoints.tcdcReturns.comprehensiveIncome()
+            : null;
+    const usesPeriod = definition?.slug === "comprehensive-income";
 
     const load = useCallback(async () => {
         if (!endpoint) {
@@ -101,7 +116,8 @@ export function TcdcReportsPage() {
         setLoading(true);
         setError(null);
         try {
-            const response = await api.get<{ data: TcdcReturn }>(endpoint, { params: { as_of: asOf } });
+            const params = usesPeriod ? { as_of: asOf, period: periodBasis } : { as_of: asOf };
+            const response = await api.get<{ data: TcdcReturn }>(endpoint, { params });
             setData(response.data.data);
         } catch (loadError) {
             setError(getApiErrorMessage(loadError));
@@ -109,7 +125,7 @@ export function TcdcReportsPage() {
         } finally {
             setLoading(false);
         }
-    }, [endpoint, asOf]);
+    }, [endpoint, asOf, periodBasis, usesPeriod]);
 
     useEffect(() => {
         void load();
@@ -141,15 +157,37 @@ export function TcdcReportsPage() {
                                 {TCDC_SUBMISSION_NOTE}
                             </Typography>
                         </Stack>
-                        <TextField
-                            size="small"
-                            type="date"
-                            label="As at"
-                            InputLabelProps={{ shrink: true }}
-                            value={asOf}
-                            onChange={(event) => setAsOf(event.target.value)}
-                        />
+                        <Stack direction="row" spacing={1}>
+                            {usesPeriod ? (
+                                <TextField
+                                    size="small"
+                                    select
+                                    label="Period"
+                                    value={periodBasis}
+                                    onChange={(event) => setPeriodBasis(event.target.value as "month" | "quarter")}
+                                    sx={{ minWidth: 130 }}
+                                    SelectProps={{ native: true }}
+                                    InputLabelProps={{ shrink: true }}
+                                >
+                                    <option value="month">Month</option>
+                                    <option value="quarter">Quarter</option>
+                                </TextField>
+                            ) : null}
+                            <TextField
+                                size="small"
+                                type="date"
+                                label="As at"
+                                InputLabelProps={{ shrink: true }}
+                                value={asOf}
+                                onChange={(event) => setAsOf(event.target.value)}
+                            />
+                        </Stack>
                     </Stack>
+                    {data?.period_start ? (
+                        <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: "block" }}>
+                            Period {data.period_start} to {data.as_of} · financial year from {data.year_start}
+                        </Typography>
+                    ) : null}
                 </CardContent>
             </MotionCard>
 
@@ -165,6 +203,15 @@ export function TcdcReportsPage() {
             {data?.validations?.length ? <ValidationBanner validations={data.validations} /> : null}
 
             {data?.provisioning ? <ProvisioningBanner provisioning={data.provisioning} /> : null}
+
+            {data?.unassigned?.length ? (
+                <Alert severity="warning">
+                    {data.unassigned.length} ledger account
+                    {data.unassigned.length === 1 ? "" : "s"} moved this year but feed no row of this return:{" "}
+                    {data.unassigned.map((entry) => entry.account_code).join(", ")}. Those figures are missing
+                    from the filing until each is mapped to a row.
+                </Alert>
+            ) : null}
 
             <MotionCard variant="outlined" inView>
                 <CardContent>
@@ -420,8 +467,12 @@ function FormSheet({
                                 >
                                     {row.label}
                                 </TableCell>
-                                {valueColumns.map((column) => {
+                                {valueColumns.map((column, columnIndex) => {
                                     const value = byRow.get(row.sno);
+                                    const field = definition.valueFields?.[columnIndex] ?? "amount";
+                                    const figure = value
+                                        ? (field === "year_to_date" ? value.year_to_date : value.amount)
+                                        : undefined;
                                     // An unmapped line is a real zero the books cannot
                                     // produce, not a figure still loading. Dimming it
                                     // and naming the reason on hover keeps the two
@@ -438,9 +489,9 @@ function FormSheet({
                                                 bgcolor: isSection ? "action.hover" : undefined
                                             }}
                                         >
-                                            {isSection ? "" : value ? (
+                                            {isSection ? "" : value && figure !== undefined ? (
                                                 <Tooltip title={value.source} placement="left" arrow>
-                                                    <span>{formatCurrency(value.amount)}</span>
+                                                    <span>{formatCurrency(figure)}</span>
                                                 </Tooltip>
                                             ) : loading ? "…" : PENDING}
                                         </TableCell>
