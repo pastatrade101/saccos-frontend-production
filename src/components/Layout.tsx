@@ -1,5 +1,6 @@
 import DashboardRoundedIcon from "@mui/icons-material/DashboardRounded";
 import AccountBalanceRoundedIcon from "@mui/icons-material/AccountBalanceRounded";
+import AssuredWorkloadRoundedIcon from "@mui/icons-material/AssuredWorkloadRounded";
 import DescriptionRoundedIcon from "@mui/icons-material/DescriptionRounded";
 import EventRepeatRoundedIcon from "@mui/icons-material/EventRepeatRounded";
 import ExpandLessRoundedIcon from "@mui/icons-material/ExpandLessRounded";
@@ -85,7 +86,7 @@ interface SearchOption {
 }
 
 interface NavGroup {
-    key: "workspace" | "products" | "finance" | "operations" | "analytics" | "all_reports" | "setup" | "treasury";
+    key: "workspace" | "products" | "finance" | "operations" | "analytics" | "all_reports" | "tcdc" | "setup" | "treasury";
     label: string;
     itemTos: string[];
 }
@@ -139,7 +140,21 @@ const navItems: NavItem[] = [
     { to: "/all-reports/summary-sorted", label: "Sorted Summary", roles: ["super_admin", "branch_manager"], section: "finance", icon: SummarizeRoundedIcon },
     { to: "/all-reports/loans", label: "Loans (MIKOPO)", roles: ["super_admin", "branch_manager"], section: "finance", icon: CreditScoreRoundedIcon },
     { to: "/all-reports/loan-income", label: "Loan Income", roles: ["super_admin", "branch_manager"], section: "finance", icon: AccountBalanceRoundedIcon },
-    { to: "/all-reports/operations", label: "Operations Fund", roles: ["super_admin", "branch_manager"], section: "finance", icon: PaidRoundedIcon }
+    { to: "/all-reports/operations", label: "Operations Fund", roles: ["super_admin", "branch_manager"], section: "finance", icon: PaidRoundedIcon },
+    // The eleven TCDC Tier 3 returns. Labelled by form code first: that is how
+    // the Commission refers to them and how a manager preparing a filing looks
+    // for one. The full titles live on the pages, in features/tcdc/forms.ts.
+    { to: "/tcdc-returns/financial-position", label: "MSP3_01 Financial Position", roles: ["super_admin", "branch_manager"], section: "finance", icon: AssuredWorkloadRoundedIcon },
+    { to: "/tcdc-returns/comprehensive-income", label: "MSP3_02 Comprehensive Income", roles: ["super_admin", "branch_manager"], section: "finance", icon: AssuredWorkloadRoundedIcon },
+    { to: "/tcdc-returns/loan-sectors", label: "MSP3_03 Loan Sectors", roles: ["super_admin", "branch_manager"], section: "finance", icon: AssuredWorkloadRoundedIcon },
+    { to: "/tcdc-returns/loan-interest-rates", label: "MSP3_04 Loan Interest Rates", roles: ["super_admin", "branch_manager"], section: "finance", icon: AssuredWorkloadRoundedIcon },
+    { to: "/tcdc-returns/loans-disbursed", label: "MSP3_05 Loans Disbursed", roles: ["super_admin", "branch_manager"], section: "finance", icon: AssuredWorkloadRoundedIcon },
+    { to: "/tcdc-returns/insider-loans", label: "MSP3_06 Insider Loans", roles: ["super_admin", "branch_manager"], section: "finance", icon: AssuredWorkloadRoundedIcon },
+    { to: "/tcdc-returns/geography", label: "MSP3_07 Geography and Age", roles: ["super_admin", "branch_manager"], section: "finance", icon: AssuredWorkloadRoundedIcon },
+    { to: "/tcdc-returns/liquid-assets", label: "MSP3_08 Liquid Assets", roles: ["super_admin", "branch_manager"], section: "finance", icon: AssuredWorkloadRoundedIcon },
+    { to: "/tcdc-returns/capital-adequacy", label: "MSP3_09 Capital Adequacy", roles: ["super_admin", "branch_manager"], section: "finance", icon: AssuredWorkloadRoundedIcon },
+    { to: "/tcdc-returns/complaints", label: "MSP3_10 Complaints", roles: ["super_admin", "branch_manager"], section: "finance", icon: AssuredWorkloadRoundedIcon },
+    { to: "/tcdc-returns/bank-exposures", label: "MSP3_11 Bank Exposures", roles: ["super_admin", "branch_manager"], section: "finance", icon: AssuredWorkloadRoundedIcon }
 ];
 
 const navGroups: NavGroup[] = [
@@ -185,7 +200,20 @@ const searchKeywords: Partial<Record<NavItem["to"], string[]>> = {
     "/treasury": ["investments", "portfolio", "income", "liquidity", "institutional funds", "orders"],
     "/treasury/policy-settings": ["treasury setup", "treasury policy", "guardrails", "liquidity protection", "investment limits"],
     "/reports": ["exports", "trial balance", "par", "aging"],
-    "/setup/super-admin": ["bootstrap", "admin profile"]
+    "/setup/super-admin": ["bootstrap", "admin profile"],
+    // "tcdc" and "msp3" on every one: a manager preparing a filing usually
+    // knows the form code or the regulator, not our label for the page.
+    "/tcdc-returns/financial-position": ["tcdc", "msp3", "msp3_01", "balance sheet", "statement of financial position", "regulator", "return", "filing"],
+    "/tcdc-returns/comprehensive-income": ["tcdc", "msp3", "msp3_02", "income statement", "profit and loss", "comprehensive income", "return", "filing"],
+    "/tcdc-returns/loan-sectors": ["tcdc", "msp3", "msp3_03", "sector", "sectoral", "classification", "provisioning", "npl", "past due", "return"],
+    "/tcdc-returns/loan-interest-rates": ["tcdc", "msp3", "msp3_04", "interest rate", "weighted average", "nominal rate", "return"],
+    "/tcdc-returns/loans-disbursed": ["tcdc", "msp3", "msp3_05", "disbursed", "disbursement", "gender", "female", "male", "return"],
+    "/tcdc-returns/insider-loans": ["tcdc", "msp3", "msp3_06", "insider", "related party", "board", "staff loans", "return"],
+    "/tcdc-returns/geography": ["tcdc", "msp3", "msp3_07", "geography", "district", "council", "region", "age", "branches", "employees", "return"],
+    "/tcdc-returns/liquid-assets": ["tcdc", "msp3", "msp3_08", "liquidity", "liquid assets", "pearls", "15%", "return"],
+    "/tcdc-returns/capital-adequacy": ["tcdc", "msp3", "msp3_09", "capital adequacy", "core capital", "institutional capital", "return"],
+    "/tcdc-returns/complaints": ["tcdc", "msp3", "msp3_10", "complaint", "malalamiko", "grievance", "return"],
+    "/tcdc-returns/bank-exposures": ["tcdc", "msp3", "msp3_11", "bank", "borrowings", "deposits", "mobile money", "wakala", "agent banking", "exposure", "return"]
 };
 
 function getPageTitle(pathname: string) {
@@ -415,6 +443,27 @@ export function AppLayout() {
                                 "/all-reports/loan-income",
                                 "/all-reports/operations",
                                 "/reports"
+                            ]
+                        },
+                        // Kept apart from All Reports on purpose: these eleven are
+                        // filed with the Commission on a deadline, not read for
+                        // management. Mixing them in would bury the filing set in
+                        // the middle of the internal one.
+                        {
+                            key: "tcdc",
+                            label: "TCDC Returns",
+                            itemTos: [
+                                "/tcdc-returns/financial-position",
+                                "/tcdc-returns/comprehensive-income",
+                                "/tcdc-returns/loan-sectors",
+                                "/tcdc-returns/loan-interest-rates",
+                                "/tcdc-returns/loans-disbursed",
+                                "/tcdc-returns/insider-loans",
+                                "/tcdc-returns/geography",
+                                "/tcdc-returns/liquid-assets",
+                                "/tcdc-returns/capital-adequacy",
+                                "/tcdc-returns/complaints",
+                                "/tcdc-returns/bank-exposures"
                             ]
                         }
                     ];

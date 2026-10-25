@@ -52,6 +52,7 @@ const WeeklyChallengesPage = lazy(() => import("./pages/WeeklyChallenges").then(
 const MilestonesPage = lazy(() => import("./pages/Milestones").then((m) => ({ default: m.MilestonesPage })));
 const AgmRegisterPage = lazy(() => import("./pages/AgmRegister").then((m) => ({ default: m.AgmRegisterPage })));
 const AllReportsPage = lazy(() => import("./pages/AllReports").then((m) => ({ default: m.AllReportsPage })));
+const TcdcReportsPage = lazy(() => import("./pages/TcdcReports").then((m) => ({ default: m.TcdcReportsPage })));
 const TreasuryPage = lazy(() => import("./pages/Treasury").then((m) => ({ default: m.TreasuryPage })));
 const TreasuryPolicySettingsPage = lazy(() => import("./pages/TreasuryPolicySettings").then((m) => ({ default: m.TreasuryPolicySettingsPage })));
 const MemberPortalPage = lazy(() => import("./pages/MemberPortal").then((m) => ({ default: m.MemberPortalPage })));
@@ -281,6 +282,9 @@ export default function App() {
                             <Route path="/weekly-challenges" element={<WeeklyChallengesPage />} />
                             <Route path="/milestones" element={<MilestonesPage />} />
                             <Route path="/agm" element={<AgmRegisterPage />} />
+                            {/* The eleven TCDC Tier 3 returns, one route serving all of
+                                them from features/tcdc/forms.ts. */}
+                            <Route path="/tcdc-returns/:form" element={<TcdcReportsPage />} />
                         </Route>
                         <Route
                             element={
