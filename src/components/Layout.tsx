@@ -146,6 +146,7 @@ const navItems: NavItem[] = [
     // for one. The full titles live on the pages, in features/tcdc/forms.ts.
     { to: "/tcdc-returns/classify-sectors", label: "Classify loan sectors", roles: ["super_admin", "branch_manager"], section: "finance", icon: AssuredWorkloadRoundedIcon },
     { to: "/tcdc-returns/mark-insiders", label: "Mark insiders", roles: ["super_admin", "branch_manager"], section: "finance", icon: AssuredWorkloadRoundedIcon },
+    { to: "/tcdc-returns/complaints-register", label: "Complaints register", roles: ["super_admin", "branch_manager"], section: "finance", icon: AssuredWorkloadRoundedIcon },
     { to: "/tcdc-returns/financial-position", label: "MSP3_01 Financial Position", roles: ["super_admin", "branch_manager"], section: "finance", icon: AssuredWorkloadRoundedIcon },
     { to: "/tcdc-returns/comprehensive-income", label: "MSP3_02 Comprehensive Income", roles: ["super_admin", "branch_manager"], section: "finance", icon: AssuredWorkloadRoundedIcon },
     { to: "/tcdc-returns/loan-sectors", label: "MSP3_03 Loan Sectors", roles: ["super_admin", "branch_manager"], section: "finance", icon: AssuredWorkloadRoundedIcon },
@@ -205,6 +206,7 @@ const searchKeywords: Partial<Record<NavItem["to"], string[]>> = {
     "/setup/super-admin": ["bootstrap", "admin profile"],
     // "tcdc" and "msp3" on every one: a manager preparing a filing usually
     // knows the form code or the regulator, not our label for the page.
+    "/tcdc-returns/complaints-register": ["tcdc", "complaint", "malalamiko", "lalamiko", "grievance", "dispute", "msp3_10"],
     "/tcdc-returns/mark-insiders": ["tcdc", "insider", "board", "bodi", "committee", "kamati", "related party", "staff loans", "msp3_06"],
     "/tcdc-returns/classify-sectors": ["tcdc", "sector", "sekta", "classify", "classification", "ainisha", "loan sector"],
     "/tcdc-returns/financial-position": ["tcdc", "msp3", "msp3_01", "balance sheet", "statement of financial position", "regulator", "return", "filing"],
@@ -462,6 +464,7 @@ export function AppLayout() {
                                 // preparing a filing works in.
                                 "/tcdc-returns/classify-sectors",
                                 "/tcdc-returns/mark-insiders",
+                                "/tcdc-returns/complaints-register",
                                 "/tcdc-returns/financial-position",
                                 "/tcdc-returns/comprehensive-income",
                                 "/tcdc-returns/loan-sectors",

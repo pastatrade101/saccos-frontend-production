@@ -441,6 +441,15 @@ export const TCDC_FORMS: TcdcFormDef[] = [
             "Election Process",
             "Others"
         ],
+        valueFields: [
+            "number", "value",
+            "membership_exit", "withdrawal_of_savings", "repayments",
+            "loan_statement", "loan_processing", "election_process", "other"
+        ],
+        columnFormats: [
+            "count", "currency",
+            "count", "count", "count", "count", "count", "count", "count"
+        ],
         rows: [
 
             { sno: "1", kind: "input", label: "Number of complaints at the beginning of the month/quarter" },

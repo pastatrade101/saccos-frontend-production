@@ -55,6 +55,7 @@ const AllReportsPage = lazy(() => import("./pages/AllReports").then((m) => ({ de
 const TcdcReportsPage = lazy(() => import("./pages/TcdcReports").then((m) => ({ default: m.TcdcReportsPage })));
 const TcdcLoanSectorsPage = lazy(() => import("./pages/TcdcLoanSectors").then((m) => ({ default: m.TcdcLoanSectorsPage })));
 const TcdcInsidersPage = lazy(() => import("./pages/TcdcInsiders").then((m) => ({ default: m.TcdcInsidersPage })));
+const TcdcComplaintsPage = lazy(() => import("./pages/TcdcComplaints").then((m) => ({ default: m.TcdcComplaintsPage })));
 const TreasuryPage = lazy(() => import("./pages/Treasury").then((m) => ({ default: m.TreasuryPage })));
 const TreasuryPolicySettingsPage = lazy(() => import("./pages/TreasuryPolicySettings").then((m) => ({ default: m.TreasuryPolicySettingsPage })));
 const MemberPortalPage = lazy(() => import("./pages/MemberPortal").then((m) => ({ default: m.MemberPortalPage })));
@@ -288,6 +289,7 @@ export default function App() {
                                 them from features/tcdc/forms.ts. */}
                             <Route path="/tcdc-returns/classify-sectors" element={<TcdcLoanSectorsPage />} />
                             <Route path="/tcdc-returns/mark-insiders" element={<TcdcInsidersPage />} />
+                            <Route path="/tcdc-returns/complaints-register" element={<TcdcComplaintsPage />} />
                             <Route path="/tcdc-returns/:form" element={<TcdcReportsPage />} />
                         </Route>
                         <Route

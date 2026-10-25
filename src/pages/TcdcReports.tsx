@@ -80,7 +80,8 @@ const ENDPOINT_BY_SLUG: Record<string, string> = {
     "loans-disbursed": endpoints.tcdcReturns.loansDisbursed(),
     "geography": endpoints.tcdcReturns.geography(),
     "bank-exposures": endpoints.tcdcReturns.bankExposures(),
-    "insider-loans": endpoints.tcdcReturns.insiderLoans()
+    "insider-loans": endpoints.tcdcReturns.insiderLoans(),
+    "complaints": endpoints.tcdcReturns.complaints()
 };
 
 interface TcdcValidation {
@@ -170,7 +171,8 @@ export function TcdcReportsPage() {
     // Struck over a window rather than at a date: income earned in a period,
     // and lending done in one.
     const usesPeriod = definition?.slug === "comprehensive-income"
-        || definition?.slug === "loans-disbursed";
+        || definition?.slug === "loans-disbursed"
+        || definition?.slug === "complaints";
 
     const load = useCallback(async () => {
         if (!endpoint) {
