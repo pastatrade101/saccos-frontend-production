@@ -389,6 +389,7 @@ const routeMap = {
         comprehensiveIncome: "/tcdc-returns/comprehensive-income",
         liquidAssets: "/tcdc-returns/liquid-assets",
         capitalAdequacy: "/tcdc-returns/capital-adequacy",
+        sectorClassification: "/tcdc-returns/loan-sectors",
         loanSectorClassification: "/tcdc-returns/loan-sectors/classification",
         setLoanSector: (loanId: string) => `/tcdc-returns/loan-sectors/${loanId}`
     },
@@ -770,6 +771,7 @@ export const endpoints = {
         comprehensiveIncome: () => routeMap.tcdcReturns.comprehensiveIncome,
         liquidAssets: () => routeMap.tcdcReturns.liquidAssets,
         capitalAdequacy: () => routeMap.tcdcReturns.capitalAdequacy,
+        sectorClassification: () => routeMap.tcdcReturns.sectorClassification,
         loanSectorClassification: () => routeMap.tcdcReturns.loanSectorClassification,
         setLoanSector: (loanId: string) => routeMap.tcdcReturns.setLoanSector(loanId)
     },

@@ -41,6 +41,9 @@ interface TcdcLine {
     unit?: "percent";
     minimum?: number;
     meets_minimum?: boolean;
+    /// Matrix returns answer one row as many figures at once, keyed by the
+    /// field names the form definition's `valueFields` names.
+    cells?: Record<string, number>;
     source: string;
 }
 
@@ -50,7 +53,8 @@ const ENDPOINT_BY_SLUG: Record<string, string> = {
     "financial-position": endpoints.tcdcReturns.financialPosition(),
     "comprehensive-income": endpoints.tcdcReturns.comprehensiveIncome(),
     "liquid-assets": endpoints.tcdcReturns.liquidAssets(),
-    "capital-adequacy": endpoints.tcdcReturns.capitalAdequacy()
+    "capital-adequacy": endpoints.tcdcReturns.capitalAdequacy(),
+    "loan-sectors": endpoints.tcdcReturns.sectorClassification()
 };
 
 interface TcdcValidation {
@@ -71,6 +75,9 @@ interface TcdcReconciliation {
 
 interface TcdcProvisioning {
     required: number;
+    /// What the ladder would demand without the compulsory-savings deduction.
+    before_savings?: number;
+    savings_cover?: number;
     booked: number;
     shortfall: number;
     npl_ratio: number;
@@ -328,8 +335,13 @@ function ProvisioningBanner({ provisioning }: { provisioning: TcdcProvisioning }
                 the ledger — but <strong>{formatCurrency(provisioning.shortfall)}</strong> is an accounting entry
                 waiting to be made, and it reduces institutional capital on MSP3_09 once it is.
             </Typography>
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="caption" color="text.secondary" display="block">
                 Non-performing loans are {provisioning.npl_ratio}% of the book.
+                {provisioning.savings_cover ? (
+                    <> The members' own savings cover {formatCurrency(provisioning.savings_cover)} of the
+                    book, which MSP3_03 deducts before the ladder applies — without it the requirement
+                    would be {formatCurrency(provisioning.before_savings ?? 0)}.</>
+                ) : null}
             </Typography>
         </Alert>
     );
@@ -417,12 +429,20 @@ function FormSheet({
     const labelHeading = definition.shape === "sector-matrix" ? "Sector" : "Particulars";
     const rows: { key: string; sno: string; label: string; kind: string }[] =
         definition.shape === "sector-matrix"
-            ? TCDC_SECTORS.map((sector, index) => ({
-                key: sector,
-                sno: String(index + 1),
-                label: sector,
-                kind: "input"
-            }))
+            ? [
+                ...TCDC_SECTORS.map((sector, index) => ({
+                    key: sector,
+                    sno: String(index + 1),
+                    label: sector,
+                    kind: "input"
+                })),
+                ...(definition.totalRows ?? []).map((row) => ({
+                    key: `total-${row.sno}`,
+                    sno: row.sno,
+                    label: row.label,
+                    kind: row.kind
+                }))
+            ]
             : (definition.rows ?? []).map((row, index) => ({
                 key: `${row.sno}-${index}`,
                 sno: row.sno,
@@ -490,9 +510,13 @@ function FormSheet({
                                 {valueColumns.map((column, columnIndex) => {
                                     const value = byRow.get(row.sno);
                                     const field = definition.valueFields?.[columnIndex] ?? "amount";
-                                    const figure = value
-                                        ? (field === "year_to_date" ? value.year_to_date : value.amount)
-                                        : undefined;
+                                    const figure = !value
+                                        ? undefined
+                                        : value.cells
+                                            ? value.cells[field]
+                                            : field === "year_to_date"
+                                                ? value.year_to_date
+                                                : value.amount;
                                     // An unmapped line is a real zero the books cannot
                                     // produce, not a figure still loading. Dimming it
                                     // and naming the reason on hover keeps the two

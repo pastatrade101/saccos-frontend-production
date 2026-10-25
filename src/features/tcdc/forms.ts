@@ -27,6 +27,9 @@ export interface TcdcFormDef {
     code: string;
     slug: string;
     title: string;
+    /// Rows a matrix form carries below its sector list: the Commission's own
+    /// totals and provisioning block, labelled as its workbook labels them.
+    totalRows?: TcdcRow[];
     /// Which field of a returned line each column in `columns` reads. Defaults
     /// to a single "amount" column. MSP3_02 is the reason this exists: the
     /// Commission wants the period and the year to date side by side.
@@ -247,6 +250,16 @@ export const TCDC_FORMS: TcdcFormDef[] = [
             "Doubtful",
             "Loss",
             "Write-offs during the quarter"
+        ],
+        valueFields: ["borrowers", "total", "current", "esm", "substandard", "doubtful", "loss", "writeoffs"],
+        totalRows: [
+            { sno: "20", kind: "computed", label: "Total (a)" },
+            { sno: "21", kind: "input", label: "Less Compulsory Savings and deposits" },
+            { sno: "22", kind: "computed", label: "Net loans (b)" },
+            { sno: "23", kind: "input", label: "Provision Rate" },
+            { sno: "24", kind: "computed", label: "Provision Amount (d)" },
+            { sno: "25", kind: "computed", label: "TOTAL (Net Amount) (b - d)" },
+            { sno: "26", kind: "computed", label: "Ratio of Non-Performing Loans to Gross Loans" }
         ],
         validations: ["D20=MSP3_01(C01+C02+C03+C04)"],
         notes: [
