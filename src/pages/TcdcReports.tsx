@@ -36,11 +36,26 @@ interface TcdcLine {
     amount: number;
     /// Present on returns the Commission wants two columns for.
     year_to_date?: number;
+    /// Ratio rows carry their regulatory floor with them, so a reader does not
+    /// have to remember which minimum applies to which line.
+    unit?: "percent";
+    minimum?: number;
+    meets_minimum?: boolean;
     source: string;
 }
 
+/// Which returns are wired to the ledger. A slug absent here renders its sheet
+/// unfilled rather than failing — the eleven are being connected one at a time.
+const ENDPOINT_BY_SLUG: Record<string, string> = {
+    "financial-position": endpoints.tcdcReturns.financialPosition(),
+    "comprehensive-income": endpoints.tcdcReturns.comprehensiveIncome(),
+    "liquid-assets": endpoints.tcdcReturns.liquidAssets(),
+    "capital-adequacy": endpoints.tcdcReturns.capitalAdequacy()
+};
+
 interface TcdcValidation {
     rule: string;
+    unit?: "percent";
     left: number;
     right: number;
     difference: number;
@@ -101,11 +116,7 @@ export function TcdcReportsPage() {
     const [periodBasis, setPeriodBasis] = useState<"month" | "quarter">("month");
 
     // Returns wired to the ledger so far. The rest render their sheet unfilled.
-    const endpoint = definition?.slug === "financial-position"
-        ? endpoints.tcdcReturns.financialPosition()
-        : definition?.slug === "comprehensive-income"
-            ? endpoints.tcdcReturns.comprehensiveIncome()
-            : null;
+    const endpoint = ENDPOINT_BY_SLUG[definition?.slug ?? ""] ?? null;
     const usesPeriod = definition?.slug === "comprehensive-income";
 
     const load = useCallback(async () => {
@@ -265,11 +276,20 @@ const PENDING = "—";
 /// fails one is rejected, so the result belongs at the top of the page rather
 /// than in a footnote.
 function ValidationBanner({ validations }: { validations: TcdcValidation[] }) {
+    const show = (check: TcdcValidation, value: number) =>
+        check.unit === "percent" ? `${value.toFixed(2)}%` : formatCurrency(value);
+
     const failed = validations.filter((check) => !check.ok);
     if (!failed.length) {
         return (
             <Alert severity="success" icon={<CheckCircleRoundedIcon fontSize="inherit" />}>
-                {validations.map((check) => check.rule).join(", ")} — balanced at {formatCurrency(validations[0].left)}.
+                <Stack spacing={0.25}>
+                    {validations.map((check) => (
+                        <Typography key={check.rule} variant="body2">
+                            <strong>{check.rule}</strong> — {show(check, check.left)}.
+                        </Typography>
+                    ))}
+                </Stack>
             </Alert>
         );
     }
@@ -278,8 +298,8 @@ function ValidationBanner({ validations }: { validations: TcdcValidation[] }) {
             <Stack spacing={0.25}>
                 {failed.map((check) => (
                     <Typography key={check.rule} variant="body2">
-                        <strong>{check.rule}</strong> does not hold: {formatCurrency(check.left)} against{" "}
-                        {formatCurrency(check.right)}, out by {formatCurrency(check.difference)}.
+                        <strong>{check.rule}</strong> — {show(check, check.left)} against{" "}
+                        {show(check, check.right)}, short by {show(check, Math.abs(check.difference))}.
                     </Typography>
                 ))}
             </Stack>
@@ -491,7 +511,28 @@ function FormSheet({
                                         >
                                             {isSection ? "" : value && figure !== undefined ? (
                                                 <Tooltip title={value.source} placement="left" arrow>
-                                                    <span>{formatCurrency(figure)}</span>
+                                                    <span>
+                                                        {value.unit === "percent" ? (
+                                                            // A ratio is only meaningful beside its floor, and
+                                                            // whether it clears it is the whole point of the row.
+                                                            <>
+                                                                <Box
+                                                                    component="span"
+                                                                    sx={{
+                                                                        fontWeight: 700,
+                                                                        color: value.meets_minimum ? "success.main" : "error.main"
+                                                                    }}
+                                                                >
+                                                                    {figure.toFixed(2)}%
+                                                                </Box>
+                                                                {value.minimum !== undefined ? (
+                                                                    <Typography component="span" variant="caption" color="text.secondary">
+                                                                        {" "}/ {value.minimum}%
+                                                                    </Typography>
+                                                                ) : null}
+                                                            </>
+                                                        ) : formatCurrency(figure)}
+                                                    </span>
                                                 </Tooltip>
                                             ) : loading ? "…" : PENDING}
                                         </TableCell>
