@@ -29,7 +29,7 @@ import { useToast } from "../components/Toast";
 import { api, getApiErrorMessage } from "../lib/api";
 import { endpoints } from "../lib/endpoints";
 import { MotionCard } from "../ui/motion";
-import { formatCurrency } from "../utils/format";
+import { formatCurrency, formatDate } from "../utils/format";
 
 /// One line of a return as the backend answers it, keyed by the Commission's
 /// own row number. `source` names where the figure came from, which is what
@@ -53,6 +53,21 @@ interface TcdcLine {
     source: string;
 }
 
+interface InsiderLoanRow {
+    loan_id: string;
+    loan_number: string;
+    member_no: string | null;
+    full_name: string | null;
+    position: string | null;
+    related_to: string | null;
+    loan_type: string;
+    borrowed_amount: number;
+    expiry_date: string | null;
+    interest_rate: number;
+    amount_outstanding: number;
+    secured_by_savings: number;
+}
+
 /// Which returns are wired to the ledger. A slug absent here renders its sheet
 /// unfilled rather than failing — the eleven are being connected one at a time.
 const ENDPOINT_BY_SLUG: Record<string, string> = {
@@ -64,7 +79,8 @@ const ENDPOINT_BY_SLUG: Record<string, string> = {
     "loan-interest-rates": endpoints.tcdcReturns.interestRateStructure(),
     "loans-disbursed": endpoints.tcdcReturns.loansDisbursed(),
     "geography": endpoints.tcdcReturns.geography(),
-    "bank-exposures": endpoints.tcdcReturns.bankExposures()
+    "bank-exposures": endpoints.tcdcReturns.bankExposures(),
+    "insider-loans": endpoints.tcdcReturns.insiderLoans()
 };
 
 interface TcdcValidation {
@@ -111,6 +127,10 @@ interface TcdcReturn {
     /// rather than as numbered rows.
     sections?: BankExposureSection[];
     net_exposures?: { net_loan_exposure: number; net_deposit_exposure: number };
+    /// MSP3_06 answers as a named register — the Commission reads it to see
+    /// who received what, so it is never aggregated.
+    rows?: InsiderLoanRow[];
+    totals?: { borrowed: number; outstanding: number; secured_by_savings: number };
     /// GL accounts that moved in the period but feed no row of the return.
     /// Always empty on a correct mapping — a non-empty list means income the
     /// SACCO earned would be missing from the filing.
@@ -312,7 +332,9 @@ export function TcdcReportsPage() {
 
             <MotionCard variant="outlined" inView>
                 <CardContent>
-                    {data?.sections ? (
+                    {data?.rows ? (
+                        <InsiderRegister rows={data.rows} totals={data.totals} />
+                    ) : data?.sections ? (
                         <>
                             <BankExposureRegister
                                 sections={data.sections}
@@ -741,6 +763,91 @@ function FormSheet({
                 </TableBody>
             </Table>
             <Divider sx={{ mt: 1 }} />
+        </TableContainer>
+    );
+}
+
+/// MSP3_06's register. Named rows, never a total standing in for them: the
+/// Commission reads this to see whether the people who approve lending are
+/// also receiving it, and an aggregate would hide the one thing it asks.
+function InsiderRegister({
+    rows,
+    totals
+}: {
+    rows: InsiderLoanRow[];
+    totals?: { borrowed: number; outstanding: number; secured_by_savings: number };
+}) {
+    if (!rows.length) {
+        return (
+            <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: "center" }}>
+                No loans to insiders or related parties.
+            </Typography>
+        );
+    }
+
+    return (
+        <TableContainer sx={{ overflowX: "auto" }}>
+            <Table size="small">
+                <TableHead>
+                    <TableRow>
+                        <TableCell>Name of Borrower</TableCell>
+                        <TableCell>Position</TableCell>
+                        <TableCell>Type of Loan</TableCell>
+                        <TableCell align="right">Borrowed Amount (TZS)</TableCell>
+                        <TableCell>Expiry Date</TableCell>
+                        <TableCell align="right">Interest Rate (% p.a.)</TableCell>
+                        <TableCell align="right">Amount Outstanding (TZS)</TableCell>
+                        <TableCell align="right">Secured by Savings and Shares (TZS)</TableCell>
+                    </TableRow>
+                </TableHead>
+                <TableBody>
+                    {rows.map((row) => (
+                        <TableRow key={row.loan_id} hover>
+                            <TableCell>
+                                <Typography variant="body2">{row.full_name || "—"}</Typography>
+                                <Typography variant="caption" color="text.secondary">{row.member_no || "—"}</Typography>
+                            </TableCell>
+                            <TableCell>
+                                {row.position}
+                                {row.related_to ? (
+                                    <Typography variant="caption" color="text.secondary" display="block">
+                                        of {row.related_to}
+                                    </Typography>
+                                ) : null}
+                            </TableCell>
+                            <TableCell>{row.loan_type}</TableCell>
+                            <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums" }}>
+                                {formatCurrency(row.borrowed_amount)}
+                            </TableCell>
+                            <TableCell>{row.expiry_date ? formatDate(row.expiry_date) : "—"}</TableCell>
+                            <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums" }}>
+                                {row.interest_rate.toFixed(2)}%
+                            </TableCell>
+                            <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>
+                                {formatCurrency(row.amount_outstanding)}
+                            </TableCell>
+                            <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums" }}>
+                                {formatCurrency(row.secured_by_savings)}
+                            </TableCell>
+                        </TableRow>
+                    ))}
+                    {totals ? (
+                        <TableRow>
+                            <TableCell colSpan={3} sx={{ fontWeight: 700 }}>Total</TableCell>
+                            <TableCell align="right" sx={{ fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                                {formatCurrency(totals.borrowed)}
+                            </TableCell>
+                            <TableCell colSpan={2} />
+                            <TableCell align="right" sx={{ fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                                {formatCurrency(totals.outstanding)}
+                            </TableCell>
+                            <TableCell align="right" sx={{ fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                                {formatCurrency(totals.secured_by_savings)}
+                            </TableCell>
+                        </TableRow>
+                    ) : null}
+                </TableBody>
+            </Table>
         </TableContainer>
     );
 }

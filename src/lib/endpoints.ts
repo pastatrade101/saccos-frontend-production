@@ -394,6 +394,9 @@ const routeMap = {
         loansDisbursed: "/tcdc-returns/loans-disbursed",
         geography: "/tcdc-returns/geography",
         bankExposures: "/tcdc-returns/bank-exposures",
+        insiderLoans: "/tcdc-returns/insider-loans",
+        insiders: "/tcdc-returns/insiders",
+        setInsider: (memberId: string) => `/tcdc-returns/insiders/${memberId}`,
         deleteBankBalance: (id: string) => `/tcdc-returns/bank-exposures/${id}`,
         loanSectorClassification: "/tcdc-returns/loan-sectors/classification",
         setLoanSector: (loanId: string) => `/tcdc-returns/loan-sectors/${loanId}`
@@ -781,6 +784,9 @@ export const endpoints = {
         loansDisbursed: () => routeMap.tcdcReturns.loansDisbursed,
         geography: () => routeMap.tcdcReturns.geography,
         bankExposures: () => routeMap.tcdcReturns.bankExposures,
+        insiderLoans: () => routeMap.tcdcReturns.insiderLoans,
+        insiders: () => routeMap.tcdcReturns.insiders,
+        setInsider: (memberId: string) => routeMap.tcdcReturns.setInsider(memberId),
         deleteBankBalance: (id: string) => routeMap.tcdcReturns.deleteBankBalance(id),
         loanSectorClassification: () => routeMap.tcdcReturns.loanSectorClassification,
         setLoanSector: (loanId: string) => routeMap.tcdcReturns.setLoanSector(loanId)

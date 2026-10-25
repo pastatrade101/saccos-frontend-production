@@ -54,6 +54,7 @@ const AgmRegisterPage = lazy(() => import("./pages/AgmRegister").then((m) => ({ 
 const AllReportsPage = lazy(() => import("./pages/AllReports").then((m) => ({ default: m.AllReportsPage })));
 const TcdcReportsPage = lazy(() => import("./pages/TcdcReports").then((m) => ({ default: m.TcdcReportsPage })));
 const TcdcLoanSectorsPage = lazy(() => import("./pages/TcdcLoanSectors").then((m) => ({ default: m.TcdcLoanSectorsPage })));
+const TcdcInsidersPage = lazy(() => import("./pages/TcdcInsiders").then((m) => ({ default: m.TcdcInsidersPage })));
 const TreasuryPage = lazy(() => import("./pages/Treasury").then((m) => ({ default: m.TreasuryPage })));
 const TreasuryPolicySettingsPage = lazy(() => import("./pages/TreasuryPolicySettings").then((m) => ({ default: m.TreasuryPolicySettingsPage })));
 const MemberPortalPage = lazy(() => import("./pages/MemberPortal").then((m) => ({ default: m.MemberPortalPage })));
@@ -286,6 +287,7 @@ export default function App() {
                             {/* The eleven TCDC Tier 3 returns, one route serving all of
                                 them from features/tcdc/forms.ts. */}
                             <Route path="/tcdc-returns/classify-sectors" element={<TcdcLoanSectorsPage />} />
+                            <Route path="/tcdc-returns/mark-insiders" element={<TcdcInsidersPage />} />
                             <Route path="/tcdc-returns/:form" element={<TcdcReportsPage />} />
                         </Route>
                         <Route
