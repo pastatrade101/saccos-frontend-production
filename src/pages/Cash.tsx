@@ -1086,6 +1086,12 @@ export function CashPage() {
                     allocation: action.values.allocation || "auto",
                     reference: action.values.reference || null,
                     description: action.values.description || "Counter loan repayment",
+                    // A repayment taken at the counter and keyed days later lands in
+                    // the wrong month. With interest charged at month start that moves
+                    // interest income, not merely a date, so it has to be settable here
+                    // exactly as it already is on the Loans page. Same guard either way:
+                    // teller/BM/SA, seven days, never into a closed period.
+                    value_date: (canBackdate && action.values.value_date) ? action.values.value_date : undefined,
                     receipt_ids: receiptIds
                 };
                 const response = await api.post<CashResponse>(endpoints.finance.loanRepay(), loanPayload);
@@ -2516,7 +2522,7 @@ export function CashPage() {
                                 sx={{ "& .MuiInputBase-input": { fontSize: "1.5rem", fontWeight: 700, py: 1.2 } }}
                             />
 
-                            {canBackdate && (actionDialog !== "deposit" || depositKind === "savings_deposit") ? (
+                            {canBackdate && (actionDialog !== "deposit" || depositKind === "savings_deposit" || depositKind === "loan_repayment") ? (
                                 <TextField
                                     label="Value date (optional backdate)"
                                     type="date"
@@ -2524,7 +2530,7 @@ export function CashPage() {
                                     InputLabelProps={{ shrink: true }}
                                     inputProps={{ min: backdateMinDate, max: todayDate }}
                                     {...currentForm.register("value_date")}
-                                    helperText="Backdate up to 7 days for a deposit received on a past date. Leave blank for today — the audit log always keeps the real entry time."
+                                    helperText="Backdate up to 7 days for money received on a past date. Leave blank for today — the audit log always keeps the real entry time."
                                 />
                             ) : null}
 
