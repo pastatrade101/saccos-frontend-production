@@ -1797,6 +1797,26 @@ export interface ReverseLoanRepaymentResult {
     accrued_interest: number;
 }
 
+// A redate restates the loan, so the result carries the balance on both sides
+// of the move and the delta between them. The caller shows that delta: a date
+// change the member will see on their statement is not worth confirming blind.
+export interface CorrectLoanTransactionDateResult {
+    success: boolean;
+    message: string;
+    transaction_id: string;
+    loan_id: string;
+    amount: number;
+    previous_date: string;
+    value_date: string;
+    correction_moved: boolean;
+    loan_reopened: boolean;
+    loan_status: string;
+    before: { outstanding_principal: number; accrued_interest: number };
+    after: { outstanding_principal: number; accrued_interest: number };
+    delta: { principal: number; accrued_interest: number; interest_income: number };
+    adjustment_journal_id: string | null;
+}
+
 // Rows fetched with include_context=true carry the borrower and loan number
 // joined in, so a tenant-wide listing can name every row without holding the
 // whole portfolio and member roster in memory.

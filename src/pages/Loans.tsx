@@ -7,6 +7,7 @@ import PaymentsRoundedIcon from "@mui/icons-material/PaymentsRounded";
 import PendingActionsRoundedIcon from "@mui/icons-material/PendingActionsRounded";
 import PlaylistAddCheckRoundedIcon from "@mui/icons-material/PlaylistAddCheckRounded";
 import HistoryEduRoundedIcon from "@mui/icons-material/HistoryEduRounded";
+import EventRepeatRoundedIcon from "@mui/icons-material/EventRepeatRounded";
 import UndoRoundedIcon from "@mui/icons-material/UndoRounded";
 import PersonAddAltRoundedIcon from "@mui/icons-material/PersonAddAltRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
@@ -78,7 +79,7 @@ import {
     type MergeLoansResponse,
     type MergeLoansResult
 } from "../lib/endpoints";
-import type { ApiEnvelope, FinanceResult, Loan, LoanApplication, LoanCapacitySummary, LoanDisbursementOrder, LoanGuarantor, LoanProduct, LoanSchedule, LoanTransaction, LoanTransactionWithContext, Member, ReverseLoanRepaymentResult } from "../types/api";
+import type { ApiEnvelope, FinanceResult, Loan, LoanApplication, LoanCapacitySummary, LoanDisbursementOrder, LoanGuarantor, LoanProduct, LoanSchedule, LoanTransaction, LoanTransactionWithContext, Member, ReverseLoanRepaymentResult, CorrectLoanTransactionDateResult } from "../types/api";
 import { MotionCard, MotionModal } from "../ui/motion";
 import { crestGold } from "../theme/colors";
 import { downloadFile } from "../utils/downloadFile";
@@ -778,6 +779,10 @@ export function LoansPage() {
     const [reversalTarget, setReversalTarget] = useState<LoanPaymentRow | null>(null);
     const [reversalReason, setReversalReason] = useState("");
     const [reversing, setReversing] = useState(false);
+    const [redateTarget, setRedateTarget] = useState<LoanPaymentRow | null>(null);
+    const [redateDate, setRedateDate] = useState("");
+    const [redateReason, setRedateReason] = useState("");
+    const [redating, setRedating] = useState(false);
     // Each fetch stamps a sequence number so a slow reply for an abandoned
     // range cannot overwrite the range the user is now looking at.
     const paymentsRequestRef = useRef(0);
@@ -2055,6 +2060,60 @@ export function LoansPage() {
     const openReversalDialog = (row: LoanPaymentRow) => {
         setReversalTarget(row);
         setReversalReason("");
+    };
+
+    const openRedateDialog = (row: LoanPaymentRow) => {
+        setRedateTarget(row);
+        setRedateDate(String(row.transaction.value_date || row.transaction.created_at).slice(0, 10));
+        setRedateReason("");
+    };
+
+    const submitPaymentRedate = async () => {
+        if (!redateTarget || redateReason.trim().length < 3 || !redateDate) {
+            return;
+        }
+
+        setRedating(true);
+        try {
+            const { data } = await api.post<ApiEnvelope<CorrectLoanTransactionDateResult>>(
+                endpoints.finance.correctLoanTransactionDate(redateTarget.transaction.id),
+                { tenant_id: selectedTenantId || undefined, value_date: redateDate, reason: redateReason.trim() }
+            );
+            const result = data.data;
+            // A move inside one interest period changes nothing but the label,
+            // and saying "the balance was restated" when it was not would teach
+            // the manager to distrust the message when it matters.
+            const owedShift = (result?.delta?.principal || 0) + (result?.delta?.accrued_interest || 0);
+
+            pushToast({
+                type: "success",
+                title: "Date corrected",
+                message: `Payment moved to ${formatDate(redateDate)}.`
+                    + (owedShift === 0
+                        ? " The balance is unchanged — the move stayed inside one interest period."
+                        : ` The loan was restated by ${formatCurrency(Math.abs(owedShift))}${owedShift < 0 ? " less" : " more"} owed.`)
+            });
+
+            setRedateTarget(null);
+            setRedateReason("");
+            // Same blast radius as a reversal: balance, status and schedules.
+            setPaymentsRefreshToken((token) => token + 1);
+            await loadWorkspace();
+            if (activityLoaded) {
+                await loadActivityData({ silent: true, force: true });
+            }
+            if (creditRiskLoaded) {
+                await loadCreditRiskData({ silent: true, force: true });
+            }
+        } catch (error) {
+            pushToast({
+                type: "error",
+                title: "Unable to correct the date",
+                message: getApiErrorMessage(error)
+            });
+        } finally {
+            setRedating(false);
+        }
     };
 
     const submitPaymentReversal = async () => {
@@ -3507,17 +3566,31 @@ export function LoansPage() {
                     );
                 }
 
+                // Date first, reverse second: correcting a date is the common
+                // case and the recoverable one, and putting the destructive
+                // action first invites it to be reached for by habit.
                 return (
-                    <Button
-                        size="small"
-                        variant="outlined"
-                        color="error"
-                        startIcon={<UndoRoundedIcon fontSize="small" />}
-                        onClick={() => openReversalDialog(row)}
-                        sx={{ textTransform: "none", whiteSpace: "nowrap" }}
-                    >
-                        Reverse
-                    </Button>
+                    <Stack direction="row" spacing={1} justifyContent="flex-end">
+                        <Button
+                            size="small"
+                            variant="outlined"
+                            startIcon={<EventRepeatRoundedIcon fontSize="small" />}
+                            onClick={() => openRedateDialog(row)}
+                            sx={{ textTransform: "none", whiteSpace: "nowrap" }}
+                        >
+                            Date
+                        </Button>
+                        <Button
+                            size="small"
+                            variant="outlined"
+                            color="error"
+                            startIcon={<UndoRoundedIcon fontSize="small" />}
+                            onClick={() => openReversalDialog(row)}
+                            sx={{ textTransform: "none", whiteSpace: "nowrap" }}
+                        >
+                            Reverse
+                        </Button>
+                    </Stack>
                 );
             }
         }
@@ -6415,6 +6488,89 @@ export function LoansPage() {
                         disabled={reversing || reversalReason.trim().length < 3}
                     >
                         {reversing ? "Reversing..." : "Reverse Payment"}
+                    </Button>
+                </DialogActions>
+            </MotionModal>
+
+            <MotionModal
+                open={Boolean(redateTarget)}
+                onClose={() => !redating && setRedateTarget(null)}
+                maxWidth="xs"
+                fullWidth
+            >
+                <DialogTitle>Correct the payment date</DialogTitle>
+                <DialogContent dividers>
+                    <Stack spacing={2}>
+                        {redateTarget ? (
+                            <Stack spacing={0.75}>
+                                <Stack direction="row" justifyContent="space-between" spacing={2}>
+                                    <Typography variant="body2" color="text.secondary">Member</Typography>
+                                    <Typography variant="body2">{redateTarget.transaction.member_name || "Unknown member"}</Typography>
+                                </Stack>
+                                <Stack direction="row" justifyContent="space-between" spacing={2}>
+                                    <Typography variant="body2" color="text.secondary">Loan</Typography>
+                                    <Typography variant="body2">{redateTarget.transaction.loan_number || "Unknown loan"}</Typography>
+                                </Stack>
+                                <Stack direction="row" justifyContent="space-between" spacing={2}>
+                                    <Typography variant="body2" color="text.secondary">Amount</Typography>
+                                    <Typography variant="body2" sx={{ fontWeight: 700 }}>{formatCurrency(redateTarget.transaction.amount)}</Typography>
+                                </Stack>
+                                <Stack direction="row" justifyContent="space-between" spacing={2}>
+                                    <Typography variant="body2" color="text.secondary">Currently dated</Typography>
+                                    <Typography variant="body2">{formatDate(redateTarget.transaction.value_date || redateTarget.transaction.created_at)}</Typography>
+                                </Stack>
+                            </Stack>
+                        ) : null}
+
+                        {/* Not a warning dressed as one: moving a payment across a
+                            month end genuinely changes what the member owes,
+                            because interest is charged when the month starts. */}
+                        <Alert severity="info" variant="outlined" sx={darkAccentInfoAlertSx}>
+                            Moving the payment into another interest period restates the loan — the
+                            interest and principal split is recalculated and the ledger follows it.
+                            The amount received never changes.
+                        </Alert>
+
+                        <TextField
+                            label="Date received"
+                            type="date"
+                            value={redateDate}
+                            onChange={(event) => setRedateDate(event.target.value)}
+                            fullWidth
+                            required
+                            disabled={redating}
+                            InputLabelProps={{ shrink: true }}
+                            inputProps={{ max: new Date().toISOString().slice(0, 10) }}
+                            helperText="The day the money actually arrived, as the bank statement shows it."
+                        />
+
+                        <TextField
+                            label="Reason"
+                            value={redateReason}
+                            onChange={(event) => setRedateReason(event.target.value)}
+                            multiline
+                            minRows={2}
+                            fullWidth
+                            required
+                            disabled={redating}
+                            placeholder="e.g. Seen on the bank statement after it was keyed"
+                            helperText="Recorded on the correction and in the audit trail. At least 3 characters."
+                        />
+                    </Stack>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setRedateTarget(null)} disabled={redating}>Cancel</Button>
+                    <Button
+                        variant="contained"
+                        onClick={() => void submitPaymentRedate()}
+                        disabled={
+                            redating
+                            || redateReason.trim().length < 3
+                            || !redateDate
+                            || redateDate === String(redateTarget?.transaction.value_date || redateTarget?.transaction.created_at || "").slice(0, 10)
+                        }
+                    >
+                        {redating ? "Correcting..." : "Correct Date"}
                     </Button>
                 </DialogActions>
             </MotionModal>

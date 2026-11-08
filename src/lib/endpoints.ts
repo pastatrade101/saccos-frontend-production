@@ -645,6 +645,7 @@ export const endpoints = {
         correctLoanInterest: (transactionId: string) => `/loan/transactions/${transactionId}/correct-interest`,
         reverseLoanRepayment: (transactionId: string) => `/loan/transactions/${transactionId}/reverse`,
         correctTransactionDate: (transactionId: string) => `/transactions/${transactionId}/value-date`,
+        correctLoanTransactionDate: (transactionId: string) => `/loan/transactions/${transactionId}/value-date`,
         nplReclassStatus: () => routeMap.finance.nplReclassStatus,
         nplReclassRun: () => routeMap.finance.nplReclassRun
     },
