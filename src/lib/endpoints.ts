@@ -240,6 +240,7 @@ const routeMap = {
         withdraw: "/withdraw",
         shareContribution: "/share-contribution",
         savingsToShares: "/savings-to-shares",
+        sharesToSavings: "/shares-to-savings",
         dividendAllocation: "/dividend-allocation",
         loanPortfolio: "/loan/portfolio",
         loanSchedules: "/loan/schedules",
@@ -626,6 +627,7 @@ export const endpoints = {
         savingsToShares: () => routeMap.finance.savingsToShares,
         savingsToSharesPlan: () => `${routeMap.finance.savingsToShares}/plan`,
         savingsToSharesBulk: () => `${routeMap.finance.savingsToShares}/bulk`,
+        sharesToSavings: () => routeMap.finance.sharesToSavings,
         dividendAllocation: () => routeMap.finance.dividendAllocation,
         loanPortfolio: () => routeMap.finance.loanPortfolio,
         loanSchedules: () => routeMap.finance.loanSchedules,
@@ -1740,6 +1742,27 @@ export interface SavingsToSharesRun {
 }
 
 export type SavingsToSharesRunResponse = ApiEnvelope<SavingsToSharesRun>;
+
+/**
+ * One share-capital release: share account down, savings up, same member.
+ *
+ * `share_capital_required` is what the member was required to hold, priced at
+ * their join date and read at the moment of posting. Null means the share price
+ * history could not be read -- the posting still happened, so the figure is
+ * optional rather than the call failing over it.
+ */
+export interface SharesToSavingsResult {
+    journal_id: string | null;
+    member_id: string;
+    member_no: string;
+    member_name: string;
+    amount: number;
+    savings_balance: number;
+    share_balance: number;
+    share_capital_required: number | null;
+}
+
+export type SharesToSavingsResponse = ApiEnvelope<SharesToSavingsResult>;
 
 export interface SetShareCapitalCountsAsSavingsRequest {
     tenant_id?: string;

@@ -26,7 +26,8 @@ import {
     type SavingsToSharesPlan,
     type SavingsToSharesPlanResponse,
     type SavingsToSharesRow,
-    type SavingsToSharesRunResponse
+    type SavingsToSharesRunResponse,
+    type SharesToSavingsResponse
 } from "../lib/endpoints";
 import { MotionCard } from "../ui/motion";
 import { formatCurrency } from "../utils/format";
@@ -60,6 +61,12 @@ export function ShareCapitalTransferPage() {
     // they still owe share capital.
     const [oneMember, setOneMember] = useState<SavingsToSharesRow | null>(null);
     const [oneAmount, setOneAmount] = useState("");
+    // The reverse movement: share capital back out into savings. Separate state
+    // from the forward form on purpose — these are opposite postings and a
+    // shared amount field would let a mis-click send the figure the wrong way.
+    const [backMember, setBackMember] = useState<SavingsToSharesRow | null>(null);
+    const [backAmount, setBackAmount] = useState("");
+    const [backReason, setBackReason] = useState("");
 
     const canPost = profile?.role === "super_admin";
 
@@ -148,6 +155,46 @@ export function ShareCapitalTransferPage() {
         }
     };
 
+    /// Posts one member's release: share account down, savings up.
+    ///
+    /// The reason travels with it because the server requires one. It is the
+    /// only thing that will explain a fall in share capital to whoever reads
+    /// the ledger later.
+    const postRelease = async () => {
+        if (!selectedTenantId || !backMember) return;
+
+        setPosting(true);
+        setError(null);
+
+        try {
+            const { data } = await api.post<SharesToSavingsResponse>(endpoints.finance.sharesToSavings(), {
+                tenant_id: selectedTenantId,
+                member_id: backMember.member_id,
+                amount: Number(backAmount),
+                reason: backReason.trim()
+            });
+            const left = data.data.share_capital_required === null
+                ? null
+                : data.data.share_capital_required - data.data.share_balance;
+            pushToast({
+                type: "success",
+                title: "Share capital returned to savings",
+                // The shortfall it created, said out loud. A release that leaves
+                // a member short is allowed here, but it should not be quiet.
+                message: `${data.data.member_name} · ${formatCurrency(data.data.amount)}`
+                    + (left !== null && left > 0 ? ` · now ${formatCurrency(left)} short of the requirement` : "")
+            });
+            setBackMember(null);
+            setBackAmount("");
+            setBackReason("");
+            await loadPlan();
+        } catch (postError) {
+            setError(getApiErrorMessage(postError));
+        } finally {
+            setPosting(false);
+        }
+    };
+
     if (loading) {
         return <AppLoader message="Working out what each member still owes" />;
     }
@@ -170,6 +217,31 @@ export function ShareCapitalTransferPage() {
         if (oneAmountValue > oneAvailable) return `Only ${formatCurrency(oneAvailable)} can be moved.`;
         return null;
     })();
+
+    // Same idea for the reverse form. Nothing is checked against the
+    // requirement: moving a member below it is permitted, so the requirement is
+    // shown rather than enforced.
+    const backAmountValue = Number(backAmount);
+    const backHeld = backMember?.share_balance ?? 0;
+    const backAmountError = (() => {
+        if (!backMember || backAmount.trim() === "") return null;
+        if (!Number.isFinite(backAmountValue) || backAmountValue <= 0) return "Enter an amount above zero.";
+        if (backMember.share_balance === null) return "This member has no active share account.";
+        if (backMember.savings_balance === null) return "This member has no active savings account.";
+        if (backAmountValue > backHeld) return `Only ${formatCurrency(backHeld)} is held in shares.`;
+        return null;
+    })();
+    const backReasonError = backReason.trim() !== "" && backReason.trim().length < 3
+        ? "Give a reason of at least three characters."
+        : null;
+    // What the member would be left short by. Computed for the warning only.
+    const backShortfallAfter = backMember && !backAmountError && backAmountValue > 0
+        ? Math.max(0, backMember.required - (backHeld - backAmountValue))
+        : 0;
+    const backReady = Boolean(
+        canPost && !posting && backMember && backAmountValue > 0
+        && !backAmountError && backReason.trim().length >= 3
+    );
 
     return (
         <Stack spacing={2}>
@@ -301,6 +373,104 @@ export function ShareCapitalTransferPage() {
                                     <Chip size="small" variant="outlined" color="warning" label={`${formatCurrency(oneMember.encumbered)} pledged as guarantee`} />
                                 ) : null}
                             </Stack>
+                        ) : null}
+
+                        {!canPost ? (
+                            <Alert severity="info" variant="outlined" sx={{ py: 0.25 }}>
+                                Only a super admin can post these.
+                            </Alert>
+                        ) : null}
+                    </Stack>
+                </CardContent>
+            </MotionCard>
+
+            <MotionCard variant="outlined" inView>
+                <CardContent>
+                    <Stack spacing={1.5}>
+                        <Stack spacing={0.5}>
+                            <Typography variant="subtitle2">Return share capital to savings</Typography>
+                            <Typography variant="body2" color="text.secondary">
+                                Moves money the other way — out of a member's share account and back into their savings. No cash is involved; the money stays with the member, it only changes account. Use this to undo a transfer posted in error, or to release share capital to a member who is staying on.
+                            </Typography>
+                        </Stack>
+
+                        <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} alignItems={{ md: "flex-start" }}>
+                            <Autocomplete
+                                size="small"
+                                sx={{ minWidth: 260, flexGrow: 1 }}
+                                options={(plan?.rows || []).filter((row) => (row.share_balance ?? 0) > 0)}
+                                value={backMember}
+                                getOptionLabel={(option) => `${option.member_name} (${option.member_no})`}
+                                isOptionEqualToValue={(option, current) => option.member_id === current.member_id}
+                                onChange={(_event, option) => {
+                                    setBackMember(option);
+                                    // No figure is offered. The forward form can
+                                    // suggest the shortfall because there is one
+                                    // right answer; here there is none, and a
+                                    // prefilled amount would get posted.
+                                    setBackAmount("");
+                                    setBackReason("");
+                                }}
+                                renderInput={(params) => (
+                                    <TextField {...params} label="Member" placeholder="Only members holding shares" />
+                                )}
+                            />
+                            <TextField
+                                size="small"
+                                type="number"
+                                label="Amount (TZS)"
+                                value={backAmount}
+                                onChange={(event) => setBackAmount(event.target.value)}
+                                disabled={!backMember || !canPost || posting}
+                                sx={{ maxWidth: { md: 180 } }}
+                                error={Boolean(backAmountError)}
+                                helperText={backAmountError || " "}
+                            />
+                            <TextField
+                                size="small"
+                                label="Reason"
+                                value={backReason}
+                                onChange={(event) => setBackReason(event.target.value)}
+                                disabled={!backMember || !canPost || posting}
+                                sx={{ minWidth: { md: 220 }, flexGrow: 1 }}
+                                error={Boolean(backReasonError)}
+                                helperText={backReasonError || "Required — kept in the audit log"}
+                            />
+                            <Button
+                                variant="outlined"
+                                color="warning"
+                                onClick={postRelease}
+                                disabled={!backReady}
+                                sx={{ mt: { md: 0.1 } }}
+                            >
+                                {posting ? "Posting..." : "Return To Savings"}
+                            </Button>
+                        </Stack>
+
+                        {backMember ? (
+                            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                                <Chip size="small" variant="outlined" label={`In shares ${formatCurrency(backHeld)}`} />
+                                <Chip size="small" variant="outlined" label={`Required ${formatCurrency(backMember.required)}`} />
+                                <Chip size="small" variant="outlined" label={`Savings ${backMember.savings_balance === null ? "—" : formatCurrency(backMember.savings_balance)}`} />
+                                {backAmountValue > 0 && !backAmountError ? (
+                                    <Chip
+                                        size="small"
+                                        variant="outlined"
+                                        color="primary"
+                                        label={`Shares after ${formatCurrency(backHeld - backAmountValue)}`}
+                                    />
+                                ) : null}
+                            </Stack>
+                        ) : null}
+
+                        {backShortfallAfter > 0 ? (
+                            <Alert severity="warning" variant="outlined">
+                                This leaves {backMember?.member_name} {formatCurrency(backShortfallAfter)} short of their
+                                required share capital of {formatCurrency(backMember?.required ?? 0)}. The posting is
+                                allowed and will go through — check it is what your by-laws permit for a member who is
+                                staying on. Their share balance is also what the minimum-shares rule for dividends is
+                                measured against.
+                            </Alert>
                         ) : null}
 
                         {!canPost ? (
