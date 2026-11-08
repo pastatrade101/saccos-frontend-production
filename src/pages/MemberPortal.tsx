@@ -4269,26 +4269,38 @@ export function MemberPortalPage() {
     const shareAccountCapital = accounts
         .filter((account) => account.product_type === "shares")
         .reduce((sum, account) => sum + Number(account.available_balance || 0) + Number(account.locked_balance || 0), 0);
-    const shareCapitalHeldInSavings = shareRequirement?.total_required ?? 0;
-    const totalShareCapital = Math.max(shareAccountCapital, shareCapitalHeldInSavings);
-    // Says where the money is and what it was priced at. Members who joined
-    // before the rise see a smaller figure than the SACCOS now charges, and
-    // without this that reads as their account being wrong.
-    // The "still in savings" sentence is true only until the money is actually
-    // moved across. Once the share account holds it, saying so would be plainly
-    // wrong to a member looking at a share balance that is no longer zero.
-    const shareCapitalStillInSavings = shareCapitalHeldInSavings > shareAccountCapital;
+    // What the SACCOS requires of this member at the price in force when they
+    // joined. A requirement, not a holding -- the distinction this block used
+    // to lose.
+    const shareCapitalRequired = shareRequirement?.total_required ?? 0;
+    // The holding is the share account, full stop. This used to be
+    // Math.max(account, required), on the premise that share capital had been
+    // collected into savings and never posted across, so a zero share account
+    // understated every member. That premise no longer holds: the money was
+    // posted, and 169 of 187 members now carry their full share capital in the
+    // account itself.
+    //
+    // What the max did to the remaining 18 was invent money. A member who had
+    // paid nothing was shown the full requirement as though held; a member
+    // part-way through was shown the target rather than their progress. It also
+    // double-counted into totalHoldings below, because the same shillings were
+    // then claimed as savings and as shares at once -- which is why a member
+    // who had deposited 4.5M read 7.5M.
+    const totalShareCapital = shareAccountCapital;
+    const shareCapitalOutstanding = Math.max(shareCapitalRequired - shareAccountCapital, 0);
+    const shareCapitalFullyPaid = shareCapitalRequired > 0 && shareCapitalOutstanding === 0;
+    // Says what is required and what is left, at the price they are held to.
+    // Members who joined before the rise are held to a smaller figure than the
+    // SACCOS now charges, and without saying so that reads as an error.
     const shareCapitalNote = shareRequirement
         ? `${shareRequirement.required_shares} ${tr("shares at", "hisa kwa")} ${formatCurrency(shareRequirement.price_per_share)}`
+            + ` = ${formatCurrency(shareCapitalRequired)} ${tr("required", "inahitajika")}`
             + `${shareRequirement.is_historic_price
                 ? tr(" — the price when you joined", " — bei ya ulipojiunga")
                 : ""}`
-            + (shareCapitalStillInSavings
-                ? tr(
-                    ". Held inside your savings, not yet moved to your share account.",
-                    ". Zipo ndani ya akiba yako, hazijahamishiwa kwenye akaunti yako ya hisa."
-                )
-                : ".")
+            + (shareCapitalOutstanding > 0
+                ? `. ${formatCurrency(shareCapitalOutstanding)} ${tr("still to pay.", "bado hujalipa.")}`
+                : tr(". Paid in full.", ". Umelipa kamili."))
         : undefined;
     const performanceTargetPosition = useMemo(
         () => calculateMemberPerformanceTarget(memberRecord, accounts, performanceTargetSettings),
@@ -7041,9 +7053,11 @@ export function MemberPortalPage() {
                     helper: shareRequirement
                         ? `${shareRequirement.required_shares} ${tr("shares at", "hisa kwa")} ${formatCurrencyCompact(shareRequirement.price_per_share)}`
                         : tr("Your holding in the SACCOS", "Umiliki wako kwenye SACCOS"),
-                    chip: shareCapitalStillInSavings
-                        ? tr("In savings", "Ipo kwenye akiba")
-                        : tr("Paid up", "Imekamilika"),
+                    chip: shareCapitalFullyPaid
+                        ? tr("Paid up", "Imekamilika")
+                        : totalShareCapital > 0
+                            ? tr("Part paid", "Sehemu imelipwa")
+                            : tr("Not started", "Haijaanza"),
                     tone: "gold"
                 },
                 {
@@ -7110,7 +7124,7 @@ export function MemberPortalPage() {
                         total: formatCurrency(totalSavings),
                         available: formatCurrency(availableSavings),
                         locked: formatCurrency(lockedSavings),
-                        shareCapital: formatCurrency(shareCapitalHeldInSavings),
+                        shareCapital: formatCurrency(totalShareCapital),
                         shareCapitalNote
                     }}
                     loan={{
@@ -7352,12 +7366,14 @@ export function MemberPortalPage() {
 
     const renderAccountsView = () => {
         // The share account's own balance, which is genuinely zero for every
-        // member: share capital was always collected into savings and never
-        // posted across. Kept so the figure can be compared with the holding.
+        // The share account is the holding. It was once zero for every member
+        // because share capital sat in savings, which is why this used to fall
+        // back to the requirement; the money has since been posted, and the
+        // fallback only ever invented a balance for members who had not paid.
         const shareAccountBalance = filteredAccounts
             .filter((account) => account.product_type === "shares")
             .reduce((sum, account) => sum + Number(account.available_balance || 0) + Number(account.locked_balance || 0), 0);
-        const shareCapital = Math.max(shareAccountBalance, shareCapitalHeldInSavings);
+        const shareCapital = shareAccountBalance;
 
         return (
             <AccountsSection
@@ -8444,9 +8460,8 @@ export function MemberPortalPage() {
                             icon={SavingsRoundedIcon}
                             label="Share Capital"
                             value={formatCurrency(totalShareCapital)}
-                            helper={shareRequirement
-                                ? `${shareRequirement.required_shares} ${tr("shares at", "hisa kwa")} ${formatCurrency(shareRequirement.price_per_share)}${shareCapitalStillInSavings ? tr(", held inside your savings.", ", zipo ndani ya akiba yako.") : "."}`
-                                : tr("Current visible share capital balance.", "Salio la mtaji wa hisa linaloonekana sasa.")}
+                            helper={shareCapitalNote
+                                || tr("Current visible share capital balance.", "Salio la mtaji wa hisa linaloonekana sasa.")}
                             tone="warning"
                         />
                     </Grid>
