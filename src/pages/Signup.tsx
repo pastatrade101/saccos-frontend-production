@@ -57,8 +57,11 @@ const SIGNUP_MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const MIN_INITIAL_SHARE_AMOUNT_TZS = 50000;
 const MIN_MONTHLY_SAVINGS_COMMITMENT_TZS = 10000;
 const REFERRER_REQUIRED_MESSAGE = "Chagua mwanachama aliyekuletea. Ni lazima — hakuna maombi yanayopokelewa bila mdhamini.";
-// Common bond per the SACCO by-laws (§5): Ilboru Secondary leavers in this range.
-const ILBORU_MIN_COMPLETION_YEAR = 1980;
+// Ilboru Secondary leavers. The by-laws' common bond (§5) reads 1980-2022, but
+// the SACCOS admits earlier leavers, so the form accepts from 1970. Kept in step
+// with Members.tsx, MemberPortal.tsx and the two backend schemas -- an applicant
+// who can pick 1978 here only to be refused by the server learns nothing useful.
+const ILBORU_MIN_COMPLETION_YEAR = 1970;
 const ILBORU_MAX_COMPLETION_YEAR = 2022;
 const ILBORU_COMPLETION_YEARS = Array.from(
     { length: ILBORU_MAX_COMPLETION_YEAR - ILBORU_MIN_COMPLETION_YEAR + 1 },

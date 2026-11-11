@@ -529,6 +529,25 @@ const optionalText = (min: number, max: number, label: string) =>
     z.string().trim().max(max, `${label} is too long.`).optional().or(z.literal(""))
         .refine((value) => !value || value.trim().length >= min, `${label} must be at least ${min} characters.`);
 
+// Ilboru Secondary leavers. The by-laws' common bond (Fungamano §5) was written
+// as 1980-2022, but the SACCOS admits members who left earlier -- Thomas
+// Katebalirwe (ILS24-M00237) finished in 1978 -- so the lower bound is 1970 and
+// the by-law year is no longer what the form enforces.
+//
+// His record read 1980 before this, and that was never his year: it was the
+// lowest option the dropdown offered, picked because 1978 was not there. A
+// bound that cannot express the truth gets a wrong answer entered, not a blank.
+//
+// The dropdown and the validator both read these, so the list someone can pick
+// from and the range the form will accept cannot drift apart.
+const ILBORU_MIN_COMPLETION_YEAR = 1970;
+const ILBORU_MAX_COMPLETION_YEAR = 2022;
+const ILBORU_COMPLETION_YEARS = Array.from(
+    { length: ILBORU_MAX_COMPLETION_YEAR - ILBORU_MIN_COMPLETION_YEAR + 1 },
+    (_unused, index) => ILBORU_MAX_COMPLETION_YEAR - index
+);
+const ILBORU_YEAR_MESSAGE = `Year must be ${ILBORU_MIN_COMPLETION_YEAR}–${ILBORU_MAX_COMPLETION_YEAR}.`;
+
 const memberProfileCompletionSchema = z.object({
     full_name: z.string().trim().min(3, "Full name is required.").max(120, "Full name is too long."),
     dob: z.string().optional().or(z.literal(""))
@@ -569,7 +588,7 @@ const memberProfileCompletionSchema = z.object({
     next_of_kin_village_id: z.string().uuid().optional().or(z.literal("")),
     next_of_kin_street: optionalText(2, 160, "Next of kin street"),
     // By-law fields so existing members can complete the same data as new applicants.
-    ilboru_completion_year: z.union([z.literal(""), z.coerce.number().int().min(1980, "Year must be 1980–2022.").max(2022, "Year must be 1980–2022.")]).optional(),
+    ilboru_completion_year: z.union([z.literal(""), z.coerce.number().int().min(ILBORU_MIN_COMPLETION_YEAR, ILBORU_YEAR_MESSAGE).max(ILBORU_MAX_COMPLETION_YEAR, ILBORU_YEAR_MESSAGE)]).optional(),
     heir_name: optionalText(3, 120, "Heir name"),
     heir_phone: optionalText(7, 30, "Heir phone"),
     heir_relationship: optionalText(2, 80, "Heir relationship"),
@@ -11564,7 +11583,7 @@ export function MemberPortalPage() {
                                                         helperText={memberProfileCompletionForm.formState.errors.ilboru_completion_year?.message || "Common bond (by-laws §5)."}
                                                     >
                                                         <MenuItem value="">Select year</MenuItem>
-                                                        {Array.from({ length: 2022 - 1980 + 1 }, (_unused, index) => 2022 - index).map((year) => (
+                                                        {ILBORU_COMPLETION_YEARS.map((year) => (
                                                             <MenuItem key={year} value={year}>{year}</MenuItem>
                                                         ))}
                                                     </TextField>
