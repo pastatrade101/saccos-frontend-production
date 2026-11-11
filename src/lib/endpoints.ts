@@ -164,6 +164,8 @@ const routeMap = {
         profileCompletion: "/members/me/profile-completion",
         monthlyCommitment: "/members/me/monthly-commitment",
         bulkDelete: "/members/bulk-delete",
+        dormant: "/members/dormant",
+        bulkStatus: "/members/bulk-status",
         detail: (memberId: string) => `/members/${memberId}`,
         update: (memberId: string) => `/members/${memberId}`,
         delete: (memberId: string) => `/members/${memberId}`,
@@ -548,6 +550,8 @@ export const endpoints = {
         profileCompletion: () => routeMap.members.profileCompletion,
         monthlyCommitment: () => routeMap.members.monthlyCommitment,
         bulkDelete: () => routeMap.members.bulkDelete,
+        dormant: () => routeMap.members.dormant,
+        bulkStatus: () => routeMap.members.bulkStatus,
         detail: (memberId: string) => routeMap.members.detail(memberId),
         update: (memberId: string) => routeMap.members.update(memberId),
         delete: (memberId: string) => routeMap.members.delete(memberId),
@@ -1740,6 +1744,60 @@ export interface SavingsToSharesRun {
     moved: number;
     rows: (SavingsToSharesRow & { outcome?: "posted" | "failed"; journal_id?: string; error?: string })[];
 }
+
+/**
+ * One member who has not deposited.
+ *
+ * `blockers` is the server's own reason list for refusing a bulk suspension.
+ * The UI renders it and disables the row rather than forming its own opinion,
+ * so what the page allows and what the endpoint accepts stay the same thing.
+ */
+export interface DormantMemberRow {
+    member_id: string;
+    member_no: string;
+    member_name: string;
+    status: "active" | "approved_pending_payment";
+    branch_id: string | null;
+    joined_on: string | null;
+    deposits_count: number;
+    /** Null when they have never deposited. */
+    last_deposit_on: string | null;
+    /** Days since the last deposit, or since joining if there has never been one. */
+    days_quiet: number | null;
+    savings_balance: number;
+    share_balance: number;
+    total_balance: number;
+    active_loans: number;
+    loan_outstanding: number;
+    category: "never_started" | "stalled" | "no_deposits_on_record";
+    blockers: string[];
+}
+
+export interface DormantMembers {
+    min_days: number;
+    rows: DormantMemberRow[];
+    totals: {
+        members: number;
+        never_started: number;
+        stalled: number;
+        blocked: number;
+        balance_held: number;
+    };
+}
+
+export type DormantMembersResponse = ApiEnvelope<DormantMembers>;
+
+export interface BulkMemberStatusResult {
+    requested: number;
+    updated_count: number;
+    skipped_count: number;
+    failed_count: number;
+    updated: { member_id: string; member_no: string; member_name: string; from_status: string; to_status: string }[];
+    skipped: { member_id: string; member_no: string; member_name: string; code: string; message: string }[];
+    failed: { member_id: string; code: string; message: string }[];
+}
+
+export type BulkMemberStatusResponse = ApiEnvelope<BulkMemberStatusResult>;
 
 export type SavingsToSharesRunResponse = ApiEnvelope<SavingsToSharesRun>;
 

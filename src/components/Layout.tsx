@@ -1,3 +1,4 @@
+import PersonOffRoundedIcon from "@mui/icons-material/PersonOffRounded";
 import DashboardRoundedIcon from "@mui/icons-material/DashboardRounded";
 import AccountBalanceRoundedIcon from "@mui/icons-material/AccountBalanceRounded";
 import AssuredWorkloadRoundedIcon from "@mui/icons-material/AssuredWorkloadRounded";
@@ -101,6 +102,7 @@ const navItems: NavItem[] = [
     { to: "/products", label: "Products", roles: ["branch_manager"], section: "workspace", icon: TuneRoundedIcon },
     { to: "/member-applications", label: "Applications", roles: ["super_admin", "branch_manager", "auditor"], section: "workspace", icon: DescriptionRoundedIcon },
     { to: "/members", label: "Members", roles: ["super_admin", "branch_manager", "teller", "help_desk"], section: "workspace", icon: GroupRoundedIcon },
+    { to: "/members/dormant", label: "Not Saving", roles: ["super_admin", "branch_manager", "auditor"], section: "workspace", icon: PersonOffRoundedIcon },
     { to: "/members/import", label: "Member Import", roles: ["branch_manager"], section: "workspace", icon: StoreRoundedIcon },
     { to: "/performance-targets", label: "Performance Targets", roles: ["super_admin", "branch_manager", "auditor"], section: "workspace", icon: TrackChangesRoundedIcon },
     { to: "/leagues", label: "Savings Leagues", roles: ["super_admin", "branch_manager"], section: "workspace", icon: EmojiEventsRoundedIcon },
@@ -161,7 +163,7 @@ const navItems: NavItem[] = [
 ];
 
 const navGroups: NavGroup[] = [
-    { key: "workspace", label: "Workspace", itemTos: ["/member-applications", "/members", "/members/import", "/staff-users"] },
+    { key: "workspace", label: "Workspace", itemTos: ["/member-applications", "/members", "/members/dormant", "/members/import", "/staff-users"] },
     { key: "products", label: "Products", itemTos: ["/products"] },
     // A path must appear here as well as in navItems — the sidebar renders the
     // intersection. Anything listed in only one of the two is reachable by URL
@@ -178,6 +180,7 @@ const searchKeywords: Partial<Record<NavItem["to"], string[]>> = {
     "/products": ["savings products", "charges", "posting rules", "coa mappings"],
     "/member-applications": ["applications", "kyc", "member approval", "onboarding review"],
     "/members": ["customers", "registry", "member onboarding"],
+    "/members/dormant": ["dormant", "inactive", "not saving", "stopped depositing", "waliolala", "hawaweki akiba", "suspend"],
     "/members/import": ["csv import", "bulk members", "credentials", "portal onboarding"],
     "/performance-targets": ["performance target", "target watchlist", "annual target", "member level", "branch target"],
     "/leagues": ["league", "savings league", "leaderboard", "ranking", "position", "standings", "legue"],
