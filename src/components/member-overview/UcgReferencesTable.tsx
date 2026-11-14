@@ -84,6 +84,7 @@ const GATEWAY_ERRORS: Record<string, string> = {
     // A certificate fault, not an outage. Said plainly so nobody rings the bank
     // about a problem that is entirely on our side of the wire.
     UCG_TLS_UNTRUSTED: "cheti cha gateway hakiaminiki — ni suala la usanidi wa server, si benki",
+    UCG_CA_CERT_UNREADABLE: "cheti cha gateway hakisomeki kwenye server",
     UCG_TIMEOUT: "gateway haikujibu kwa wakati"
 };
 
