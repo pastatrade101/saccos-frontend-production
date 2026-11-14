@@ -80,7 +80,11 @@ function allTimeRange() {
 const GATEWAY_ERRORS: Record<string, string> = {
     UCG_DISABLED: "gateway imezimwa kwenye server (UCG_ENABLED)",
     UCG_CONFIG_MISSING: "mipangilio ya gateway haijakamilika kwenye server",
-    UCG_UNAVAILABLE: "gateway haifikiki"
+    UCG_UNAVAILABLE: "gateway haifikiki",
+    // A certificate fault, not an outage. Said plainly so nobody rings the bank
+    // about a problem that is entirely on our side of the wire.
+    UCG_TLS_UNTRUSTED: "cheti cha gateway hakiaminiki — ni suala la usanidi wa server, si benki",
+    UCG_TIMEOUT: "gateway haikujibu kwa wakati"
 };
 
 // The gateway taking a payment and the SACCO posting it are two separate events.
